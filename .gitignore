@@ -1,0 +1,17 @@
+.codex
+.claude
+.cursor
+.agents
+.trellis
+
+/AGENTS.md
+
+.venv
+__pycache__
+node_modules
+
+*.log
+config.json
+
+web/node_modules
+web/dist
