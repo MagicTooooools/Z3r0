@@ -24,7 +24,7 @@ export type QuerySystemUsersParams = QueryParameters<paths["/api/system-users"][
 export type QuerySystemUsersResponse = JsonResponse<paths["/api/system-users"]["get"]>;
 export type QuerySystemUsersData = NonNullable<QuerySystemUsersResponse["data"]>;
 export type SystemUser = QuerySystemUsersData["items"][number];
-export type SystemUserRole = SystemUser["role"];
+export type SystemUserRole = components["schemas"]["SystemUserRole"];
 
 export type CreateSystemUserRequest = JsonRequestBody<paths["/api/system-users"]["post"]>;
 export type CreateSystemUserResponse = JsonResponse<paths["/api/system-users"]["post"]>;
@@ -38,7 +38,7 @@ export type QuerySandboxImagesParams = QueryParameters<paths["/api/sandbox-image
 export type QuerySandboxImagesResponse = JsonResponse<paths["/api/sandbox-images"]["get"]>;
 export type QuerySandboxImagesData = NonNullable<QuerySandboxImagesResponse["data"]>;
 export type SandboxImage = QuerySandboxImagesData["items"][number];
-export type SandboxImageStatus = SandboxImage["status"];
+export type SandboxImageStatus = components["schemas"]["SandboxImageStatus"];
 
 export type CreateSandboxImageRequest = JsonRequestBody<paths["/api/sandbox-images"]["post"]>;
 export type CreateSandboxImageResponse = JsonResponse<paths["/api/sandbox-images"]["post"]>;
@@ -54,8 +54,8 @@ export type QueryWorkProjectsParams = QueryParameters<paths["/api/work-projects"
 export type QueryWorkProjectsResponse = JsonResponse<paths["/api/work-projects"]["get"]>;
 export type QueryWorkProjectsData = NonNullable<QueryWorkProjectsResponse["data"]>;
 export type WorkProject = QueryWorkProjectsData["items"][number];
-export type WorkProjectStatus = WorkProject["status"];
-export type WorkProjectType = WorkProject["type"];
+export type WorkProjectStatus = components["schemas"]["WorkProjectStatus"];
+export type WorkProjectType = components["schemas"]["WorkProjectType"];
 
 export type CreateWorkProjectRequest = JsonRequestBody<paths["/api/work-projects"]["post"]>;
 export type CreateWorkProjectResponse = JsonResponse<paths["/api/work-projects"]["post"]>;
@@ -68,7 +68,7 @@ export type RetryWorkProjectPathParams = PathParameters<paths["/api/work-project
 export type RetryWorkProjectResponse = JsonResponse<paths["/api/work-projects/{id}/retry"]["post"]>;
 
 export type AgentSessionSummary = components["schemas"]["AgentSessionSummarySchema"];
-export type SessionType = components["schemas"]["SessionTypeSchema"];
+export type SessionType = components["schemas"]["SessionType"];
 
 export type ListAgentSessionsResponse = JsonResponse<paths["/api/agent-sessions"]["get"]>;
 export type ListAgentSessionsData = NonNullable<ListAgentSessionsResponse["data"]>;
@@ -89,14 +89,9 @@ export type ToolCallEvent = components["schemas"]["ToolCallEvent"];
 export type ToolResultEvent = components["schemas"]["ToolResultEvent"];
 export type HandoffEvent = components["schemas"]["HandoffEvent"];
 export type ErrorEvent = components["schemas"]["ErrorEvent"];
+export type DoneEvent = components["schemas"]["DoneEvent"];
 
 export type AgentContentEvent = ListAgentEventsData["items"][number];
-export type DoneEvent = { type: "done"; agent_name?: string };
 export type AgentStreamEvent = AgentContentEvent | DoneEvent;
-export type AgentEvent = AgentStreamEvent;
-export type AgentEventType = AgentEvent["type"];
 
-// websocket request payloads are out of OpenAPI scope, so this is the contract
-export type AgentStreamCommand =
-  | { action: "send"; text: string }
-  | { action: "interrupt" };
+export type AgentStreamCommand = components["schemas"]["AgentStreamCommandSchema"];

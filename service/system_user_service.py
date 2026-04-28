@@ -9,7 +9,8 @@ from sqlmodel import select
 from config import get_config
 from database import get_async_session
 from logger import get_logger
-from model.system_user_model import SystemUser, SystemUserRole
+from model.system_user_model import SystemUser
+from schema.system_user_schema import SystemUserRole
 
 
 logger = get_logger(__name__)
@@ -92,8 +93,13 @@ async def update_system_user(
     return system_user
 
 
+async def query_system_user_by_username(username: str) -> SystemUser | None:
+    async with get_async_session() as session:
+        result = await session.exec(select(SystemUser).where(SystemUser.username == username))
+        return result.first()
+
+
 async def query_system_users(page: int = 1, size: int = 100, keyword: str = "") -> list[SystemUser]:
-    """query system users"""
     offset = (page - 1) * size
     statement = select(SystemUser).order_by(SystemUser.id).offset(offset).limit(size)
     

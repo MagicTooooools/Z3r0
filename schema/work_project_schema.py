@@ -5,14 +5,16 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class WorkProjectStatusSchema(StrEnum):
+# canonical work project status; reused by the model and by the public schema
+class WorkProjectStatus(StrEnum):
     WORKING = "working"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"
 
 
-class WorkProjectTypeSchema(StrEnum):
+# canonical work project type; reused by the model and by the public schema
+class WorkProjectType(StrEnum):
     PENETRATION_TEST = "penetration_test"
     SOURCE_CODE_AUDIT = "source_code_audit"
 
@@ -25,8 +27,8 @@ class WorkProjectSchema(BaseModel):
     name: str
     session_id: str
     description: str
-    status: WorkProjectStatusSchema
-    type: WorkProjectTypeSchema
+    status: WorkProjectStatus
+    type: WorkProjectType
     created_at: datetime
     updated_at: datetime
 
@@ -35,7 +37,7 @@ class WorkProjectSchema(BaseModel):
 class CreateWorkProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=2000)
-    type: WorkProjectTypeSchema = WorkProjectTypeSchema.PENETRATION_TEST
+    type: WorkProjectType = WorkProjectType.PENETRATION_TEST
 
     @field_validator("name", "description", mode="before")
     @classmethod
@@ -45,10 +47,9 @@ class CreateWorkProjectRequest(BaseModel):
         return value
 
 
-# delete work project response schema
+# delete work project response schema (presence implies success)
 class DeleteWorkProjectResponse(BaseModel):
     id: int
-    deleted: bool
 
 
 # query work projects response schema

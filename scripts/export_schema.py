@@ -9,7 +9,6 @@ OUTPUT_PATH = ROOT_PATH / "web" / "openapi.json"
 
 
 def export_openapi_schema() -> Path:
-    """export fastapi openapi schema for frontend type generation"""
     if str(ROOT_PATH) not in sys.path:
         sys.path.insert(0, str(ROOT_PATH))
 
@@ -18,9 +17,9 @@ def export_openapi_schema() -> Path:
     app = create_app()
     schema = app.openapi()
     _patch_auth_contracts(app, schema)
-    _patch_list_query_contracts(schema)
     _patch_validation_contracts(schema)
     _patch_error_contracts(schema)
+    _register_extra_schemas(schema)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(
         json.dumps(schema, ensure_ascii=False, indent=2, sort_keys=True),
@@ -30,51 +29,65 @@ def export_openapi_schema() -> Path:
 
 
 def _patch_auth_contracts(app: Any, schema: dict[str, Any]) -> None:
-    """add middleware-driven auth contracts to exported openapi schema"""
+    """drive OpenAPI security from the FastAPI dependency tree.
+
+    routes that depend on require_user get BearerAuth + 401; routes that
+    additionally depend on require_admin also get 403."""
+    from middleware.auth import require_admin, require_user
+
     components = schema.setdefault("components", {})
     schemas = components.setdefault("schemas", {})
     schemas.setdefault("CommonResponse_Any_", _common_response_any_schema())
-    security_schemes = components.setdefault("securitySchemes", {})
-    security_schemes["BearerAuth"] = {
+    components.setdefault("securitySchemes", {})["BearerAuth"] = {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
     }
 
+    paths = schema.get("paths", {})
     for route in app.routes:
         path = getattr(route, "path", "")
-        endpoint = getattr(route, "endpoint", None)
         methods = getattr(route, "methods", None)
-        if endpoint is None or not methods or path not in schema.get("paths", {}):
+        if not methods or path not in paths:
             continue
 
-        is_whitelisted = bool(getattr(endpoint, "__auth_whitelist__", False))
-        required_role = getattr(endpoint, "__auth_required_role__", None)
+        deps = _route_dependency_funcs(route)
+        if not (require_user in deps or require_admin in deps):
+            continue
+
         for method in methods:
-            method_name = method.lower()
-            operation = schema["paths"][path].get(method_name)
+            operation = paths[path].get(method.lower())
             if operation is None:
                 continue
+            operation["security"] = [{"BearerAuth": []}]
+            responses = operation.setdefault("responses", {})
+            responses["401"] = _common_response_ref("Unauthorized")
+            if require_admin in deps:
+                responses["403"] = _common_response_ref("Forbidden")
 
-            if not is_whitelisted:
-                operation["security"] = [{"BearerAuth": []}]
-                operation.setdefault("responses", {})["401"] = _common_response_ref(
-                    "Unauthorized"
-                )
-            if required_role is not None:
-                operation.setdefault("responses", {})["403"] = _common_response_ref(
-                    "Forbidden"
-                )
+
+def _route_dependency_funcs(route: Any) -> set:
+    funcs: set = set()
+    dependant = getattr(route, "dependant", None)
+    if dependant is not None:
+        _walk_dependant(dependant, funcs)
+    return funcs
+
+
+def _walk_dependant(dependant: Any, funcs: set) -> None:
+    if dependant.call is not None:
+        funcs.add(dependant.call)
+    for sub in dependant.dependencies:
+        _walk_dependant(sub, funcs)
 
 
 def _patch_validation_contracts(schema: dict[str, Any]) -> None:
-    """replace FastAPI validation response docs with CommonResponse docs"""
+    """rewrite FastAPI's default 422 docs to the runtime CommonResponse shape"""
     for methods in schema.get("paths", {}).values():
         for operation in methods.values():
             responses = operation.get("responses")
-            if not isinstance(responses, dict) or "422" not in responses:
-                continue
-            _ensure_common_response(responses["422"], "Validation Error")
+            if isinstance(responses, dict) and "422" in responses:
+                _ensure_common_response(responses["422"], "Validation Error")
 
 
 def _patch_error_contracts(schema: dict[str, Any]) -> None:
@@ -97,27 +110,30 @@ def _patch_error_contracts(schema: dict[str, Any]) -> None:
                     _ensure_common_response(response, description)
 
 
-def _patch_list_query_contracts(schema: dict[str, Any]) -> None:
-    """document handler-level list query constraints that FastAPI cannot infer"""
-    list_paths = ("/api/system-users", "/api/sandbox-images", "/api/work-projects")
-    for path in list_paths:
-        operation = schema.get("paths", {}).get(path, {}).get("get")
-        if not isinstance(operation, dict):
-            continue
+def _register_extra_schemas(schema: dict[str, Any]) -> None:
+    """publish ws contracts as OpenAPI components so the frontend can derive types"""
+    from pydantic import TypeAdapter
+    from schema.agent_event_schema import (
+        AgentStreamCommandSchema,
+        AgentStreamInterruptCommand,
+        AgentStreamSendCommand,
+        DoneEvent,
+    )
 
-        for parameter in operation.get("parameters", []):
-            if not isinstance(parameter, dict):
-                continue
-            parameter_schema = parameter.get("schema")
-            if not isinstance(parameter_schema, dict):
-                continue
-            if parameter.get("name") == "page":
-                parameter_schema["minimum"] = 1
-            if parameter.get("name") == "size":
-                parameter_schema["minimum"] = 1
-                parameter_schema["maximum"] = 100
+    components = schema.setdefault("components", {})
+    schemas = components.setdefault("schemas", {})
 
-        operation.setdefault("responses", {})["400"] = _common_response_ref("Bad Request")
+    extras = {
+        "DoneEvent": DoneEvent,
+        "AgentStreamSendCommand": AgentStreamSendCommand,
+        "AgentStreamInterruptCommand": AgentStreamInterruptCommand,
+        "AgentStreamCommandSchema": AgentStreamCommandSchema,
+    }
+    for name, model in extras.items():
+        body = TypeAdapter(model).json_schema(ref_template="#/components/schemas/{model}")
+        for nested_name, nested_body in body.pop("$defs", {}).items():
+            schemas.setdefault(nested_name, nested_body)
+        schemas[name] = body
 
 
 def _common_response_ref(description: str) -> dict[str, Any]:
@@ -125,10 +141,8 @@ def _common_response_ref(description: str) -> dict[str, Any]:
         "description": description,
         "content": {
             "application/json": {
-                "schema": {
-                    "$ref": "#/components/schemas/CommonResponse_Any_",
-                }
-            }
+                "schema": {"$ref": "#/components/schemas/CommonResponse_Any_"},
+            },
         },
     }
 
@@ -145,19 +159,9 @@ def _common_response_any_schema() -> dict[str, Any]:
         "type": "object",
         "title": "CommonResponse[Any]",
         "properties": {
-            "code": {
-                "type": "integer",
-                "title": "Code",
-                "default": 200,
-            },
-            "message": {
-                "type": "string",
-                "title": "Message",
-                "default": "success",
-            },
-            "data": {
-                "title": "Data",
-            },
+            "code": {"type": "integer", "title": "Code", "default": 200},
+            "message": {"type": "string", "title": "Message", "default": "success"},
+            "data": {"title": "Data"},
         },
     }
 

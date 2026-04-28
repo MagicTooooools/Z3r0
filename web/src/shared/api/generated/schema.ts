@@ -11,17 +11,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Agent Sessions Route
-         * @description list recent agent sessions
-         */
+        /** List Agent Sessions Route */
         get: operations["list_agent_sessions_route_api_agent_sessions_get"];
         put?: never;
-        /**
-         * Create Agent Session Route
-         * @description allocate a fresh server-generated session_id
-         */
-        post: operations["create_agent_session_route_api_agent_sessions_post"];
+        /** Create Agent Session Handler */
+        post: operations["create_agent_session_handler_api_agent_sessions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -38,11 +32,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Delete Agent Session Route
-         * @description delete an agent session and its SDK history
-         */
-        delete: operations["delete_agent_session_route_api_agent_sessions__session_id__delete"];
+        /** Delete Agent Session Handler */
+        delete: operations["delete_agent_session_handler_api_agent_sessions__session_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -55,10 +46,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Agent Events Route
-         * @description replay the unified event stream of an agent session
-         */
+        /** List Agent Events Route */
         get: operations["list_agent_events_route_api_agent_sessions__session_id__events_get"];
         put?: never;
         post?: never;
@@ -75,16 +63,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Query Sandbox Images Route
-         * @description query sandbox images
-         */
+        /** Query Sandbox Images Route */
         get: operations["query_sandbox_images_route_api_sandbox_images_get"];
         put?: never;
-        /**
-         * Create Sandbox Image Handler
-         * @description create sandbox image
-         */
+        /** Create Sandbox Image Handler */
         post: operations["create_sandbox_image_handler_api_sandbox_images_post"];
         delete?: never;
         options?: never;
@@ -102,10 +84,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Delete Sandbox Image Handler
-         * @description delete sandbox image
-         */
+        /** Delete Sandbox Image Handler */
         delete: operations["delete_sandbox_image_handler_api_sandbox_images__id__delete"];
         options?: never;
         head?: never;
@@ -121,10 +100,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Cancel Sandbox Image Pull Handler
-         * @description cancel active sandbox image pull
-         */
+        /** Cancel Sandbox Image Pull Handler */
         post: operations["cancel_sandbox_image_pull_handler_api_sandbox_images__id__cancel_post"];
         delete?: never;
         options?: never;
@@ -141,10 +117,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Retry Sandbox Image Handler
-         * @description retry failed sandbox image pull
-         */
+        /** Retry Sandbox Image Handler */
         post: operations["retry_sandbox_image_handler_api_sandbox_images__id__retry_post"];
         delete?: never;
         options?: never;
@@ -159,16 +132,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Query System Users Route
-         * @description query system users
-         */
+        /** Query System Users Route */
         get: operations["query_system_users_route_api_system_users_get"];
         put?: never;
-        /**
-         * Create System User Handler
-         * @description create system user
-         */
+        /** Create System User Handler */
         post: operations["create_system_user_handler_api_system_users_post"];
         delete?: never;
         options?: never;
@@ -185,10 +152,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * System User Login Handler
-         * @description system user login
-         */
+        /** System User Login Handler */
         post: operations["system_user_login_handler_api_system_users_login_post"];
         delete?: never;
         options?: never;
@@ -206,17 +170,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Delete System User Handler
-         * @description delete system user
-         */
+        /** Delete System User Handler */
         delete: operations["delete_system_user_handler_api_system_users__id__delete"];
         options?: never;
         head?: never;
-        /**
-         * Update System User Handler
-         * @description update system user
-         */
+        /** Update System User Handler */
         patch: operations["update_system_user_handler_api_system_users__id__patch"];
         trace?: never;
     };
@@ -227,16 +185,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Query Work Projects Route
-         * @description query work projects
-         */
+        /** Query Work Projects Route */
         get: operations["query_work_projects_route_api_work_projects_get"];
         put?: never;
-        /**
-         * Create Work Project Handler
-         * @description create work project
-         */
+        /** Create Work Project Handler */
         post: operations["create_work_project_handler_api_work_projects_post"];
         delete?: never;
         options?: never;
@@ -254,10 +206,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Delete Work Project Handler
-         * @description delete work project
-         */
+        /** Delete Work Project Handler */
         delete: operations["delete_work_project_handler_api_work_projects__id__delete"];
         options?: never;
         head?: never;
@@ -273,10 +222,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Cancel Work Project Handler
-         * @description cancel active work project
-         */
+        /** Cancel Work Project Handler */
         post: operations["cancel_work_project_handler_api_work_projects__id__cancel_post"];
         delete?: never;
         options?: never;
@@ -293,10 +239,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Retry Work Project Handler
-         * @description retry failed work project
-         */
+        /** Retry Work Project Handler */
         post: operations["retry_work_project_handler_api_work_projects__id__retry_post"];
         delete?: never;
         options?: never;
@@ -323,7 +266,7 @@ export interface components {
             /** Session Id */
             session_id: string;
             /** @default chat */
-            session_type: components["schemas"]["SessionTypeSchema"];
+            session_type: components["schemas"]["SessionType"];
             /**
              * Title
              * @default
@@ -334,6 +277,25 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        AgentStreamCommandSchema: components["schemas"]["AgentStreamSendCommand"] | components["schemas"]["AgentStreamInterruptCommand"];
+        /** AgentStreamInterruptCommand */
+        AgentStreamInterruptCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "interrupt";
+        };
+        /** AgentStreamSendCommand */
+        AgentStreamSendCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "send";
+            /** Text */
+            text: string;
         };
         /** CommonResponse */
         CommonResponse: {
@@ -567,7 +529,7 @@ export interface components {
             /** Password */
             password: string;
             /** @default user */
-            role: components["schemas"]["SystemUserRoleSchema"];
+            role: components["schemas"]["SystemUserRole"];
             /** Username */
             username: string;
         };
@@ -581,28 +543,36 @@ export interface components {
             /** Name */
             name: string;
             /** @default penetration_test */
-            type: components["schemas"]["WorkProjectTypeSchema"];
+            type: components["schemas"]["WorkProjectType"];
         };
         /** DeleteSandboxImageResponse */
         DeleteSandboxImageResponse: {
-            /** Deleted */
-            deleted: boolean;
             /** Id */
             id: number;
         };
         /** DeleteSystemUserResponse */
         DeleteSystemUserResponse: {
-            /** Deleted */
-            deleted: boolean;
             /** Id */
             id: number;
         };
         /** DeleteWorkProjectResponse */
         DeleteWorkProjectResponse: {
-            /** Deleted */
-            deleted: boolean;
             /** Id */
             id: number;
+        };
+        /** DoneEvent */
+        DoneEvent: {
+            /**
+             * Agent Name
+             * @default
+             */
+            agent_name: string;
+            /**
+             * Type
+             * @default done
+             * @constant
+             */
+            type: "done";
         };
         /** ErrorEvent */
         ErrorEvent: {
@@ -690,7 +660,7 @@ export interface components {
             image_name: string;
             /** Image Size */
             image_size: number;
-            status: components["schemas"]["SandboxImageStatusSchema"];
+            status: components["schemas"]["SandboxImageStatus"];
             /**
              * Updated At
              * Format: date-time
@@ -698,15 +668,15 @@ export interface components {
             updated_at: string;
         };
         /**
-         * SandboxImageStatusSchema
+         * SandboxImageStatus
          * @enum {string}
          */
-        SandboxImageStatusSchema: "pulling" | "ready" | "failed" | "canceled";
+        SandboxImageStatus: "pulling" | "ready" | "failed" | "canceled";
         /**
-         * SessionTypeSchema
+         * SessionType
          * @enum {string}
          */
-        SessionTypeSchema: "chat" | "project";
+        SessionType: "chat" | "project";
         /** SystemUserLoginRequest */
         SystemUserLoginRequest: {
             /** Email */
@@ -720,10 +690,10 @@ export interface components {
             token: string;
         };
         /**
-         * SystemUserRoleSchema
+         * SystemUserRole
          * @enum {string}
          */
-        SystemUserRoleSchema: "admin" | "user";
+        SystemUserRole: "admin" | "user";
         /** SystemUserSchema */
         SystemUserSchema: {
             /**
@@ -735,7 +705,7 @@ export interface components {
             email: string;
             /** Id */
             id: number;
-            role: components["schemas"]["SystemUserRoleSchema"];
+            role: components["schemas"]["SystemUserRole"];
             /**
              * Updated At
              * Format: date-time
@@ -864,7 +834,7 @@ export interface components {
             email?: string | null;
             /** Password */
             password?: string | null;
-            role?: components["schemas"]["SystemUserRoleSchema"] | null;
+            role?: components["schemas"]["SystemUserRole"] | null;
             /** Username */
             username?: string | null;
         };
@@ -893,8 +863,8 @@ export interface components {
             name: string;
             /** Session Id */
             session_id: string;
-            status: components["schemas"]["WorkProjectStatusSchema"];
-            type: components["schemas"]["WorkProjectTypeSchema"];
+            status: components["schemas"]["WorkProjectStatus"];
+            type: components["schemas"]["WorkProjectType"];
             /**
              * Updated At
              * Format: date-time
@@ -902,15 +872,15 @@ export interface components {
             updated_at: string;
         };
         /**
-         * WorkProjectStatusSchema
+         * WorkProjectStatus
          * @enum {string}
          */
-        WorkProjectStatusSchema: "working" | "completed" | "failed" | "canceled";
+        WorkProjectStatus: "working" | "completed" | "failed" | "canceled";
         /**
-         * WorkProjectTypeSchema
+         * WorkProjectType
          * @enum {string}
          */
-        WorkProjectTypeSchema: "penetration_test" | "source_code_audit";
+        WorkProjectType: "penetration_test" | "source_code_audit";
     };
     responses: never;
     parameters: never;
@@ -949,15 +919,6 @@ export interface operations {
                     "application/json": components["schemas"]["CommonResponse_Any_"];
                 };
             };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommonResponse_Any_"];
-                };
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -969,7 +930,7 @@ export interface operations {
             };
         };
     };
-    create_agent_session_route_api_agent_sessions_post: {
+    create_agent_session_handler_api_agent_sessions_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -996,15 +957,6 @@ export interface operations {
                     "application/json": components["schemas"]["CommonResponse_Any_"];
                 };
             };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommonResponse_Any_"];
-                };
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1016,7 +968,7 @@ export interface operations {
             };
         };
     };
-    delete_agent_session_route_api_agent_sessions__session_id__delete: {
+    delete_agent_session_handler_api_agent_sessions__session_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -1038,15 +990,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommonResponse_Any_"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1103,15 +1046,6 @@ export interface operations {
                     "application/json": components["schemas"]["CommonResponse_Any_"];
                 };
             };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommonResponse_Any_"];
-                };
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1143,15 +1077,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommonResponse_QuerySandboxImagesResponse_"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommonResponse_Any_"];
                 };
             };
             /** @description Unauthorized */
@@ -1448,15 +1373,6 @@ export interface operations {
                     "application/json": components["schemas"]["CommonResponse_QuerySystemUsersResponse_"];
                 };
             };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommonResponse_Any_"];
-                };
-            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -1719,15 +1635,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommonResponse_QueryWorkProjectsResponse_"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommonResponse_Any_"];
                 };
             };
             /** @description Unauthorized */

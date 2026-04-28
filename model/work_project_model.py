@@ -1,19 +1,8 @@
 from datetime import datetime
-from enum import StrEnum
 
 from sqlmodel import Field, SQLModel
 
-
-class WorkProjectStatus(StrEnum):
-    WORKING = "working"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELED = "canceled"
-
-
-class WorkProjectType(StrEnum):
-    PENETRATION_TEST = "penetration_test"
-    SOURCE_CODE_AUDIT = "source_code_audit"
+from schema.work_project_schema import WorkProjectStatus, WorkProjectType
 
 
 class WorkProject(SQLModel, table=True):

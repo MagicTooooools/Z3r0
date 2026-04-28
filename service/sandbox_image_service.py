@@ -1,7 +1,6 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 import docker
 from docker.utils import parse_repository_tag
@@ -10,7 +9,8 @@ from sqlmodel import select
 
 from database import get_async_session
 from logger import get_logger
-from model.sandbox_image_model import SandboxImage, SandboxImageStatus
+from model.sandbox_image_model import SandboxImage
+from schema.sandbox_image_schema import SandboxImageStatus
 
 
 logger = get_logger(__name__)
@@ -26,33 +26,9 @@ class PullJob:
 _pull_jobs: dict[int, PullJob] = {}
 
 
-def _hash_value(value: str) -> str:
-    digest = value.rsplit("@", 1)[-1]
-    return digest.rsplit(":", 1)[-1]
-
-
-def _docker_image_id(image_hash: str) -> str:
-    return image_hash if image_hash.startswith("sha256:") else f"sha256:{image_hash}"
-
-
-def _image_hash(attrs: dict[str, Any]) -> str:
-    image_id = attrs.get("Id")
-    return _hash_value(image_id) if isinstance(image_id, str) else ""
-
-
-def _image_size(client: docker.DockerClient, image_id: str, attrs: dict[str, Any]) -> int:
-    for image in client.images.list():
-        if image.id == image_id:
-            return _positive_size(image.attrs.get("Size"))
-
-    return _positive_size(attrs.get("Size"))
-
-
-def _positive_size(value: Any) -> int:
-    return value if isinstance(value, int) and value >= 0 else 0
-
-
 def _cancel_pull_job(job: PullJob) -> None:
+    """flip the cancel flag, cancel the task, and tear down the docker socket
+    so a blocked pull stream unblocks immediately"""
     job.cancel_event.set()
     job.task.cancel()
     if job.client is not None:
@@ -61,14 +37,13 @@ def _cancel_pull_job(job: PullJob) -> None:
 
 async def _save_pull_result(
     id: int,
-    image_name: str,
     status: SandboxImageStatus,
     image_hash: str = "",
     image_size: int = 0,
 ) -> None:
     async with get_async_session() as session:
         sandbox_image = await session.get(SandboxImage, id)
-        if sandbox_image is None or sandbox_image.image_name != image_name:
+        if sandbox_image is None:
             logger.info("sandbox image pull result ignored: %s", id)
             return
 
@@ -86,24 +61,16 @@ def _pull_image_sync(id: int, image_name: str) -> tuple[str, int]:
     job.client = client
     try:
         repository, tag = parse_repository_tag(image_name)
-        image_id: str | None = None
-
         for event in client.api.pull(repository, tag=tag, stream=True, decode=True):
             if job.cancel_event.is_set():
                 raise asyncio.CancelledError
-            if not isinstance(event, dict):
-                continue
-            if event.get("error"):
+            if isinstance(event, dict) and event.get("error"):
                 raise RuntimeError(str(event["error"]))
-            aux = event.get("aux")
-            if isinstance(aux, dict) and isinstance(aux.get("ID"), str):
-                image_id = aux["ID"]
 
-        if image_id is None:
-            raise docker.errors.ImageNotFound(image_name)
-
-        attrs = client.api.inspect_image(image_id)
-        return _image_hash(attrs), _image_size(client, image_id, attrs)
+        attrs = client.api.inspect_image(image_name)
+        image_id: str = attrs["Id"]
+        image_size = attrs.get("Size", 0)
+        return image_id.removeprefix("sha256:"), max(int(image_size), 0)
     finally:
         job.client = None
         client.close()
@@ -112,33 +79,24 @@ def _pull_image_sync(id: int, image_name: str) -> tuple[str, int]:
 def _remove_image_sync(image_hash: str) -> None:
     client = docker.from_env()
     try:
-        client.images.remove(image=_docker_image_id(image_hash), force=True, noprune=False)
+        client.images.remove(image=f"sha256:{image_hash}", force=True, noprune=False)
     except docker.errors.ImageNotFound:
         logger.info("sandbox image file already absent: %s", image_hash)
     finally:
         client.close()
 
 
-async def _pull_image(id: int, image_name: str) -> tuple[str, int]:
-    return await asyncio.to_thread(_pull_image_sync, id, image_name)
-
-
-async def _remove_image(image_hash: str) -> None:
-    if image_hash:
-        await asyncio.to_thread(_remove_image_sync, image_hash)
-
-
 async def _pull_and_update_sandbox_image(id: int, image_name: str) -> None:
     try:
-        image_hash, image_size = await _pull_image(id, image_name)
-        await _save_pull_result(id, image_name, SandboxImageStatus.READY, image_hash, image_size)
+        image_hash, image_size = await asyncio.to_thread(_pull_image_sync, id, image_name)
+        await _save_pull_result(id, SandboxImageStatus.READY, image_hash, image_size)
         logger.info("sandbox image pulled: %s", id)
     except asyncio.CancelledError:
-        await _save_pull_result(id, image_name, SandboxImageStatus.CANCELED)
+        await _save_pull_result(id, SandboxImageStatus.CANCELED)
         logger.info("sandbox image pull canceled: %s", id)
     except Exception:
         logger.exception("sandbox image pull failed: %s", id)
-        await _save_pull_result(id, image_name, SandboxImageStatus.FAILED)
+        await _save_pull_result(id, SandboxImageStatus.FAILED)
     finally:
         current = _pull_jobs.get(id)
         if current is not None and current.task is asyncio.current_task():
@@ -214,8 +172,8 @@ async def delete_sandbox_image(id: int) -> bool:
         if sandbox_image is None:
             return False
 
-        image_hash = sandbox_image.image_hash
-        await _remove_image(image_hash)
+        if sandbox_image.image_hash:
+            await asyncio.to_thread(_remove_image_sync, sandbox_image.image_hash)
         await session.delete(sandbox_image)
         await session.commit()
 

@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { AgentSessionProvider } from "../features/playground/AgentSessionProvider";
 import { AuthProvider, useAuth } from "../shared/auth/AuthProvider";
 import { AdminLayout } from "./layouts/AdminLayout";
 import { LoginPage } from "../features/auth/LoginPage";
@@ -10,21 +11,17 @@ import { WorkProjectsPage } from "../features/work-projects/WorkProjectsPage";
 function ProtectedRoute() {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
-
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
-
   return <Outlet />;
 }
 
 function PublicOnlyRoute() {
   const { isAuthenticated } = useAuth();
-
   if (isAuthenticated) {
     return <Navigate to="/system-users" replace />;
   }
-
   return <Outlet />;
 }
 
@@ -37,7 +34,7 @@ export function App() {
             <Route path="/login" element={<LoginPage />} />
           </Route>
           <Route element={<ProtectedRoute />}>
-            <Route element={<AdminLayout />}>
+            <Route element={<AgentSessionProvider><AdminLayout /></AgentSessionProvider>}>
               <Route index element={<Navigate to="/system-users" replace />} />
               <Route path="/playground" element={<PlaygroundPage />} />
               <Route path="/sandbox-images" element={<SandboxImagesPage />} />

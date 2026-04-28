@@ -1,12 +1,8 @@
 from datetime import datetime
-from enum import StrEnum
 
 from sqlmodel import Field, SQLModel
 
-
-class SystemUserRole(StrEnum):
-    ADMIN = "admin"
-    USER = "user"
+from schema.system_user_schema import SystemUserRole
 
 
 class SystemUser(SQLModel, table=True):

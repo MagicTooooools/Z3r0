@@ -1,14 +1,8 @@
 from datetime import datetime
-from enum import StrEnum
 
 from sqlmodel import Field, SQLModel
 
-
-class SandboxImageStatus(StrEnum):
-    PULLING = "pulling"
-    READY = "ready"
-    FAILED = "failed"
-    CANCELED = "canceled"
+from schema.sandbox_image_schema import SandboxImageStatus
 
 
 class SandboxImage(SQLModel, table=True):

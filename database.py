@@ -21,11 +21,12 @@ _engine: AsyncEngine | None = None
 
 
 async def create_all_tables() -> None:
-    """create application + SDK session storage tables"""
     global _engine
     if _engine is None:
         raise RuntimeError("database engine is not initialized")
 
+    # SDK manages its own metadata; we bootstrap a throwaway session purely
+    # to obtain the metadata object, since the SDK does not expose it directly
     sdk_metadata = SQLAlchemySession(session_id=BOOTSTRAP_SESSION_ID, engine=_engine)._metadata
 
     async with _engine.begin() as conn:
@@ -36,16 +37,13 @@ async def create_all_tables() -> None:
 
 
 async def close_engine() -> None:
-    """close async postgres engine instance"""
     global _engine
-
     if _engine is not None:
         await _engine.dispose()
         _engine = None
 
 
 def init_engine() -> None:
-    """initialize async postgres engine"""
     global _engine
     if _engine is not None:
         return
@@ -58,7 +56,6 @@ def init_engine() -> None:
 
 
 def get_engine() -> AsyncEngine:
-    """get async postgres engine instance"""
     global _engine
     if _engine is None:
         raise RuntimeError("database engine is not initialized")
@@ -66,5 +63,4 @@ def get_engine() -> AsyncEngine:
 
 
 def get_async_session() -> AsyncSession:
-    """open a new async session bound to the global engine"""
     return AsyncSession(get_engine())

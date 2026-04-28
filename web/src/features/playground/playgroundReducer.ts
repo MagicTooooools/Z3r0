@@ -53,9 +53,7 @@ function withCurrentAgent(state: ChatState, mutate: (node: AgentNode) => void): 
 }
 
 function setAgentName(node: AgentNode, name: string) {
-  if (name && !node.agentName) {
-    node.agentName = name;
-  }
+  if (name && !node.agentName) node.agentName = name;
 }
 
 function upsertStreamingItem(
@@ -82,24 +80,31 @@ function upsertStreamingItem(
   };
 }
 
+export function appendUserMessage(state: ChatState, text: string): ChatState {
+  // optimistic dispatch is idempotent w.r.t. the server echo: if the last
+  // node is the same user text, we just flip streaming on
+  const lastNode = state.nodes[state.nodes.length - 1];
+  if (lastNode?.kind === "user" && lastNode.text === text) {
+    return { ...state, streaming: true };
+  }
+  return {
+    ...state,
+    nodes: [...state.nodes, { kind: "user", id: newId(), text }],
+    streaming: true,
+  };
+}
+
 export function finishChatTurn(state: ChatState): ChatState {
   return { ...state, streaming: false };
 }
 
 export function chatReduce(state: ChatState, event: AgentContentEvent): ChatState {
   switch (event.type) {
-    case "user_message": {
-      const userNode: ChatNode = { kind: "user", id: newId(), text: event.text };
-      return { ...state, nodes: [...state.nodes, userNode], streaming: true };
-    }
+    case "user_message":
+      return appendUserMessage(state, event.text);
 
     case "handoff": {
-      const agentNode: ChatNode = {
-        kind: "agent",
-        id: newId(),
-        agentName: event.target_agent,
-        items: [],
-      };
+      const agentNode: ChatNode = { kind: "agent", id: newId(), agentName: event.target_agent, items: [] };
       return { ...state, nodes: [...state.nodes, agentNode] };
     }
 
@@ -135,7 +140,7 @@ export function chatReduce(state: ChatState, event: AgentContentEvent): ChatStat
           id: newId(),
           callId: event.call_id,
           name: event.name,
-          arguments: event.arguments ?? {},
+          arguments: (event.arguments as Record<string, unknown>) ?? {},
           output: "",
           isError: false,
           resolved: false,
@@ -171,11 +176,7 @@ export function chatReduce(state: ChatState, event: AgentContentEvent): ChatStat
     case "error": {
       const next = withCurrentAgent(state, (node) => {
         setAgentName(node, event.agent_name);
-        node.items.push({
-          kind: "error",
-          id: newId(),
-          message: event.message || "agent run failed",
-        });
+        node.items.push({ kind: "error", id: newId(), message: event.message || "agent run failed" });
       });
       return finishChatTurn(next);
     }

@@ -1,7 +1,8 @@
-import { Button, Input, Modal } from "@douyinfe/semi-ui";
+import { Input } from "@douyinfe/semi-ui";
 import { Package } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { CreateSandboxImageRequest } from "../../shared/api/types";
+import { ResourceModal } from "../../shared/components/ResourceModal";
 
 type SandboxImageFormModalProps = {
   open: boolean;
@@ -10,57 +11,31 @@ type SandboxImageFormModalProps = {
   onSubmit: (payload: CreateSandboxImageRequest) => Promise<void>;
 };
 
-const emptyValues: CreateSandboxImageRequest = {
-  image_name: "",
-};
-
-function buildPayload(values: CreateSandboxImageRequest): CreateSandboxImageRequest {
-  return {
-    image_name: values.image_name.trim(),
-  };
-}
+const EMPTY: CreateSandboxImageRequest = { image_name: "" };
 
 export function SandboxImageFormModal({ open, saving, onCancel, onSubmit }: SandboxImageFormModalProps) {
-  const [values, setValues] = useState<CreateSandboxImageRequest>(emptyValues);
+  const [values, setValues] = useState<CreateSandboxImageRequest>(EMPTY);
 
   useEffect(() => {
-    if (open) {
-      setValues(emptyValues);
-    }
+    if (open) setValues(EMPTY);
   }, [open]);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await onSubmit(buildPayload(values));
-  };
-
   return (
-    <Modal
+    <ResourceModal
+      open={open}
       title="Create Sandbox Image"
-      visible={open}
+      saving={saving}
+      submitLabel="Create"
       onCancel={onCancel}
-      footer={null}
-      width={520}
-      maskClosable={!saving}
+      onSubmit={() => onSubmit({ image_name: values.image_name.trim() })}
     >
-      <form className="resource-form" onSubmit={handleSubmit}>
-        <label>
-          <span>Image Name</span>
-          <Input
-            type="text"
-            prefix={<Package size={16} />}
-            value={values.image_name}
-            onChange={(image_name) => setValues({ image_name })}
-            placeholder="ghcr.io/org/image:latest"
-            maxLength={255}
-            required
-          />
-        </label>
-        <div className="modal-actions">
-          <Button onClick={onCancel} disabled={saving}>Cancel</Button>
-          <Button htmlType="submit" theme="solid" type="danger" loading={saving}>Create</Button>
-        </div>
-      </form>
-    </Modal>
+      <label>
+        <span>Image Name</span>
+        <Input prefix={<Package size={16} />} value={values.image_name}
+          placeholder="ghcr.io/org/image:latest" maxLength={255} required
+          onChange={(image_name) => setValues({ image_name })}
+        />
+      </label>
+    </ResourceModal>
   );
 }

@@ -17,6 +17,11 @@ class AgentEventTypeSchema(StrEnum):
     ERROR = "error"
 
 
+class AgentStreamActionSchema(StrEnum):
+    SEND = "send"
+    INTERRUPT = "interrupt"
+
+
 class _AgentScopedEvent(BaseModel):
     agent_name: str = ""
 
@@ -80,6 +85,7 @@ class ErrorEvent(_AgentScopedEvent):
     code: str = ""
 
 
+# everything that shows up in stored history (DoneEvent is a stream control signal only)
 AgentContentEventSchema = Annotated[
     UserMessageEvent
     | TextDeltaEvent
@@ -108,5 +114,21 @@ AgentEventSchema = Annotated[
 ]
 
 
+class AgentStreamSendCommand(BaseModel):
+    action: Literal[AgentStreamActionSchema.SEND] = AgentStreamActionSchema.SEND
+    text: str
+
+
+class AgentStreamInterruptCommand(BaseModel):
+    action: Literal[AgentStreamActionSchema.INTERRUPT] = AgentStreamActionSchema.INTERRUPT
+
+
+AgentStreamCommandSchema = Annotated[
+    AgentStreamSendCommand | AgentStreamInterruptCommand,
+    Field(discriminator="action"),
+]
+
+
 agent_content_event_adapter: TypeAdapter[AgentContentEventSchema] = TypeAdapter(AgentContentEventSchema)
 agent_event_adapter: TypeAdapter[AgentEventSchema] = TypeAdapter(AgentEventSchema)
+agent_stream_command_adapter: TypeAdapter[AgentStreamCommandSchema] = TypeAdapter(AgentStreamCommandSchema)

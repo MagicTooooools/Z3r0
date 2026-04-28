@@ -11,7 +11,7 @@ type SessionListProps = {
   onDelete: (sessionId: string) => void;
 };
 
-const SESSION_TYPE_ICON: Record<SessionType, typeof MessageCircle> = {
+const SESSION_ICON: Record<SessionType, typeof MessageCircle> = {
   chat: MessageCircle,
   project: FolderKanban,
 };
@@ -28,7 +28,7 @@ export function SessionList({ sessions, loading, activeSessionId, onSelect, onDe
             </div>
           ) : (
             sessions.map((session) => {
-              const Icon = SESSION_TYPE_ICON[session.session_type];
+              const Icon = SESSION_ICON[session.session_type] ?? MessageCircle;
               const active = session.session_id === activeSessionId;
               return (
                 <div

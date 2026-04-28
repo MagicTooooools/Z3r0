@@ -5,7 +5,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class SandboxImageStatusSchema(StrEnum):
+# canonical sandbox image status; reused by the model and by the public schema
+class SandboxImageStatus(StrEnum):
     PULLING = "pulling"
     READY = "ready"
     FAILED = "failed"
@@ -20,7 +21,7 @@ class SandboxImageSchema(BaseModel):
     image_name: str
     image_size: int
     image_hash: str
-    status: SandboxImageStatusSchema
+    status: SandboxImageStatus
     created_at: datetime
     updated_at: datetime
 
@@ -37,10 +38,9 @@ class CreateSandboxImageRequest(BaseModel):
         return value
 
 
-# delete sandbox image response schema
+# delete sandbox image response schema (presence implies success)
 class DeleteSandboxImageResponse(BaseModel):
     id: int
-    deleted: bool
 
 
 # query sandbox images response schema

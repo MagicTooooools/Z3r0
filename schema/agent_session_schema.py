@@ -6,8 +6,8 @@ from pydantic import BaseModel
 from schema.agent_event_schema import AgentContentEventSchema
 
 
-# public mirror of model.agent_session_meta_model.SessionType
-class SessionTypeSchema(StrEnum):
+# canonical agent session type; reused by the model and by the public schema
+class SessionType(StrEnum):
     CHAT = "chat"
     PROJECT = "project"
 
@@ -15,7 +15,7 @@ class SessionTypeSchema(StrEnum):
 # agent session summary composed from SDK sessions + session metadata
 class AgentSessionSummarySchema(BaseModel):
     session_id: str
-    session_type: SessionTypeSchema = SessionTypeSchema.CHAT
+    session_type: SessionType = SessionType.CHAT
     title: str = ""
     message_count: int = 0
     created_at: datetime

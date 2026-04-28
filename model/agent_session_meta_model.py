@@ -1,16 +1,14 @@
 from datetime import datetime
-from enum import StrEnum
 
 from sqlmodel import Field, SQLModel
 
-
-class SessionType(StrEnum):
-    CHAT = "chat"
-    PROJECT = "project"
+from schema.agent_session_schema import SessionType
 
 
 class AgentSessionMeta(SQLModel, table=True):
-    """one metadata row per agent session"""
+    """app-level fields the SDK tables do not carry (classification, title).
+
+    sort order and message count come from the SDK tables, not from here."""
 
     __tablename__ = "agent_session_meta"
 
@@ -18,4 +16,3 @@ class AgentSessionMeta(SQLModel, table=True):
     session_type: SessionType = Field(default=SessionType.CHAT, index=True)
     title: str = ""
     created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)

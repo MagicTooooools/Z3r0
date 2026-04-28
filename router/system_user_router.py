@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from handler.system_user_handler import (
     create_system_user_handler,
@@ -7,7 +7,7 @@ from handler.system_user_handler import (
     system_user_login_handler,
     update_system_user_handler,
 )
-from middleware.auth import admin_required, auth_whitelist
+from middleware.auth import require_admin
 from router._responses import COMMON_ERROR_RESPONSES, not_found_response
 from schema.response_schema import CommonResponse
 from schema.system_user_schema import (
@@ -24,29 +24,31 @@ LOGIN_ERROR_RESPONSES = {
     422: {"description": "Validation Error", "model": CommonResponse},
 }
 
+ADMIN_ONLY = [Depends(require_admin)]
 
 router = APIRouter(prefix="/system-users", tags=["system-users"])
 
 
 async def query_system_users_route(
-    page: int = Query(default=1),
-    size: int = Query(default=100),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=100, ge=1, le=100),
     keyword: str = Query(default=""),
 ) -> CommonResponse[QuerySystemUsersResponse]:
-    """query system users"""
     return await query_system_users_handler(page=page, size=size, keyword=keyword)
+
 
 router.add_api_route(
     "",
-    admin_required(create_system_user_handler),
+    create_system_user_handler,
     methods=["POST"],
+    dependencies=ADMIN_ONLY,
     response_model=CommonResponse[SystemUserSchema],
     responses=COMMON_ERROR_RESPONSES,
 )
 
 router.add_api_route(
     "/login",
-    auth_whitelist(system_user_login_handler),
+    system_user_login_handler,
     methods=["POST"],
     response_model=CommonResponse[SystemUserLoginResponse],
     responses=LOGIN_ERROR_RESPONSES,
@@ -54,24 +56,27 @@ router.add_api_route(
 
 router.add_api_route(
     "/{id}",
-    admin_required(delete_system_user_handler),
+    delete_system_user_handler,
     methods=["DELETE"],
+    dependencies=ADMIN_ONLY,
     response_model=CommonResponse[DeleteSystemUserResponse],
     responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE},
 )
 
 router.add_api_route(
     "/{id}",
-    admin_required(update_system_user_handler),
+    update_system_user_handler,
     methods=["PATCH"],
+    dependencies=ADMIN_ONLY,
     response_model=CommonResponse[SystemUserSchema],
     responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE},
 )
 
 router.add_api_route(
     "",
-    admin_required(query_system_users_route),
+    query_system_users_route,
     methods=["GET"],
+    dependencies=ADMIN_ONLY,
     response_model=CommonResponse[QuerySystemUsersResponse],
     responses=COMMON_ERROR_RESPONSES,
 )

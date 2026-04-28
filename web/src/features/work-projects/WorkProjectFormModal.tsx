@@ -1,8 +1,10 @@
-import { Button, Input, Modal, Select, TextArea } from "@douyinfe/semi-ui";
+import { Input, Select, TextArea } from "@douyinfe/semi-ui";
 import { FolderKanban, ScanSearch } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getWorkProjectTypes, isWorkProjectType } from "../../shared/api/contract";
-import type { CreateWorkProjectRequest, WorkProjectType } from "../../shared/api/types";
+import type { CreateWorkProjectRequest } from "../../shared/api/types";
+import { ResourceModal } from "../../shared/components/ResourceModal";
+import { WORK_PROJECT_TYPE_LABEL } from "../../shared/lib/labels";
 
 type WorkProjectFormModalProps = {
   open: boolean;
@@ -11,90 +13,51 @@ type WorkProjectFormModalProps = {
   onSubmit: (payload: CreateWorkProjectRequest) => Promise<void>;
 };
 
-const emptyValues: CreateWorkProjectRequest = {
-  name: "",
-  description: "",
-  type: "penetration_test",
-};
-
-const workProjectTypeLabels = {
-  penetration_test: "Penetration Test",
-  source_code_audit: "Source Code Audit",
-} satisfies Record<WorkProjectType, string>;
-
-function buildPayload(values: CreateWorkProjectRequest): CreateWorkProjectRequest {
-  return {
-    name: values.name.trim(),
-    description: values.description.trim(),
-    type: values.type,
-  };
-}
+const EMPTY: CreateWorkProjectRequest = { name: "", description: "", type: "penetration_test" };
 
 export function WorkProjectFormModal({ open, saving, onCancel, onSubmit }: WorkProjectFormModalProps) {
-  const [values, setValues] = useState<CreateWorkProjectRequest>(emptyValues);
+  const [values, setValues] = useState<CreateWorkProjectRequest>(EMPTY);
   const projectTypes = useMemo(() => getWorkProjectTypes(), []);
 
   useEffect(() => {
-    if (open) {
-      setValues(emptyValues);
-    }
+    if (open) setValues(EMPTY);
   }, [open]);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await onSubmit(buildPayload(values));
-  };
-
-  const handleTypeChange = (type: unknown) => {
-    if (isWorkProjectType(type)) {
-      setValues((current) => ({ ...current, type }));
-    }
-  };
+  const submit = () => onSubmit({
+    name: values.name.trim(),
+    description: values.description.trim(),
+    type: values.type,
+  });
 
   return (
-    <Modal
+    <ResourceModal
+      open={open}
       title="Create Work Project"
-      visible={open}
-      onCancel={onCancel}
-      footer={null}
+      saving={saving}
+      submitLabel="Create"
       width={560}
-      maskClosable={!saving}
+      onCancel={onCancel}
+      onSubmit={submit}
     >
-      <form className="resource-form" onSubmit={handleSubmit}>
-        <label>
-          <span>Name</span>
-          <Input
-            type="text"
-            prefix={<FolderKanban size={16} />}
-            value={values.name}
-            onChange={(name) => setValues((current) => ({ ...current, name }))}
-            maxLength={255}
-            required
-          />
-        </label>
-        <label>
-          <span>Type</span>
-          <Select
-            prefix={<ScanSearch size={16} />}
-            value={values.type}
-            onChange={handleTypeChange}
-            optionList={projectTypes.map((type) => ({ label: workProjectTypeLabels[type], value: type }))}
-          />
-        </label>
-        <label>
-          <span>Description</span>
-          <TextArea
-            value={values.description}
-            onChange={(description) => setValues((current) => ({ ...current, description }))}
-            maxLength={2000}
-            autosize={{ minRows: 3, maxRows: 6 }}
-          />
-        </label>
-        <div className="modal-actions">
-          <Button onClick={onCancel} disabled={saving}>Cancel</Button>
-          <Button htmlType="submit" theme="solid" type="danger" loading={saving}>Create</Button>
-        </div>
-      </form>
-    </Modal>
+      <label>
+        <span>Name</span>
+        <Input prefix={<FolderKanban size={16} />} value={values.name} maxLength={255} required
+          onChange={(name) => setValues((v) => ({ ...v, name }))}
+        />
+      </label>
+      <label>
+        <span>Type</span>
+        <Select prefix={<ScanSearch size={16} />} value={values.type}
+          onChange={(type) => isWorkProjectType(type) && setValues((v) => ({ ...v, type }))}
+          optionList={projectTypes.map((type) => ({ label: WORK_PROJECT_TYPE_LABEL[type], value: type }))}
+        />
+      </label>
+      <label>
+        <span>Description</span>
+        <TextArea value={values.description} maxLength={2000} autosize={{ minRows: 3, maxRows: 6 }}
+          onChange={(description) => setValues((v) => ({ ...v, description }))}
+        />
+      </label>
+    </ResourceModal>
   );
 }

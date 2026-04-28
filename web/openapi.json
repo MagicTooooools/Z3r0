@@ -18,7 +18,7 @@
             "type": "string"
           },
           "session_type": {
-            "$ref": "#/components/schemas/SessionTypeSchema",
+            "$ref": "#/components/schemas/SessionType",
             "default": "chat"
           },
           "title": {
@@ -38,6 +38,54 @@
           "updated_at"
         ],
         "title": "AgentSessionSummarySchema",
+        "type": "object"
+      },
+      "AgentStreamCommandSchema": {
+        "discriminator": {
+          "mapping": {
+            "interrupt": "#/components/schemas/AgentStreamInterruptCommand",
+            "send": "#/components/schemas/AgentStreamSendCommand"
+          },
+          "propertyName": "action"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AgentStreamSendCommand"
+          },
+          {
+            "$ref": "#/components/schemas/AgentStreamInterruptCommand"
+          }
+        ]
+      },
+      "AgentStreamInterruptCommand": {
+        "properties": {
+          "action": {
+            "const": "interrupt",
+            "default": "interrupt",
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "title": "AgentStreamInterruptCommand",
+        "type": "object"
+      },
+      "AgentStreamSendCommand": {
+        "properties": {
+          "action": {
+            "const": "send",
+            "default": "send",
+            "title": "Action",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AgentStreamSendCommand",
         "type": "object"
       },
       "CommonResponse": {
@@ -465,7 +513,7 @@
             "type": "string"
           },
           "role": {
-            "$ref": "#/components/schemas/SystemUserRoleSchema",
+            "$ref": "#/components/schemas/SystemUserRole",
             "default": "user"
           },
           "username": {
@@ -497,7 +545,7 @@
             "type": "string"
           },
           "type": {
-            "$ref": "#/components/schemas/WorkProjectTypeSchema",
+            "$ref": "#/components/schemas/WorkProjectType",
             "default": "penetration_test"
           }
         },
@@ -509,56 +557,58 @@
       },
       "DeleteSandboxImageResponse": {
         "properties": {
-          "deleted": {
-            "title": "Deleted",
-            "type": "boolean"
-          },
           "id": {
             "title": "Id",
             "type": "integer"
           }
         },
         "required": [
-          "id",
-          "deleted"
+          "id"
         ],
         "title": "DeleteSandboxImageResponse",
         "type": "object"
       },
       "DeleteSystemUserResponse": {
         "properties": {
-          "deleted": {
-            "title": "Deleted",
-            "type": "boolean"
-          },
           "id": {
             "title": "Id",
             "type": "integer"
           }
         },
         "required": [
-          "id",
-          "deleted"
+          "id"
         ],
         "title": "DeleteSystemUserResponse",
         "type": "object"
       },
       "DeleteWorkProjectResponse": {
         "properties": {
-          "deleted": {
-            "title": "Deleted",
-            "type": "boolean"
-          },
           "id": {
             "title": "Id",
             "type": "integer"
           }
         },
         "required": [
-          "id",
-          "deleted"
+          "id"
         ],
         "title": "DeleteWorkProjectResponse",
+        "type": "object"
+      },
+      "DoneEvent": {
+        "properties": {
+          "agent_name": {
+            "default": "",
+            "title": "Agent Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "done",
+            "default": "done",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "DoneEvent",
         "type": "object"
       },
       "ErrorEvent": {
@@ -795,7 +845,7 @@
             "type": "integer"
           },
           "status": {
-            "$ref": "#/components/schemas/SandboxImageStatusSchema"
+            "$ref": "#/components/schemas/SandboxImageStatus"
           },
           "updated_at": {
             "format": "date-time",
@@ -815,22 +865,22 @@
         "title": "SandboxImageSchema",
         "type": "object"
       },
-      "SandboxImageStatusSchema": {
+      "SandboxImageStatus": {
         "enum": [
           "pulling",
           "ready",
           "failed",
           "canceled"
         ],
-        "title": "SandboxImageStatusSchema",
+        "title": "SandboxImageStatus",
         "type": "string"
       },
-      "SessionTypeSchema": {
+      "SessionType": {
         "enum": [
           "chat",
           "project"
         ],
-        "title": "SessionTypeSchema",
+        "title": "SessionType",
         "type": "string"
       },
       "SystemUserLoginRequest": {
@@ -868,12 +918,12 @@
         "title": "SystemUserLoginResponse",
         "type": "object"
       },
-      "SystemUserRoleSchema": {
+      "SystemUserRole": {
         "enum": [
           "admin",
           "user"
         ],
-        "title": "SystemUserRoleSchema",
+        "title": "SystemUserRole",
         "type": "string"
       },
       "SystemUserSchema": {
@@ -892,7 +942,7 @@
             "type": "integer"
           },
           "role": {
-            "$ref": "#/components/schemas/SystemUserRoleSchema"
+            "$ref": "#/components/schemas/SystemUserRole"
           },
           "updated_at": {
             "format": "date-time",
@@ -1129,7 +1179,7 @@
           "role": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SystemUserRoleSchema"
+                "$ref": "#/components/schemas/SystemUserRole"
               },
               {
                 "type": "null"
@@ -1196,10 +1246,10 @@
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/WorkProjectStatusSchema"
+            "$ref": "#/components/schemas/WorkProjectStatus"
           },
           "type": {
-            "$ref": "#/components/schemas/WorkProjectTypeSchema"
+            "$ref": "#/components/schemas/WorkProjectType"
           },
           "updated_at": {
             "format": "date-time",
@@ -1220,22 +1270,22 @@
         "title": "WorkProjectSchema",
         "type": "object"
       },
-      "WorkProjectStatusSchema": {
+      "WorkProjectStatus": {
         "enum": [
           "working",
           "completed",
           "failed",
           "canceled"
         ],
-        "title": "WorkProjectStatusSchema",
+        "title": "WorkProjectStatus",
         "type": "string"
       },
-      "WorkProjectTypeSchema": {
+      "WorkProjectType": {
         "enum": [
           "penetration_test",
           "source_code_audit"
         ],
-        "title": "WorkProjectTypeSchema",
+        "title": "WorkProjectType",
         "type": "string"
       }
     },
@@ -1255,7 +1305,6 @@
   "paths": {
     "/api/agent-sessions": {
       "get": {
-        "description": "list recent agent sessions",
         "operationId": "list_agent_sessions_route_api_agent_sessions_get",
         "parameters": [
           {
@@ -1264,6 +1313,8 @@
             "required": false,
             "schema": {
               "default": 100,
+              "maximum": 100,
+              "minimum": 1,
               "title": "Limit",
               "type": "integer"
             }
@@ -1290,16 +1341,6 @@
             },
             "description": "Unauthorized"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommonResponse_Any_"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
           "422": {
             "content": {
               "application/json": {
@@ -1322,8 +1363,7 @@
         ]
       },
       "post": {
-        "description": "allocate a fresh server-generated session_id",
-        "operationId": "create_agent_session_route_api_agent_sessions_post",
+        "operationId": "create_agent_session_handler_api_agent_sessions_post",
         "responses": {
           "200": {
             "content": {
@@ -1345,16 +1385,6 @@
             },
             "description": "Unauthorized"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommonResponse_Any_"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
           "422": {
             "content": {
               "application/json": {
@@ -1371,7 +1401,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Create Agent Session Route",
+        "summary": "Create Agent Session Handler",
         "tags": [
           "agent-sessions"
         ]
@@ -1379,8 +1409,7 @@
     },
     "/api/agent-sessions/{session_id}": {
       "delete": {
-        "description": "delete an agent session and its SDK history",
-        "operationId": "delete_agent_session_route_api_agent_sessions__session_id__delete",
+        "operationId": "delete_agent_session_handler_api_agent_sessions__session_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -1413,16 +1442,6 @@
             },
             "description": "Unauthorized"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommonResponse_Any_"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
           "404": {
             "content": {
               "application/json": {
@@ -1449,7 +1468,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Delete Agent Session Route",
+        "summary": "Delete Agent Session Handler",
         "tags": [
           "agent-sessions"
         ]
@@ -1457,7 +1476,6 @@
     },
     "/api/agent-sessions/{session_id}/events": {
       "get": {
-        "description": "replay the unified event stream of an agent session",
         "operationId": "list_agent_events_route_api_agent_sessions__session_id__events_get",
         "parameters": [
           {
@@ -1491,16 +1509,6 @@
             },
             "description": "Unauthorized"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommonResponse_Any_"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
           "422": {
             "content": {
               "application/json": {
@@ -1525,7 +1533,6 @@
     },
     "/api/sandbox-images": {
       "get": {
-        "description": "query sandbox images",
         "operationId": "query_sandbox_images_route_api_sandbox_images_get",
         "parameters": [
           {
@@ -1573,16 +1580,6 @@
             },
             "description": "Successful Response"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommonResponse_Any_"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -1625,7 +1622,6 @@
         ]
       },
       "post": {
-        "description": "create sandbox image",
         "operationId": "create_sandbox_image_handler_api_sandbox_images_post",
         "requestBody": {
           "content": {
@@ -1692,7 +1688,6 @@
     },
     "/api/sandbox-images/{id}": {
       "delete": {
-        "description": "delete sandbox image",
         "operationId": "delete_sandbox_image_handler_api_sandbox_images__id__delete",
         "parameters": [
           {
@@ -1770,7 +1765,6 @@
     },
     "/api/sandbox-images/{id}/cancel": {
       "post": {
-        "description": "cancel active sandbox image pull",
         "operationId": "cancel_sandbox_image_pull_handler_api_sandbox_images__id__cancel_post",
         "parameters": [
           {
@@ -1858,7 +1852,6 @@
     },
     "/api/sandbox-images/{id}/retry": {
       "post": {
-        "description": "retry failed sandbox image pull",
         "operationId": "retry_sandbox_image_handler_api_sandbox_images__id__retry_post",
         "parameters": [
           {
@@ -1946,7 +1939,6 @@
     },
     "/api/system-users": {
       "get": {
-        "description": "query system users",
         "operationId": "query_system_users_route_api_system_users_get",
         "parameters": [
           {
@@ -1994,16 +1986,6 @@
             },
             "description": "Successful Response"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommonResponse_Any_"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2046,7 +2028,6 @@
         ]
       },
       "post": {
-        "description": "create system user",
         "operationId": "create_system_user_handler_api_system_users_post",
         "requestBody": {
           "content": {
@@ -2113,7 +2094,6 @@
     },
     "/api/system-users/login": {
       "post": {
-        "description": "system user login",
         "operationId": "system_user_login_handler_api_system_users_login_post",
         "requestBody": {
           "content": {
@@ -2165,7 +2145,6 @@
     },
     "/api/system-users/{id}": {
       "delete": {
-        "description": "delete system user",
         "operationId": "delete_system_user_handler_api_system_users__id__delete",
         "parameters": [
           {
@@ -2241,7 +2220,6 @@
         ]
       },
       "patch": {
-        "description": "update system user",
         "operationId": "update_system_user_handler_api_system_users__id__patch",
         "parameters": [
           {
@@ -2329,7 +2307,6 @@
     },
     "/api/work-projects": {
       "get": {
-        "description": "query work projects",
         "operationId": "query_work_projects_route_api_work_projects_get",
         "parameters": [
           {
@@ -2377,16 +2354,6 @@
             },
             "description": "Successful Response"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommonResponse_Any_"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -2429,7 +2396,6 @@
         ]
       },
       "post": {
-        "description": "create work project",
         "operationId": "create_work_project_handler_api_work_projects_post",
         "requestBody": {
           "content": {
@@ -2496,7 +2462,6 @@
     },
     "/api/work-projects/{id}": {
       "delete": {
-        "description": "delete work project",
         "operationId": "delete_work_project_handler_api_work_projects__id__delete",
         "parameters": [
           {
@@ -2574,7 +2539,6 @@
     },
     "/api/work-projects/{id}/cancel": {
       "post": {
-        "description": "cancel active work project",
         "operationId": "cancel_work_project_handler_api_work_projects__id__cancel_post",
         "parameters": [
           {
@@ -2662,7 +2626,6 @@
     },
     "/api/work-projects/{id}/retry": {
       "post": {
-        "description": "retry failed work project",
         "operationId": "retry_work_project_handler_api_work_projects__id__retry_post",
         "parameters": [
           {

@@ -1,58 +1,22 @@
 import { Avatar, Button } from "@douyinfe/semi-ui";
 import { Boxes, FolderKanban, LogOut, MessageSquareCode, ShieldCheck, Users } from "lucide-react";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { SessionList } from "../../features/playground/SessionList";
-import { useAgentSession } from "../../features/playground/useAgentSession";
-import { deleteAgentSession, listAgentSessions } from "../../shared/api/agentSessions";
-import { showApiError, showApiSuccess } from "../../shared/api/feedback";
-import type { AgentSessionSummary } from "../../shared/api/types";
+import { useAgentSessionContext } from "../../features/playground/AgentSessionProvider";
 import { useAuth } from "../../shared/auth/AuthProvider";
 
-type AgentSessionRuntime = ReturnType<typeof useAgentSession>;
-
-type AdminLayoutContext = {
-  setHeaderActions: (actions: ReactNode) => void;
-  activeAgentSessionId: string | null;
-  setActiveAgentSessionId: (sessionId: string | null) => void;
-  refreshAgentSessions: () => Promise<void>;
-  agentSession: AgentSessionRuntime;
-};
+type AdminLayoutContext = { setHeaderActions: (actions: ReactNode) => void };
 
 export function useAdminHeaderActions() {
   return useOutletContext<AdminLayoutContext>().setHeaderActions;
 }
 
-export function useAdminAgentSession() {
-  const { activeAgentSessionId, setActiveAgentSessionId, refreshAgentSessions, agentSession } = useOutletContext<AdminLayoutContext>();
-  return { activeAgentSessionId, setActiveAgentSessionId, refreshAgentSessions, agentSession };
-}
-
 const navItems = [
-  {
-    path: "/playground",
-    label: "Playground",
-    eyebrow: "Agent Workbench",
-    icon: MessageSquareCode,
-  },
-  {
-    path: "/work-projects",
-    label: "Work Projects",
-    eyebrow: "Project Operations",
-    icon: FolderKanban,
-  },
-  {
-    path: "/sandbox-images",
-    label: "Sandbox Images",
-    eyebrow: "Execution Baseline",
-    icon: Boxes,
-  },
-  {
-    path: "/system-users",
-    label: "System Users",
-    eyebrow: "Access Control",
-    icon: Users,
-  },
+  { path: "/playground", label: "Playground", eyebrow: "Agent Workbench", icon: MessageSquareCode },
+  { path: "/work-projects", label: "Work Projects", eyebrow: "Project Operations", icon: FolderKanban },
+  { path: "/sandbox-images", label: "Sandbox Images", eyebrow: "Execution Baseline", icon: Boxes },
+  { path: "/system-users", label: "System Users", eyebrow: "Access Control", icon: Users },
 ];
 
 export function AdminLayout() {
@@ -60,58 +24,20 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [headerActions, setHeaderActionsState] = useState<ReactNode>(null);
-  const [agentSessions, setAgentSessions] = useState<AgentSessionSummary[]>([]);
-  const [agentSessionsLoading, setAgentSessionsLoading] = useState(false);
-  const [activeAgentSessionId, setActiveAgentSessionId] = useState<string | null>(null);
-  const agentSession = useAgentSession(activeAgentSessionId);
+  const { sessions, sessionsLoading, activeSessionId, selectSession, deleteSession } = useAgentSessionContext();
 
   const setHeaderActions = useCallback((actions: ReactNode) => {
     setHeaderActionsState(() => actions);
   }, []);
 
-  const refreshAgentSessions = useCallback(async () => {
-    setAgentSessionsLoading(true);
-    try {
-      const response = await listAgentSessions();
-      setAgentSessions(response.data?.items ?? []);
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setAgentSessionsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshAgentSessions();
-  }, [refreshAgentSessions]);
-
   const handleSelectAgentSession = useCallback((sessionId: string) => {
-    setActiveAgentSessionId(sessionId);
+    selectSession(sessionId);
     if (!location.pathname.startsWith("/playground")) {
-      navigate("/playground", { state: { sessionId } });
+      navigate("/playground");
     }
-  }, [location.pathname, navigate]);
+  }, [location.pathname, navigate, selectSession]);
 
-  const handleDeleteAgentSession = useCallback(async (sessionId: string) => {
-    try {
-      const response = await deleteAgentSession(sessionId);
-      showApiSuccess(response);
-      if (activeAgentSessionId === sessionId) {
-        setActiveAgentSessionId(null);
-      }
-      await refreshAgentSessions();
-    } catch (error) {
-      showApiError(error);
-    }
-  }, [activeAgentSessionId, refreshAgentSessions]);
-
-  const outletContext: AdminLayoutContext = {
-    setHeaderActions,
-    activeAgentSessionId,
-    setActiveAgentSessionId,
-    refreshAgentSessions,
-    agentSession,
-  };
+  const outletContext: AdminLayoutContext = { setHeaderActions };
 
   const handleSignOut = () => {
     signOut();
@@ -124,9 +50,7 @@ export function AdminLayout() {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="brand-lockup">
-          <div className="brand-mark">
-            <ShieldCheck size={22} />
-          </div>
+          <div className="brand-mark"><ShieldCheck size={22} /></div>
           <div>
             <div className="brand-name">Z3r0</div>
             <div className="brand-kicker">Red Team Collaboration Platform</div>
@@ -141,11 +65,11 @@ export function AdminLayout() {
             </NavLink>
             <div className="admin-sidebar-secondary">
               <SessionList
-                sessions={agentSessions}
-                loading={agentSessionsLoading}
-                activeSessionId={activeAgentSessionId}
+                sessions={sessions}
+                loading={sessionsLoading}
+                activeSessionId={activeSessionId}
                 onSelect={handleSelectAgentSession}
-                onDelete={handleDeleteAgentSession}
+                onDelete={deleteSession}
               />
             </div>
           </div>
@@ -173,9 +97,7 @@ export function AdminLayout() {
           <div className="topbar-actions">
             {headerActions ? <div className="topbar-resource-actions">{headerActions}</div> : null}
             <div className="topbar-session-actions">
-              <div className="signal-pill">
-                <span /> Secure session
-              </div>
+              <div className="signal-pill"><span /> Secure session</div>
               <Avatar size="small" color="red">A</Avatar>
               <Button icon={<LogOut size={16} />} theme="borderless" onClick={handleSignOut} aria-label="Sign out" />
             </div>
