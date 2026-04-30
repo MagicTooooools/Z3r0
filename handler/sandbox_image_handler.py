@@ -25,8 +25,11 @@ async def create_sandbox_image_handler(request: CreateSandboxImageRequest) -> Co
 
 
 async def delete_sandbox_image_handler(id: int) -> CommonResponse:
-    if not await delete_sandbox_image(id):
+    result = await delete_sandbox_image(id)
+    if result.not_found:
         return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="sandbox image not found")
+    if not result.deleted:
+        return CommonResponse(code=HTTPStatus.BAD_REQUEST.value, message=result.message)
     return CommonResponse(data=DeleteSandboxImageResponse(id=id))
 
 

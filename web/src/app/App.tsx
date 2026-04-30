@@ -3,7 +3,9 @@ import { AgentSessionProvider } from "../features/playground/AgentSessionProvide
 import { AuthProvider, useAuth } from "../shared/auth/AuthProvider";
 import { AdminLayout } from "./layouts/AdminLayout";
 import { LoginPage } from "../features/auth/LoginPage";
+import { ContainerShellProvider } from "../features/container-shell/ContainerShellProvider";
 import { PlaygroundPage } from "../features/playground/PlaygroundPage";
+import { SandboxContainersPage } from "../features/sandbox-containers/SandboxContainersPage";
 import { SandboxImagesPage } from "../features/sandbox-images/SandboxImagesPage";
 import { SystemUsersPage } from "../features/system-users/SystemUsersPage";
 import { WorkProjectsPage } from "../features/work-projects/WorkProjectsPage";
@@ -34,10 +36,11 @@ export function App() {
             <Route path="/login" element={<LoginPage />} />
           </Route>
           <Route element={<ProtectedRoute />}>
-            <Route element={<AgentSessionProvider><AdminLayout /></AgentSessionProvider>}>
+            <Route element={<AgentSessionProvider><ContainerShellProvider><AdminLayout /></ContainerShellProvider></AgentSessionProvider>}>
               <Route index element={<Navigate to="/system-users" replace />} />
               <Route path="/playground" element={<PlaygroundPage />} />
               <Route path="/sandbox-images" element={<SandboxImagesPage />} />
+              <Route path="/sandbox-containers" element={<SandboxContainersPage />} />
               <Route path="/system-users" element={<SystemUsersPage />} />
               <Route path="/work-projects" element={<WorkProjectsPage />} />
             </Route>

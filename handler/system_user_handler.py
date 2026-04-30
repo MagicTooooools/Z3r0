@@ -30,8 +30,11 @@ async def create_system_user_handler(request: CreateSystemUserRequest) -> Common
 
 
 async def delete_system_user_handler(id: int) -> CommonResponse:
-    if not await delete_system_user(id):
+    result = await delete_system_user(id)
+    if result.not_found:
         return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="system user not found")
+    if not result.deleted:
+        return CommonResponse(code=HTTPStatus.BAD_REQUEST.value, message=result.message)
     return CommonResponse(data=DeleteSystemUserResponse(id=id))
 
 

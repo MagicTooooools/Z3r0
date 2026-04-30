@@ -6,6 +6,7 @@ type ResourceModalProps = {
   title: string;
   saving: boolean;
   submitLabel: string;
+  submitDisabled?: boolean;
   width?: number;
   onCancel: () => void;
   onSubmit: () => void | Promise<void>;
@@ -17,6 +18,7 @@ export function ResourceModal({
   title,
   saving,
   submitLabel,
+  submitDisabled = false,
   width = 520,
   onCancel,
   onSubmit,
@@ -33,7 +35,7 @@ export function ResourceModal({
         {children}
         <div className="modal-actions">
           <Button onClick={onCancel} disabled={saving}>Cancel</Button>
-          <Button htmlType="submit" theme="solid" type="danger" loading={saving}>{submitLabel}</Button>
+          <Button htmlType="submit" theme="solid" type="danger" loading={saving} disabled={submitDisabled}>{submitLabel}</Button>
         </div>
       </form>
     </Modal>

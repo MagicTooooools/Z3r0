@@ -1,5 +1,5 @@
 import { Avatar, Button } from "@douyinfe/semi-ui";
-import { Boxes, FolderKanban, LogOut, MessageSquareCode, ShieldCheck, Users } from "lucide-react";
+import { Box, Boxes, FolderKanban, LogOut, MessageSquareCode, ShieldCheck, Users } from "lucide-react";
 import { ReactNode, useCallback, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { SessionList } from "../../features/playground/SessionList";
@@ -16,6 +16,7 @@ const navItems = [
   { path: "/playground", label: "Playground", eyebrow: "Agent Workbench", icon: MessageSquareCode },
   { path: "/work-projects", label: "Work Projects", eyebrow: "Project Operations", icon: FolderKanban },
   { path: "/sandbox-images", label: "Sandbox Images", eyebrow: "Execution Baseline", icon: Boxes },
+  { path: "/sandbox-containers", label: "Sandbox Containers", eyebrow: "Runtime Instances", icon: Box },
   { path: "/system-users", label: "System Users", eyebrow: "Access Control", icon: Users },
 ];
 

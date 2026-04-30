@@ -50,6 +50,23 @@ export type CancelSandboxImageResponse = JsonResponse<paths["/api/sandbox-images
 export type RetrySandboxImagePathParams = PathParameters<paths["/api/sandbox-images/{id}/retry"]["post"]>;
 export type RetrySandboxImageResponse = JsonResponse<paths["/api/sandbox-images/{id}/retry"]["post"]>;
 
+export type QuerySandboxContainersParams = QueryParameters<paths["/api/sandbox-containers"]["get"]>;
+export type QuerySandboxContainersResponse = JsonResponse<paths["/api/sandbox-containers"]["get"]>;
+export type QuerySandboxContainersData = NonNullable<QuerySandboxContainersResponse["data"]>;
+export type SandboxContainer = QuerySandboxContainersData["items"][number];
+export type SandboxContainerStatus = components["schemas"]["SandboxContainerStatus"];
+export type SandboxContainerPortMapping = components["schemas"]["SandboxContainerPortMapping"];
+
+export type CreateSandboxContainerRequest = JsonRequestBody<paths["/api/sandbox-containers"]["post"]>;
+export type CreateSandboxContainerResponse = JsonResponse<paths["/api/sandbox-containers"]["post"]>;
+
+export type SandboxContainerPathParams = PathParameters<paths["/api/sandbox-containers/{id}"]["delete"]>;
+export type DeleteSandboxContainerResponse = JsonResponse<paths["/api/sandbox-containers/{id}"]["delete"]>;
+export type StartSandboxContainerPathParams = PathParameters<paths["/api/sandbox-containers/{id}/start"]["post"]>;
+export type StartSandboxContainerResponse = JsonResponse<paths["/api/sandbox-containers/{id}/start"]["post"]>;
+export type StopSandboxContainerPathParams = PathParameters<paths["/api/sandbox-containers/{id}/stop"]["post"]>;
+export type StopSandboxContainerResponse = JsonResponse<paths["/api/sandbox-containers/{id}/stop"]["post"]>;
+
 export type QueryWorkProjectsParams = QueryParameters<paths["/api/work-projects"]["get"]>;
 export type QueryWorkProjectsResponse = JsonResponse<paths["/api/work-projects"]["get"]>;
 export type QueryWorkProjectsData = NonNullable<QueryWorkProjectsResponse["data"]>;

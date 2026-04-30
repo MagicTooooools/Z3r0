@@ -8,7 +8,7 @@ from handler.system_user_handler import (
     update_system_user_handler,
 )
 from middleware.auth import require_admin
-from router._responses import COMMON_ERROR_RESPONSES, not_found_response
+from router._responses import BAD_REQUEST_RESPONSE, COMMON_ERROR_RESPONSES, not_found_response
 from schema.response_schema import CommonResponse
 from schema.system_user_schema import (
     DeleteSystemUserResponse,
@@ -60,7 +60,7 @@ router.add_api_route(
     methods=["DELETE"],
     dependencies=ADMIN_ONLY,
     response_model=CommonResponse[DeleteSystemUserResponse],
-    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE},
+    responses={**COMMON_ERROR_RESPONSES, **BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 
 router.add_api_route(

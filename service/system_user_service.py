@@ -1,4 +1,5 @@
 import hmac
+from dataclasses import dataclass
 from hashlib import sha256
 from datetime import datetime, timedelta
 
@@ -9,11 +10,19 @@ from sqlmodel import select
 from config import get_config
 from database import get_async_session
 from logger import get_logger
+from model.sandbox_container_model import SandboxContainer
 from model.system_user_model import SystemUser
 from schema.system_user_schema import SystemUserRole
 
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class DeleteSystemUserResult:
+    deleted: bool
+    not_found: bool = False
+    message: str = ""
 
 
 def _encrypt_password(password: str) -> str:
@@ -48,18 +57,25 @@ async def create_system_user(
     return system_user
 
 
-async def delete_system_user(id: int) -> bool:
+async def delete_system_user(id: int) -> DeleteSystemUserResult:
     """delete system user"""
     async with get_async_session() as session:
         system_user = await session.get(SystemUser, id)
         if system_user is None:
-            return False
+            return DeleteSystemUserResult(deleted=False, not_found=True, message="system user not found")
+
+        result = await session.exec(select(SandboxContainer.id).where(SandboxContainer.owner_id == id).limit(1))
+        if result.first() is not None:
+            return DeleteSystemUserResult(
+                deleted=False,
+                message="system user owns sandbox containers",
+            )
 
         await session.delete(system_user)
         await session.commit()
 
     logger.info("system user deleted: %s", id)
-    return True
+    return DeleteSystemUserResult(deleted=True)
 
 
 async def update_system_user(

@@ -1,0 +1,222 @@
+import { Button, Popconfirm, Tag, Tooltip } from "@douyinfe/semi-ui";
+import { Box, Boxes, Fingerprint, Play, Plus, RefreshCw, Square, SquareTerminal, Trash2, User } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
+import { createSandboxContainer, deleteSandboxContainer, querySandboxContainers, startSandboxContainer, stopSandboxContainer } from "../../shared/api/sandboxContainers";
+import { querySandboxImages } from "../../shared/api/sandboxImages";
+import { showApiError, showApiSuccess } from "../../shared/api/feedback";
+import type { CreateSandboxContainerRequest, SandboxContainer, SandboxImage } from "../../shared/api/types";
+import { ResourcePageShell } from "../../shared/components/ResourcePageShell";
+import { ResourceTable, type ResourceColumn } from "../../shared/components/ResourceTable";
+import { usePagedResourceList } from "../../shared/hooks/usePagedResourceList";
+import { useResourceAction } from "../../shared/hooks/useResourceAction";
+import { formatDateTime } from "../../shared/lib/date";
+import { SANDBOX_CONTAINER_STATUS_COLOR, SANDBOX_CONTAINER_STATUS_LABEL } from "../../shared/lib/labels";
+import { useContainerShell } from "../container-shell/ContainerShellProvider";
+import { SandboxContainerFormModal } from "./SandboxContainerFormModal";
+
+const DEFAULT_PAGE_SIZE = 10;
+
+export function SandboxContainersPage() {
+  const {
+    items: containers, page, keyword, loading, loadItems: loadContainers,
+    setKeyword, search, previous, next, canGoBack, canGoNext,
+  } = usePagedResourceList<SandboxContainer>({ pageSize: DEFAULT_PAGE_SIZE, query: querySandboxContainers });
+  const [saving, setSaving] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [images, setImages] = useState<SandboxImage[]>([]);
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const setHeaderActions = useAdminHeaderActions();
+  const { openShell } = useContainerShell();
+
+  const loadReadyImages = useCallback(async () => {
+    setImagesLoading(true);
+    try {
+      const response = await querySandboxImages({ page: 1, size: 100, keyword: "" });
+      setImages(response.data?.items || []);
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      setImagesLoading(false);
+    }
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    await loadContainers();
+    await loadReadyImages();
+  }, [loadContainers, loadReadyImages]);
+
+  const { run: startContainer, busyId: startingId } = useResourceAction<SandboxContainer>(
+    (container) => startSandboxContainer(container.id), loadContainers,
+  );
+  const { run: stopContainer, busyId: stoppingId } = useResourceAction<SandboxContainer>(
+    (container) => stopSandboxContainer(container.id), loadContainers,
+  );
+  const { run: deleteContainer, busyId: deletingId } = useResourceAction<SandboxContainer>(
+    (container) => deleteSandboxContainer(container.id), loadContainers,
+  );
+
+  useEffect(() => {
+    void loadReadyImages();
+  }, [loadReadyImages]);
+
+  useEffect(() => {
+    setHeaderActions(
+      <>
+        <Button icon={<RefreshCw size={16} />} onClick={() => void refreshAll()} loading={loading || imagesLoading} aria-label="Refresh sandbox containers" />
+        <Button icon={<Plus size={16} />} theme="solid" type="danger" onClick={() => setModalOpen(true)}>
+          Create Container
+        </Button>
+      </>,
+    );
+    return () => setHeaderActions(null);
+  }, [imagesLoading, loading, refreshAll, setHeaderActions]);
+
+  const summary = useMemo(
+    () => containers.reduce(
+      (acc, container) => ({
+        running: acc.running + (container.status === "running" ? 1 : 0),
+        created: acc.created + (container.status === "created" ? 1 : 0),
+        stopped: acc.stopped + (container.status === "stopped" ? 1 : 0),
+      }),
+      { running: 0, created: 0, stopped: 0 },
+    ),
+    [containers],
+  );
+
+  const handleCreate = async (payload: CreateSandboxContainerRequest) => {
+    setSaving(true);
+    try {
+      const response = await createSandboxContainer(payload);
+      showApiSuccess(response);
+      setModalOpen(false);
+      await loadContainers();
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const columns: ResourceColumn<SandboxContainer>[] = [
+    {
+      key: "container", header: "Container", width: "minmax(0, 0.62fr)",
+      render: (container) => (
+        <div className="container-identity">
+          <div className="resource-avatar"><Box size={18} /></div>
+          <div>
+            <strong>{container.container_name}</strong>
+            <span><Fingerprint size={13} />{renderContainerHash(container.container_hash)}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "status", header: "Status", width: "84px",
+      render: (container) => (
+        <Tag color={SANDBOX_CONTAINER_STATUS_COLOR[container.status]}>{SANDBOX_CONTAINER_STATUS_LABEL[container.status]}</Tag>
+      ),
+    },
+    {
+      key: "image", header: "Image", width: "minmax(0, 0.62fr)",
+      render: (container) => <div className="resource-description" title={container.image_name}>{container.image_name}</div>,
+    },
+    {
+      key: "owner", header: "Owner", width: "minmax(0, 0.48fr)",
+      render: (container) => <span className="owner-cell"><User size={13} />{container.owner_username}</span>,
+    },
+    {
+      key: "ports", header: "Ports", width: "minmax(0, 0.56fr)",
+      render: (container) => renderPortMappings(container),
+    },
+    { key: "updated", header: "Updated", width: "180px", render: (c) => formatDateTime(c.updated_at) },
+    {
+      key: "actions", header: "Actions", width: "120px",
+      render: (container) => (
+        <div className="row-actions">
+          <Button icon={<SquareTerminal size={15} />} theme="borderless"
+            disabled={container.status !== "running" || !container.container_hash}
+            aria-label={`Connect shell for ${container.container_name}`} onClick={() => openShell(container)}
+          />
+          <Button icon={<Play size={15} />} theme="borderless" type="primary"
+            disabled={container.status !== "created" && container.status !== "stopped"}
+            loading={startingId === container.id}
+            aria-label={`Start ${container.container_name}`} onClick={() => void startContainer(container)}
+          />
+          <Button icon={<Square size={15} />} theme="borderless"
+            disabled={container.status !== "running"} loading={stoppingId === container.id}
+            aria-label={`Stop ${container.container_name}`} onClick={() => void stopContainer(container)}
+          />
+          <Popconfirm title="Delete container" content={`Delete ${container.container_name}?`} okType="danger" onConfirm={() => void deleteContainer(container)}>
+            <Button icon={<Trash2 size={15} />} theme="borderless" type="danger"
+              loading={deletingId === container.id} aria-label={`Delete ${container.container_name}`}
+            />
+          </Popconfirm>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <ResourcePageShell
+        searchPlaceholder="Search container, image, owner, ports, or status"
+        keyword={keyword}
+        loading={loading}
+        metrics={[
+          { label: "Total loaded", value: containers.length },
+          { label: "Running", value: summary.running },
+          { label: "Created", value: summary.created },
+          { label: "Stopped", value: summary.stopped },
+        ]}
+        empty={containers.length === 0}
+        emptyIcon={<Boxes size={42} />}
+        emptyTitle="No containers found"
+        page={page}
+        canGoBack={canGoBack}
+        canGoNext={canGoNext}
+        onKeywordChange={setKeyword}
+        onSearch={search}
+        onPrevious={previous}
+        onNext={next}
+      >
+        <ResourceTable<SandboxContainer>
+          ariaLabel="Sandbox containers"
+          className="sandbox-containers-table"
+          columns={columns}
+          rows={containers}
+          rowKey={(container) => container.id}
+        />
+      </ResourcePageShell>
+
+      <SandboxContainerFormModal
+        open={modalOpen}
+        saving={saving}
+        images={images}
+        imagesLoading={imagesLoading}
+        onCancel={() => setModalOpen(false)}
+        onSubmit={handleCreate}
+      />
+    </>
+  );
+}
+
+function renderContainerHash(containerHash: string) {
+  if (!containerHash) return <>Pending create</>;
+  return <Tooltip content={containerHash}>{containerHash.slice(0, 12)}</Tooltip>;
+}
+
+function renderPortMappings(container: SandboxContainer) {
+  if (container.port_mappings.length === 0) {
+    return <span className="resource-description">No exposed ports</span>;
+  }
+  return (
+    <div className="port-mapping-list">
+      {container.port_mappings.map((mapping) => (
+        <Tag key={`${mapping.host_port}-${mapping.container_port}-${mapping.protocol}`} color="blue">
+          {mapping.host_port}:{mapping.container_port}/{mapping.protocol}
+        </Tag>
+      ))}
+    </div>
+  );
+}

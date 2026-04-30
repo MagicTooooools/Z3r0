@@ -47,7 +47,7 @@ router.add_api_route(
     delete_sandbox_image_handler,
     methods=["DELETE"],
     response_model=CommonResponse[DeleteSandboxImageResponse],
-    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE},
+    responses={**COMMON_ERROR_RESPONSES, **BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 
 router.add_api_route(

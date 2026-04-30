@@ -149,7 +149,8 @@
 
 .user-identity,
 .image-identity,
-.project-identity {
+.project-identity,
+.container-identity {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -158,12 +159,41 @@
 
 .user-identity > div:last-child,
 .image-identity > div:last-child,
-.project-identity > div:last-child {
+.project-identity > div:last-child,
+.container-identity > div:last-child {
   min-width: 0;
 }
 
 .work-projects-table {
   min-width: 0;
+}
+
+.sandbox-containers-table {
+  min-width: 0;
+}
+
+.sandbox-containers-table .resource-table-row {
+  gap: 8px;
+  min-height: 64px;
+  padding-inline: 12px;
+}
+
+.sandbox-containers-table .row-actions {
+  gap: 2px;
+}
+
+.sandbox-containers-table .row-actions .semi-button {
+  width: 25px;
+  padding-inline: 0;
+}
+
+.sandbox-containers-table .resource-cell-updated {
+  white-space: nowrap;
+}
+
+.sandbox-containers-table .resource-avatar {
+  width: 34px;
+  height: 34px;
 }
 
 .work-projects-table .resource-table-row {
@@ -191,6 +221,8 @@
 .image-identity span,
 .project-identity strong,
 .project-identity span,
+.container-identity strong,
+.container-identity span,
 .resource-description {
   display: block;
   overflow: hidden;
@@ -200,22 +232,83 @@
 
 .user-identity strong,
 .image-identity strong,
-.project-identity strong {
+.project-identity strong,
+.container-identity strong {
   color: #162033;
 }
 
 .user-identity span,
 .image-identity span,
 .project-identity span,
+.container-identity span,
 .resource-description {
   color: #66758b;
   font-size: 13px;
 }
 
-.image-identity span {
+.image-identity span,
+.container-identity span,
+.owner-cell {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.owner-cell {
+  min-width: 0;
+  overflow: hidden;
+  color: #66758b;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.port-mapping-fieldset {
+  display: grid;
+  gap: 10px;
+}
+
+.port-mapping-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.port-mapping-empty {
+  min-height: 38px;
+  display: grid;
+  align-items: center;
+  color: #66758b;
+  font-size: 13px;
+}
+
+.port-mapping-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) max-content minmax(110px, 1fr) 96px 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.port-mapping-row .semi-input-number,
+.port-mapping-row .semi-select {
+  width: 100%;
+}
+
+.port-arrow {
+  color: #66758b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.port-mapping-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .resource-table .semi-tag {

@@ -1,4 +1,4 @@
-import type { SandboxImageStatus, SessionType, SystemUserRole, WorkProjectStatus, WorkProjectType } from "../api/types";
+import type { SandboxContainerStatus, SandboxImageStatus, SessionType, SystemUserRole, WorkProjectStatus, WorkProjectType } from "../api/types";
 
 export const SYSTEM_USER_ROLE_LABEL: Record<SystemUserRole, string> = {
   admin: "Admin",
@@ -22,6 +22,13 @@ export const SANDBOX_IMAGE_STATUS_LABEL: Record<SandboxImageStatus, string> = {
   ready: "Ready",
   failed: "Failed",
   canceled: "Canceled",
+};
+
+export const SANDBOX_CONTAINER_STATUS_LABEL: Record<SandboxContainerStatus, string> = {
+  created: "Created",
+  running: "Running",
+  stopped: "Stopped",
+  error: "Error",
 };
 
 export const SESSION_TYPE_LABEL: Record<SessionType, string> = {
@@ -48,4 +55,11 @@ export const SANDBOX_IMAGE_STATUS_COLOR: Record<SandboxImageStatus, SemiTagColor
   ready: "green",
   failed: "red",
   canceled: "grey",
+};
+
+export const SANDBOX_CONTAINER_STATUS_COLOR: Record<SandboxContainerStatus, SemiTagColor> = {
+  created: "blue",
+  running: "green",
+  stopped: "grey",
+  error: "red",
 };

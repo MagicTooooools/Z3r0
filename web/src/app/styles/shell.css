@@ -1,0 +1,214 @@
+.shell-window {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+  overflow: hidden;
+  color: #d8e1ec;
+  background: #0b111c;
+  border: 1px solid rgba(216, 225, 236, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 24px 70px rgba(6, 12, 22, 0.36);
+}
+
+.shell-window-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.shell-window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 10px 0 14px;
+  color: #d8e1ec;
+  background: #101722;
+  border-bottom: 1px solid rgba(216, 225, 236, 0.12);
+  cursor: move;
+  user-select: none;
+}
+
+.shell-window-maximized .shell-window-header {
+  cursor: default;
+}
+
+.shell-window-title,
+.shell-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.shell-window-title span {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-window-title em {
+  flex: 0 0 auto;
+  color: #8ea3ba;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.shell-window-actions {
+  flex: 0 0 auto;
+}
+
+.shell-window-actions .semi-button {
+  color: #b7c5d5;
+}
+
+.shell-window-actions .semi-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.shell-terminal {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.shell-terminal .xterm {
+  height: 100%;
+  padding: 10px;
+}
+
+.shell-terminal .xterm-viewport {
+  background-color: #0b111c;
+  scrollbar-color: rgba(126, 151, 179, 0.48) rgba(255, 255, 255, 0.04);
+  scrollbar-width: thin;
+}
+
+.shell-terminal .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.shell-terminal .xterm-viewport::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 1px solid rgba(216, 225, 236, 0.06);
+}
+
+.shell-terminal .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(126, 151, 179, 0.48);
+  border: 2px solid #0b111c;
+  border-radius: 999px;
+}
+
+.shell-terminal .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(166, 188, 213, 0.68);
+}
+
+.shell-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+
+.shell-resize-handle::after {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(216, 225, 236, 0.42);
+  border-bottom: 2px solid rgba(216, 225, 236, 0.42);
+  content: "";
+}
+
+.shell-window-maximized .shell-resize-handle {
+  display: none;
+}
+
+.shell-minimized-button {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  z-index: 50;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  color: #ffffff;
+  background: #101722;
+  border: 1px solid rgba(216, 225, 236, 0.18);
+  border-radius: 8px 0 0 8px;
+  box-shadow: 0 18px 45px rgba(6, 12, 22, 0.26);
+  cursor: pointer;
+  transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.shell-minimized-button:hover {
+  background: #172033;
+  box-shadow: 0 22px 54px rgba(6, 12, 22, 0.32);
+}
+
+.shell-flight {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+  overflow: hidden;
+  color: #d8e1ec;
+  background: #0b111c;
+  border: 1px solid rgba(216, 225, 236, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 14px 34px rgba(6, 12, 22, 0.24);
+  contain: layout paint;
+  pointer-events: none;
+  transform-origin: 0 0;
+  will-change: transform, opacity;
+}
+
+.shell-flight-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  color: #d8e1ec;
+  background: #101722;
+  border-bottom: 1px solid rgba(216, 225, 236, 0.12);
+}
+
+.shell-flight-header span {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-flight-header em {
+  flex: 0 0 auto;
+  color: #8ea3ba;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.shell-flight-body {
+  background: rgba(18, 29, 46, 0.94);
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-minimized-button {
+    transition: none;
+  }
+}

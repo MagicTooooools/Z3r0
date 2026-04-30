@@ -20,10 +20,15 @@ from middleware.response import (
 )
 from router.agent_session_router import router as agent_session_router
 from router.fallback_router import api_not_found_router
+from router.sandbox_container_router import router as sandbox_container_router
 from router.sandbox_image_router import router as sandbox_image_router
 from router.system_user_router import router as system_user_router
 from router.work_project_router import router as work_project_router
 from schema.system_user_schema import SystemUserRole
+from service.sandbox_container_service import (
+    start_sandbox_container_status_monitor,
+    stop_sandbox_container_status_monitor,
+)
 from service.system_user_service import create_system_user, query_system_user_by_username
 
 
@@ -74,9 +79,11 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
 
         set_tracing_disabled(True)
         await get_agent_pool().start()
+        await start_sandbox_container_status_monitor()
 
         yield
     finally:
+        await stop_sandbox_container_status_monitor()
         await get_agent_pool().stop()
         await close_engine()
 
@@ -94,6 +101,7 @@ def create_app() -> FastAPI:
 
     app.include_router(system_user_router, prefix=API_PREFIX)
     app.include_router(sandbox_image_router, prefix=API_PREFIX)
+    app.include_router(sandbox_container_router, prefix=API_PREFIX)
     app.include_router(work_project_router, prefix=API_PREFIX)
     app.include_router(agent_session_router, prefix=API_PREFIX)
     app.include_router(api_not_found_router, prefix=API_PREFIX)

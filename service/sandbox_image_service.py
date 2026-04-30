@@ -9,6 +9,7 @@ from sqlmodel import select
 
 from database import get_async_session
 from logger import get_logger
+from model.sandbox_container_model import SandboxContainer
 from model.sandbox_image_model import SandboxImage
 from schema.sandbox_image_schema import SandboxImageStatus
 
@@ -24,6 +25,13 @@ class PullJob:
 
 
 _pull_jobs: dict[int, PullJob] = {}
+
+
+@dataclass(frozen=True)
+class DeleteSandboxImageResult:
+    deleted: bool
+    not_found: bool = False
+    message: str = ""
 
 
 def _cancel_pull_job(job: PullJob) -> None:
@@ -161,7 +169,7 @@ async def cancel_sandbox_image_pull(id: int) -> tuple[SandboxImage | None, bool]
     return sandbox_image, True
 
 
-async def delete_sandbox_image(id: int) -> bool:
+async def delete_sandbox_image(id: int) -> DeleteSandboxImageResult:
     """delete sandbox image"""
     job = _pull_jobs.pop(id, None)
     if job is not None:
@@ -170,7 +178,14 @@ async def delete_sandbox_image(id: int) -> bool:
     async with get_async_session() as session:
         sandbox_image = await session.get(SandboxImage, id)
         if sandbox_image is None:
-            return False
+            return DeleteSandboxImageResult(deleted=False, not_found=True, message="sandbox image not found")
+
+        result = await session.exec(select(SandboxContainer.id).where(SandboxContainer.image_id == id).limit(1))
+        if result.first() is not None:
+            return DeleteSandboxImageResult(
+                deleted=False,
+                message="sandbox image is used by sandbox containers",
+            )
 
         if sandbox_image.image_hash:
             await asyncio.to_thread(_remove_image_sync, sandbox_image.image_hash)
@@ -178,7 +193,7 @@ async def delete_sandbox_image(id: int) -> bool:
         await session.commit()
 
     logger.info("sandbox image deleted: %s", id)
-    return True
+    return DeleteSandboxImageResult(deleted=True)
 
 
 async def retry_sandbox_image(id: int) -> tuple[SandboxImage | None, bool]:
