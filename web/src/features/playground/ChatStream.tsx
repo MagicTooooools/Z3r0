@@ -1,17 +1,23 @@
 import { Tag } from "@douyinfe/semi-ui";
-import { AlertOctagon, Bot, Brain, ChevronDown, ChevronRight, Sparkles, Wrench } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { AlertOctagon, AtSign, Bot, Brain, ChevronDown, ChevronRight, Sparkles, Wrench } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { AgentItem, ChatNode } from "./playgroundReducer";
+import type { AgentInfo } from "../../shared/api/types";
+import type { AgentItem, ChatNode, NestedTranscript } from "./playgroundReducer";
 
 type ChatStreamProps = {
   nodes: ChatNode[];
   streaming: boolean;
+  agents: AgentInfo[];
 };
 
-export function ChatStream({ nodes, streaming }: ChatStreamProps) {
+export function ChatStream({ nodes, streaming, agents }: ChatStreamProps) {
   const tailRef = useRef<HTMLDivElement | null>(null);
+  const agentNameByCode = useMemo(
+    () => new Map(agents.map((a) => [a.code, a.name])),
+    [agents],
+  );
 
   useEffect(() => {
     tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -39,7 +45,8 @@ export function ChatStream({ nodes, streaming }: ChatStreamProps) {
     <div className="chat-stream">
       {nodes.map((node, index) => {
         if (node.kind === "user") {
-          return <UserBubble key={node.id} text={node.text} />;
+          const targetName = agentNameByCode.get(node.targetAgentCode) ?? node.targetAgentCode;
+          return <UserBubble key={node.id} text={node.text} targetName={targetName} />;
         }
         const isLive = streaming && index === lastIndex;
         if (!isLive && node.items.length === 0) return null;
@@ -51,10 +58,18 @@ export function ChatStream({ nodes, streaming }: ChatStreamProps) {
   );
 }
 
-function UserBubble({ text }: { text: string }) {
+function UserBubble({ text, targetName }: { text: string; targetName: string }) {
   return (
     <div className="chat-row chat-row-user">
-      <div className="user-bubble">{text}</div>
+      <div className="user-bubble">
+        {targetName ? (
+          <span className="user-bubble-mention">
+            <AtSign size={11} />
+            <span>{targetName}</span>
+          </span>
+        ) : null}
+        <span className="user-bubble-text">{text}</span>
+      </div>
     </div>
   );
 }
@@ -175,7 +190,13 @@ function ThinkingBlock({ text, active }: { text: string; active: boolean }) {
 }
 
 function ToolCard({ item }: { item: Extract<AgentItem, { kind: "tool" }> }) {
-  const [open, setOpen] = useState(false);
+  // auto-open while a nested subagent run is in flight so the user sees its
+  // progress live; otherwise let the user toggle as they wish
+  const hasNested = !!item.nested && item.nested.items.length > 0;
+  const nestedActive = hasNested && !item.resolved;
+  const [openManual, setOpenManual] = useState(false);
+  const open = openManual || nestedActive;
+
   const status = item.resolved ? (item.isError ? "error" : "ok") : "running";
   const statusLabel = item.resolved ? (item.isError ? "Failed" : "Result") : "Running";
   const statusColor = item.resolved ? (item.isError ? "red" : "green") : "amber";
@@ -183,8 +204,8 @@ function ToolCard({ item }: { item: Extract<AgentItem, { kind: "tool" }> }) {
   const outputPreview = previewString(item.output);
 
   return (
-    <div className={`tool-card tool-${status}`}>
-      <button type="button" className="tool-head" onClick={() => setOpen((next) => !next)}>
+    <div className={`tool-card tool-${status}${hasNested ? " tool-card-with-nested" : ""}`}>
+      <button type="button" className="tool-head" onClick={() => setOpenManual((next) => !next)}>
         <span className="tool-icon"><Wrench size={14} /></span>
         <span className="tool-name">{item.name || item.callId}</span>
         <Tag size="small" color={statusColor}>{statusLabel}</Tag>
@@ -194,6 +215,7 @@ function ToolCard({ item }: { item: Extract<AgentItem, { kind: "tool" }> }) {
       {open ? (
         <div className="tool-detail">
           <ToolSection label="Arguments" body={formatJson(item.arguments)} />
+          {hasNested ? <NestedTranscriptView nested={item.nested!} live={nestedActive} /> : null}
           <ToolSection
             label="Output"
             body={item.resolved ? (outputPreview || "(empty)") : "Pending…"}
@@ -203,6 +225,25 @@ function ToolCard({ item }: { item: Extract<AgentItem, { kind: "tool" }> }) {
       ) : item.resolved ? (
         <div className="tool-result-preview">{outputPreview || "(empty)"}</div>
       ) : null}
+    </div>
+  );
+}
+
+function NestedTranscriptView({ nested, live }: { nested: NestedTranscript; live: boolean }) {
+  return (
+    <div className="tool-section">
+      <div className="tool-section-label">
+        Subagent {nested.agentName ? `· ${nested.agentName}` : ""}
+      </div>
+      <div className={`nested-transcript${live ? " nested-transcript-live" : ""}`}>
+        {nested.items.map((subItem, index) => (
+          <AgentItemView
+            key={subItem.id}
+            item={subItem}
+            live={live && index === nested.items.length - 1}
+          />
+        ))}
+      </div>
     </div>
   );
 }

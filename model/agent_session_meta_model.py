@@ -6,13 +6,16 @@ from schema.agent_session_schema import SessionType
 
 
 class AgentSessionMeta(SQLModel, table=True):
-    """app-level fields the SDK tables do not carry (classification, title).
-
-    sort order and message count come from the SDK tables, not from here."""
+    """1:1 app-level attribution for a SDK agent_sessions row; cascades on delete."""
 
     __tablename__ = "agent_session_meta"
 
-    session_id: str = Field(primary_key=True)
+    session_id: str = Field(
+        primary_key=True,
+        foreign_key="agent_sessions.session_id",
+        ondelete="CASCADE",
+    )
     session_type: SessionType = Field(default=SessionType.CHAT, index=True)
     title: str = ""
+    agent_code: str = Field(default="cso")
     created_at: datetime = Field(default_factory=datetime.now)

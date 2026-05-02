@@ -89,6 +89,10 @@ export type RetryWorkProjectResponse = JsonResponse<paths["/api/work-projects/{i
 export type AgentSessionSummary = components["schemas"]["AgentSessionSummarySchema"];
 export type SessionType = components["schemas"]["SessionType"];
 
+export type AgentInfo = components["schemas"]["AgentInfoSchema"];
+export type ListAgentsResponse = JsonResponse<paths["/api/agents"]["get"]>;
+export type ListAgentsData = NonNullable<ListAgentsResponse["data"]>;
+
 export type ListAgentSessionsResponse = JsonResponse<paths["/api/agent-sessions"]["get"]>;
 export type ListAgentSessionsData = NonNullable<ListAgentSessionsResponse["data"]>;
 
@@ -106,7 +110,6 @@ export type ThinkingDeltaEvent = components["schemas"]["ThinkingDeltaEvent"];
 export type ThinkingCompleteEvent = components["schemas"]["ThinkingCompleteEvent"];
 export type ToolCallEvent = components["schemas"]["ToolCallEvent"];
 export type ToolResultEvent = components["schemas"]["ToolResultEvent"];
-export type HandoffEvent = components["schemas"]["HandoffEvent"];
 export type ErrorEvent = components["schemas"]["ErrorEvent"];
 export type DoneEvent = components["schemas"]["DoneEvent"];
 

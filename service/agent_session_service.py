@@ -1,12 +1,13 @@
-import json
 from uuid import uuid4
 
 from sqlalchemy import delete, func, text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from core.agents import get_agent_pool
+from core.agents import DEFAULT_AGENT_CODE
 from core.events import events_from_sdk_message
+from core.runtime import get_agent_pool, get_agent_registry
+from core.session import fetch_stored_items
 from database import get_async_session
 from logger import get_logger
 from model.agent_session_meta_model import AgentSessionMeta
@@ -25,34 +26,51 @@ def create_session() -> str:
     return str(uuid4())
 
 
-async def ensure_chat_session_meta(session_id: str, user_text: str) -> None:
-    """idempotently create chat-session SDK rows + meta on the first turn"""
+async def ensure_chat_session_meta(
+    session_id: str, user_text: str, requested_agent_code: str | None,
+) -> str:
+    # resolution: override > sticky > default
+    valid = set(get_agent_registry().codes())
+    override = requested_agent_code if requested_agent_code in valid else None
+
     async with get_async_session() as session:
-        await _materialize_sdk_session(session, session_id)
-        if await session.get(AgentSessionMeta, session_id) is None:
+        await _ensure_sdk_session_row(session, session_id)
+        meta = await session.get(AgentSessionMeta, session_id)
+        existing = meta.agent_code if meta and meta.agent_code in valid else None
+        resolved = override or existing or DEFAULT_AGENT_CODE
+
+        if meta is None:
             session.add(AgentSessionMeta(
                 session_id=session_id,
                 session_type=SessionType.CHAT,
                 title=_truncate(user_text),
+                agent_code=resolved,
             ))
+        elif meta.agent_code != resolved:
+            meta.agent_code = resolved
+            session.add(meta)
         await session.commit()
+
+    return resolved
 
 
 async def materialize_project_session_in_tx(session: AsyncSession, session_id: str) -> None:
-    """write SDK session storage + project meta inside an existing transaction"""
     if not session_id:
         return
-    await _materialize_sdk_session(session, session_id)
+    await _ensure_sdk_session_row(session, session_id)
     meta = await session.get(AgentSessionMeta, session_id)
     if meta is None:
-        session.add(AgentSessionMeta(session_id=session_id, session_type=SessionType.PROJECT))
+        session.add(AgentSessionMeta(
+            session_id=session_id,
+            session_type=SessionType.PROJECT,
+            agent_code=DEFAULT_AGENT_CODE,
+        ))
         return
     meta.session_type = SessionType.PROJECT
     session.add(meta)
 
 
 async def list_sessions(limit: int = 100) -> list[AgentSessionSummarySchema]:
-    """compose sidebar summaries from SDK sessions joined with app meta"""
     async with get_async_session() as session:
         rows = (await session.execute(
             select(
@@ -95,6 +113,7 @@ async def list_sessions(limit: int = 100) -> list[AgentSessionSummarySchema]:
             session_id=row.session_id,
             session_type=session_type,
             title=_resolve_title(session_type, meta, projects.get(row.session_id)),
+            agent_code=meta.agent_code if meta else "",
             message_count=row.message_count or 0,
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -103,27 +122,25 @@ async def list_sessions(limit: int = 100) -> list[AgentSessionSummarySchema]:
 
 
 async def replay_session_events(session_id: str) -> list[AgentContentEventSchema]:
-    """replay one session from the SDK-managed message table"""
+    # nested-call items are tagged so the UI re-attaches them to the parent ToolCard
     async with get_async_session() as session:
-        rows = (await session.execute(
-            select(agent_messages.c.id, agent_messages.c.message_data)
-            .where(agent_messages.c.session_id == session_id)
-            .order_by(agent_messages.c.created_at.asc(), agent_messages.c.id.asc())
-        )).all()
+        stored_items = await fetch_stored_items(session, session_id)
 
+    code_to_name = get_agent_registry().code_to_name()
     events: list[AgentContentEventSchema] = []
-    for row in rows:
-        try:
-            message = json.loads(row.message_data)
-        except json.JSONDecodeError:
-            logger.warning("invalid SDK agent message skipped: id=%s", row.id, exc_info=True)
-            continue
-        events.extend(events_from_sdk_message(message, str(row.id)))
+    for stored in stored_items:
+        agent_name = code_to_name.get(stored.owner_code, "")
+        events.extend(events_from_sdk_message(
+            stored.item, str(stored.message_id),
+            owner_code=stored.owner_code,
+            agent_name=agent_name,
+            nested_for=stored.nested_for,
+            nested_call_id=stored.nested_call_id,
+        ))
     return events
 
 
 async def delete_session(session_id: str) -> bool:
-    """tear down a session end-to-end: pool eviction + SDK rows + meta + paired project"""
     if not session_id:
         return False
 
@@ -141,22 +158,12 @@ async def delete_session(session_id: str) -> bool:
 
 
 async def _delete_session_records_in_tx(session: AsyncSession, session_id: str) -> bool:
-    messages_result = await session.execute(
-        delete(agent_messages).where(agent_messages.c.session_id == session_id)
-    )
-    sdk_result = await session.execute(
+    # one DELETE drops the SDK session row and the FK CASCADE chain takes
+    # care of agent_messages, agent_message_meta, and agent_session_meta
+    result = await session.execute(
         delete(agent_sessions).where(agent_sessions.c.session_id == session_id)
     )
-    meta = await session.get(AgentSessionMeta, session_id)
-    meta_deleted = meta is not None
-    if meta is not None:
-        await session.delete(meta)
-
-    return any((
-        (messages_result.rowcount or 0) > 0,
-        (sdk_result.rowcount or 0) > 0,
-        meta_deleted,
-    ))
+    return (result.rowcount or 0) > 0
 
 
 async def _delete_paired_project_in_tx(session: AsyncSession, session_id: str) -> bool:
@@ -169,7 +176,9 @@ async def _delete_paired_project_in_tx(session: AsyncSession, session_id: str) -
     return True
 
 
-async def _materialize_sdk_session(session: AsyncSession, session_id: str) -> None:
+async def _ensure_sdk_session_row(session: AsyncSession, session_id: str) -> None:
+    # placeholder row owned by the SDK; required so AgentSessionMeta's FK can
+    # bind and so list_sessions can surface freshly-created empty conversations
     await session.execute(
         text(
             "INSERT INTO agent_sessions (session_id) VALUES (:sid) "

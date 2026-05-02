@@ -1,12 +1,9 @@
+"""Normalize SDK stream events and stored items into our wire schema."""
+
 import json
 from typing import Any
 
-from agents.items import (
-    HandoffCallItem,
-    HandoffOutputItem,
-    ToolCallItem,
-    ToolCallOutputItem,
-)
+from agents.items import ToolCallItem, ToolCallOutputItem
 from agents.stream_events import RawResponsesStreamEvent, RunItemStreamEvent
 from openai.types.responses.response_error_event import ResponseErrorEvent
 from openai.types.responses.response_reasoning_summary_text_delta_event import (
@@ -15,12 +12,8 @@ from openai.types.responses.response_reasoning_summary_text_delta_event import (
 from openai.types.responses.response_reasoning_summary_text_done_event import (
     ResponseReasoningSummaryTextDoneEvent,
 )
-from openai.types.responses.response_reasoning_text_delta_event import (
-    ResponseReasoningTextDeltaEvent,
-)
-from openai.types.responses.response_reasoning_text_done_event import (
-    ResponseReasoningTextDoneEvent,
-)
+from openai.types.responses.response_reasoning_text_delta_event import ResponseReasoningTextDeltaEvent
+from openai.types.responses.response_reasoning_text_done_event import ResponseReasoningTextDoneEvent
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 from openai.types.responses.response_text_done_event import ResponseTextDoneEvent
 from pydantic import BaseModel
@@ -28,7 +21,6 @@ from pydantic import BaseModel
 from schema.agent_event_schema import (
     AgentEventSchema,
     ErrorEvent,
-    HandoffEvent,
     TextCompleteEvent,
     TextDeltaEvent,
     ThinkingCompleteEvent,
@@ -42,14 +34,14 @@ from schema.agent_event_schema import (
 # `incomplete` is a partial output, not an error
 _TOOL_ERROR_STATUSES = {"failed", "error"}
 
-# tag reasoning items so body text and per-summary segments do not collide
-# under the same item_id in the frontend reducer
+# disambiguate reasoning body text vs per-summary segments at the same item_id
 _THINKING_TEXT_SUFFIX = "#text"
 _THINKING_SUMMARY_SUFFIX = "#summary"
 
+_TEXT_CONTENT_TYPES = {"input_text", "output_text", "text"}
+
 
 def event_from_sdk_stream(sdk_event: Any, current_agent: str) -> AgentEventSchema | None:
-    """live SDK stream event -> normalized event (None when suppressed)"""
     if isinstance(sdk_event, RawResponsesStreamEvent):
         return _from_raw_response(sdk_event.data, current_agent)
     if isinstance(sdk_event, RunItemStreamEvent):
@@ -57,31 +49,51 @@ def event_from_sdk_stream(sdk_event: Any, current_agent: str) -> AgentEventSchem
     return None
 
 
-def events_from_sdk_message(message: Any, fallback_id: str) -> list[AgentEventSchema]:
-    """stored SDK message -> 0..N replay events (agent_name not stored)"""
+def events_from_sdk_message(
+    message: Any,
+    fallback_id: str,
+    *,
+    owner_code: str = "",
+    agent_name: str = "",
+    nested_for: str = "",
+    nested_call_id: str = "",
+) -> list[AgentEventSchema]:
     if not isinstance(message, dict):
         return []
 
     item_id = _stored_item_id(message, fallback_id)
+    scope = _scope(agent_name, nested_for, nested_call_id)
     match message.get("type"):
         case "message":
-            return _events_from_stored_message(message, item_id)
+            return _events_from_stored_message(message, item_id, scope, owner_code)
         case "reasoning":
             text = _stored_reasoning_text(message)
-            return [ThinkingCompleteEvent(item_id=item_id + _THINKING_TEXT_SUFFIX, text=text)] if text else []
+            if not text:
+                return []
+            return [ThinkingCompleteEvent(item_id=item_id + _THINKING_TEXT_SUFFIX, text=text, **scope)]
         case "function_call":
             return [ToolCallEvent(
                 call_id=str(message.get("call_id") or message.get("id") or ""),
                 name=str(message.get("name") or ""),
                 arguments=_parse_tool_arguments(message.get("arguments")),
+                **scope,
             )]
         case "function_call_output":
             return [ToolResultEvent(
                 call_id=str(message.get("call_id") or ""),
                 output=_normalize_to_str(message.get("output")),
                 is_error=_is_tool_error(message.get("status")),
+                **scope,
             )]
     return []
+
+
+def _scope(agent_name: str, nested_for: str, nested_call_id: str) -> dict[str, str]:
+    return {
+        "agent_name": agent_name,
+        "nested_for": nested_for,
+        "nested_call_id": nested_call_id,
+    }
 
 
 def _from_raw_response(data: Any, current_agent: str) -> AgentEventSchema | None:
@@ -130,7 +142,6 @@ def _from_run_item(event: RunItemStreamEvent, current_agent: str) -> AgentEventS
             name=_read_field(raw, "name") or item.title or "",
             arguments=_parse_tool_arguments(_read_field(raw, "arguments")),
         )
-
     if event.name == "tool_output" and isinstance(item, ToolCallOutputItem):
         raw = item.raw_item
         return ToolResultEvent(
@@ -139,29 +150,20 @@ def _from_run_item(event: RunItemStreamEvent, current_agent: str) -> AgentEventS
             output=_normalize_to_str(item.output),
             is_error=_is_tool_error(_read_field(raw, "status")),
         )
-
-    if event.name == "handoff_occured" and isinstance(item, HandoffOutputItem):
-        return HandoffEvent(
-            source_agent=item.source_agent.name if item.source_agent else current_agent,
-            target_agent=item.target_agent.name if item.target_agent else "",
-        )
-
-    # handoff_requested duplicates handoff_occured; suppress
-    if event.name == "handoff_requested" and isinstance(item, HandoffCallItem):
-        return None
-
     return None
 
 
-def _events_from_stored_message(message: dict[str, Any], item_id: str) -> list[AgentEventSchema]:
+def _events_from_stored_message(
+    message: dict[str, Any], item_id: str, scope: dict[str, str], owner_code: str,
+) -> list[AgentEventSchema]:
     text = _stored_message_text(message.get("content"))
     if not text:
         return []
     role = message.get("role")
     if role == "user":
-        return [UserMessageEvent(text=text)]
+        return [UserMessageEvent(text=text, target_agent_code=owner_code)]
     if role == "assistant":
-        return [TextCompleteEvent(item_id=item_id, text=text)]
+        return [TextCompleteEvent(item_id=item_id, text=text, **scope)]
     return []
 
 
@@ -175,7 +177,7 @@ def _stored_message_text(content: Any) -> str:
         if not isinstance(item, dict):
             continue
         text = item.get("text")
-        if isinstance(text, str) and item.get("type") in {"input_text", "output_text", "text"}:
+        if isinstance(text, str) and item.get("type") in _TEXT_CONTENT_TYPES:
             parts.append(text)
     return "".join(parts)
 

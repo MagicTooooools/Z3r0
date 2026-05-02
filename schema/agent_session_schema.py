@@ -17,6 +17,7 @@ class AgentSessionSummarySchema(BaseModel):
     session_id: str
     session_type: SessionType = SessionType.CHAT
     title: str = ""
+    agent_code: str = ""
     message_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -36,3 +37,16 @@ class ListAgentEventsResponse(BaseModel):
 # create agent session response schema (server-allocated session_id)
 class CreateAgentSessionResponse(BaseModel):
     session_id: str
+
+
+# one available agent; surfaced to the @-mention picker in the chat input
+class AgentInfoSchema(BaseModel):
+    code: str
+    name: str
+    description: str = ""
+
+
+# list of agents + the default agent for brand-new sessions
+class ListAgentsResponse(BaseModel):
+    items: list[AgentInfoSchema]
+    default_code: str

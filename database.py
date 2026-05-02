@@ -5,6 +5,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from config import get_config
 from logger import get_logger
+from model.agent_message_meta_model import AgentMessageMeta
 from model.agent_session_meta_model import AgentSessionMeta
 from model.sandbox_container_model import SandboxContainer
 from model.sandbox_image_model import SandboxImage
@@ -16,7 +17,10 @@ from utils.sdk_tables import BOOTSTRAP_SESSION_ID
 logger = get_logger(__name__)
 
 # registered so SQLModel.metadata picks every table up at create_all time
-_registered_models = [SystemUser, SandboxImage, SandboxContainer, WorkProject, AgentSessionMeta]
+_registered_models = [
+    SystemUser, SandboxImage, SandboxContainer, WorkProject,
+    AgentSessionMeta, AgentMessageMeta,
+]
 
 _engine: AsyncEngine | None = None
 
@@ -26,13 +30,13 @@ async def create_all_tables() -> None:
     if _engine is None:
         raise RuntimeError("database engine is not initialized")
 
-    # SDK manages its own metadata; we bootstrap a throwaway session purely
-    # to obtain the metadata object, since the SDK does not expose it directly
+    # SDK manages its own metadata; bootstrap a throwaway session to obtain it
     sdk_metadata = SQLAlchemySession(session_id=BOOTSTRAP_SESSION_ID, engine=_engine)._metadata
 
+    # SDK tables first; some app tables (e.g. AgentMessageMeta) FK into them
     async with _engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
         await conn.run_sync(sdk_metadata.create_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
 
     logger.info("all tables created")
 

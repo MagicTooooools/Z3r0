@@ -25,7 +25,7 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [headerActions, setHeaderActionsState] = useState<ReactNode>(null);
-  const { sessions, sessionsLoading, activeSessionId, selectSession, deleteSession } = useAgentSessionContext();
+  const { sessions, sessionsLoading, agents, activeSessionId, selectSession, deleteSession } = useAgentSessionContext();
 
   const setHeaderActions = useCallback((actions: ReactNode) => {
     setHeaderActionsState(() => actions);
@@ -67,6 +67,7 @@ export function AdminLayout() {
             <div className="admin-sidebar-secondary">
               <SessionList
                 sessions={sessions}
+                agents={agents}
                 loading={sessionsLoading}
                 activeSessionId={activeSessionId}
                 onSelect={handleSelectAgentSession}

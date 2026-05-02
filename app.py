@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import ROOT_PATH
-from core.agents import get_agent_pool
+from core.runtime import get_agent_pool
 from database import close_engine, create_all_tables, init_engine
 from logger import get_logger
 from middleware.auth import JwtAuthMiddleware
@@ -18,6 +18,7 @@ from middleware.response import (
     http_exception_handler,
     request_validation_exception_handler,
 )
+from router.agent_router import router as agent_router
 from router.agent_session_router import router as agent_session_router
 from router.fallback_router import api_not_found_router
 from router.sandbox_container_router import router as sandbox_container_router
@@ -82,6 +83,10 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         await start_sandbox_container_status_monitor()
 
         yield
+    except Exception:
+        # surface startup failures; the finally block below would otherwise hide them
+        logger.exception("lifespan startup failed")
+        raise
     finally:
         await stop_sandbox_container_status_monitor()
         await get_agent_pool().stop()
@@ -103,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(sandbox_image_router, prefix=API_PREFIX)
     app.include_router(sandbox_container_router, prefix=API_PREFIX)
     app.include_router(work_project_router, prefix=API_PREFIX)
+    app.include_router(agent_router, prefix=API_PREFIX)
     app.include_router(agent_session_router, prefix=API_PREFIX)
     app.include_router(api_not_found_router, prefix=API_PREFIX)
     logger.info("api router added")

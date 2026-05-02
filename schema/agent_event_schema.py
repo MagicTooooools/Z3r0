@@ -12,7 +12,6 @@ class AgentEventTypeSchema(StrEnum):
     TEXT_COMPLETE = "text_complete"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
-    HANDOFF = "handoff"
     DONE = "done"
     ERROR = "error"
 
@@ -24,11 +23,19 @@ class AgentStreamActionSchema(StrEnum):
 
 class _AgentScopedEvent(BaseModel):
     agent_name: str = ""
+    # when set, this event was streamed from inside a nested subagent call.
+    # `nested_for` is the parent agent code; `nested_call_id` matches the
+    # parent's function_call.call_id so the UI can attach the event to the
+    # corresponding ToolCard
+    nested_for: str = ""
+    nested_call_id: str = ""
 
 
 class UserMessageEvent(BaseModel):
     type: Literal[AgentEventTypeSchema.USER_MESSAGE] = AgentEventTypeSchema.USER_MESSAGE
     text: str
+    # the agent this message was @-mentioned to; UI renders it as a "@<name>" chip
+    target_agent_code: str = ""
 
 
 class TextDeltaEvent(_AgentScopedEvent):
@@ -69,12 +76,6 @@ class ToolResultEvent(_AgentScopedEvent):
     is_error: bool = False
 
 
-class HandoffEvent(BaseModel):
-    type: Literal[AgentEventTypeSchema.HANDOFF] = AgentEventTypeSchema.HANDOFF
-    source_agent: str
-    target_agent: str
-
-
 class DoneEvent(_AgentScopedEvent):
     type: Literal[AgentEventTypeSchema.DONE] = AgentEventTypeSchema.DONE
 
@@ -94,7 +95,6 @@ AgentContentEventSchema = Annotated[
     | ThinkingCompleteEvent
     | ToolCallEvent
     | ToolResultEvent
-    | HandoffEvent
     | ErrorEvent,
     Field(discriminator="type"),
 ]
@@ -107,7 +107,6 @@ AgentEventSchema = Annotated[
     | ThinkingCompleteEvent
     | ToolCallEvent
     | ToolResultEvent
-    | HandoffEvent
     | DoneEvent
     | ErrorEvent,
     Field(discriminator="type"),
@@ -118,6 +117,8 @@ class AgentStreamSendCommand(BaseModel):
     action: Literal[AgentStreamActionSchema.SEND] = AgentStreamActionSchema.SEND
     text: str
     sandbox_container_id: int | None = Field(default=None, gt=0)
+    # optional @-mention override; null => keep the session's sticky agent
+    agent_code: str | None = Field(default=None)
 
 
 class AgentStreamInterruptCommand(BaseModel):

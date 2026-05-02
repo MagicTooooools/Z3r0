@@ -56,6 +56,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agents Handler */
+        get: operations["list_agents_handler_api_agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sandbox-containers": {
         parameters: {
             query?: never;
@@ -337,8 +354,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentInfoSchema */
+        AgentInfoSchema: {
+            /** Code */
+            code: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+        };
         /** AgentSessionSummarySchema */
         AgentSessionSummarySchema: {
+            /**
+             * Agent Code
+             * @default
+             */
+            agent_code: string;
             /**
              * Created At
              * Format: date-time
@@ -380,6 +414,11 @@ export interface components {
              * @enum {string}
              */
             action: "send";
+            /**
+             * Agent Code
+             * @default null
+             */
+            agent_code: string | null;
             /**
              * Sandbox Container Id
              * @default null
@@ -510,6 +549,20 @@ export interface components {
              */
             code: number;
             data?: components["schemas"]["ListAgentSessionsResponse"] | null;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+        };
+        /** CommonResponse[ListAgentsResponse] */
+        CommonResponse_ListAgentsResponse_: {
+            /**
+             * Code
+             * @default 200
+             */
+            code: number;
+            data?: components["schemas"]["ListAgentsResponse"] | null;
             /**
              * Message
              * @default success
@@ -718,6 +771,16 @@ export interface components {
              */
             agent_name: string;
             /**
+             * Nested Call Id
+             * @default
+             */
+            nested_call_id: string;
+            /**
+             * Nested For
+             * @default
+             */
+            nested_for: string;
+            /**
              * Type
              * @default done
              * @constant
@@ -739,27 +802,25 @@ export interface components {
             /** Message */
             message: string;
             /**
+             * Nested Call Id
+             * @default
+             */
+            nested_call_id: string;
+            /**
+             * Nested For
+             * @default
+             */
+            nested_for: string;
+            /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
             type: "error";
         };
-        /** HandoffEvent */
-        HandoffEvent: {
-            /** Source Agent */
-            source_agent: string;
-            /** Target Agent */
-            target_agent: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "handoff";
-        };
         /** ListAgentEventsResponse */
         ListAgentEventsResponse: {
             /** Items */
-            items: (components["schemas"]["UserMessageEvent"] | components["schemas"]["TextDeltaEvent"] | components["schemas"]["TextCompleteEvent"] | components["schemas"]["ThinkingDeltaEvent"] | components["schemas"]["ThinkingCompleteEvent"] | components["schemas"]["ToolCallEvent"] | components["schemas"]["ToolResultEvent"] | components["schemas"]["HandoffEvent"] | components["schemas"]["ErrorEvent"])[];
+            items: (components["schemas"]["UserMessageEvent"] | components["schemas"]["TextDeltaEvent"] | components["schemas"]["TextCompleteEvent"] | components["schemas"]["ThinkingDeltaEvent"] | components["schemas"]["ThinkingCompleteEvent"] | components["schemas"]["ToolCallEvent"] | components["schemas"]["ToolResultEvent"] | components["schemas"]["ErrorEvent"])[];
             /** Session Id */
             session_id: string;
         };
@@ -767,6 +828,13 @@ export interface components {
         ListAgentSessionsResponse: {
             /** Items */
             items: components["schemas"]["AgentSessionSummarySchema"][];
+        };
+        /** ListAgentsResponse */
+        ListAgentsResponse: {
+            /** Default Code */
+            default_code: string;
+            /** Items */
+            items: components["schemas"]["AgentInfoSchema"][];
         };
         /** QuerySandboxContainersResponse */
         QuerySandboxContainersResponse: {
@@ -932,6 +1000,16 @@ export interface components {
             agent_name: string;
             /** Item Id */
             item_id: string;
+            /**
+             * Nested Call Id
+             * @default
+             */
+            nested_call_id: string;
+            /**
+             * Nested For
+             * @default
+             */
+            nested_for: string;
             /** Text */
             text: string;
             /**
@@ -952,6 +1030,16 @@ export interface components {
             /** Item Id */
             item_id: string;
             /**
+             * Nested Call Id
+             * @default
+             */
+            nested_call_id: string;
+            /**
+             * Nested For
+             * @default
+             */
+            nested_for: string;
+            /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
@@ -966,6 +1054,16 @@ export interface components {
             agent_name: string;
             /** Item Id */
             item_id: string;
+            /**
+             * Nested Call Id
+             * @default
+             */
+            nested_call_id: string;
+            /**
+             * Nested For
+             * @default
+             */
+            nested_for: string;
             /** Text */
             text: string;
             /**
@@ -985,6 +1083,16 @@ export interface components {
             delta: string;
             /** Item Id */
             item_id: string;
+            /**
+             * Nested Call Id
+             * @default
+             */
+            nested_call_id: string;
+            /**
+             * Nested For
+             * @default
+             */
+            nested_for: string;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -1007,6 +1115,16 @@ export interface components {
             /** Name */
             name: string;
             /**
+             * Nested Call Id
+             * @default
+             */
+            nested_call_id: string;
+            /**
+             * Nested For
+             * @default
+             */
+            nested_for: string;
+            /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
@@ -1026,6 +1144,16 @@ export interface components {
              * @default false
              */
             is_error: boolean;
+            /**
+             * Nested Call Id
+             * @default
+             */
+            nested_call_id: string;
+            /**
+             * Nested For
+             * @default
+             */
+            nested_for: string;
             /**
              * Output
              * @default
@@ -1049,6 +1177,11 @@ export interface components {
         };
         /** UserMessageEvent */
         UserMessageEvent: {
+            /**
+             * Target Agent Code
+             * @default
+             */
+            target_agent_code: string;
             /** Text */
             text: string;
             /**
@@ -1244,6 +1377,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommonResponse_ListAgentEventsResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    list_agents_handler_api_agents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_ListAgentsResponse_"];
                 };
             };
             /** @description Unauthorized */

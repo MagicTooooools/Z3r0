@@ -7,8 +7,8 @@ from fastapi import WebSocket, WebSocketDisconnect, status as ws_status
 from pydantic import ValidationError
 
 from config import get_config
-from core.agents import get_agent_pool
 from core.context import AgentRuntimeContext, AgentUserContext
+from core.runtime import get_agent_pool
 from logger import get_logger
 from middleware.auth import AuthUser
 from schema.agent_event_schema import (
@@ -54,7 +54,6 @@ async def list_agent_events_handler(session_id: str) -> CommonResponse:
 
 
 async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str) -> None:
-    """drive one ws connection: receive AgentStreamCommands, stream AgentEvents back"""
     user = _decode_ws_token(token)
     if user is None:
         await websocket.close(code=ws_status.WS_1008_POLICY_VIOLATION)
@@ -87,6 +86,7 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
                 text=text,
                 user=user,
                 sandbox_container_id=command.sandbox_container_id,
+                requested_agent_code=command.agent_code,
             ))
     except WebSocketDisconnect:
         await _cancel_task(runner)
@@ -102,18 +102,20 @@ async def _run_turn(
     text: str,
     user: AuthUser,
     sandbox_container_id: int | None,
+    requested_agent_code: str | None,
 ) -> None:
-    """run one user turn; always emits a DoneEvent so the client exits streaming"""
-    await agent_session_service.ensure_chat_session_meta(session_id, text)
+    # always emits a DoneEvent so the client exits streaming
+    agent_code = await agent_session_service.ensure_chat_session_meta(
+        session_id, text, requested_agent_code,
+    )
     context = await _build_runtime_context(session_id, user, sandbox_container_id)
     runtime = get_agent_pool().get_or_create(session_id)
     saw_done = False
     try:
-        async for event in runtime.stream_turn(text, context):
+        async for event in runtime.stream_turn(text, agent_code, context):
             if isinstance(event, DoneEvent):
                 saw_done = True
             if not await _send_event(websocket, event):
-                # client gone; abandon the stream silently
                 return
     except asyncio.CancelledError:
         raise
@@ -134,7 +136,6 @@ async def _interrupt_turn(websocket: WebSocket, session_id: str, runner: asyncio
 
 
 async def _send_event(websocket: WebSocket, event: AgentEventSchema) -> bool:
-    """send an event if the ws is still open; return whether it landed"""
     if (
         websocket.client_state != WebSocketState.CONNECTED
         or websocket.application_state != WebSocketState.CONNECTED

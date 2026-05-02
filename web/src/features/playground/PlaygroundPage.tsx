@@ -25,6 +25,7 @@ export function PlaygroundPage() {
   const {
     activeSessionId, selectSession,
     chatState, status, historyLoading,
+    agents, activeAgentCode, setActiveAgentCode,
     send, interrupt,
   } = useAgentSessionContext();
   const location = useLocation();
@@ -96,13 +97,16 @@ export function PlaygroundPage() {
       <div className="playground-main">
         <div className="playground-canvas">
           <Spin spinning={historyLoading} wrapperClassName="playground-spin">
-            <ChatStream nodes={chatState.nodes} streaming={chatState.streaming} />
+            <ChatStream nodes={chatState.nodes} streaming={chatState.streaming} agents={agents} />
           </Spin>
         </div>
         <div className="playground-composer">
           <Composer
             streaming={chatState.streaming}
             disabled={historyLoading}
+            agents={agents}
+            activeAgentCode={activeAgentCode}
+            onPickAgent={setActiveAgentCode}
             onSend={(text) => void handleSend(text)}
             onInterrupt={() => void interrupt()}
           />

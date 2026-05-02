@@ -1,8 +1,36 @@
 {
   "components": {
     "schemas": {
+      "AgentInfoSchema": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "AgentInfoSchema",
+        "type": "object"
+      },
       "AgentSessionSummarySchema": {
         "properties": {
+          "agent_code": {
+            "default": "",
+            "title": "Agent Code",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -76,6 +104,18 @@
             "default": "send",
             "title": "Action",
             "type": "string"
+          },
+          "agent_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Agent Code"
           },
           "sandbox_container_id": {
             "anyOf": [
@@ -325,6 +365,32 @@
           }
         },
         "title": "CommonResponse[ListAgentSessionsResponse]",
+        "type": "object"
+      },
+      "CommonResponse_ListAgentsResponse_": {
+        "properties": {
+          "code": {
+            "default": 200,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListAgentsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "title": "CommonResponse[ListAgentsResponse]",
         "type": "object"
       },
       "CommonResponse_QuerySandboxContainersResponse_": {
@@ -734,6 +800,16 @@
             "title": "Agent Name",
             "type": "string"
           },
+          "nested_call_id": {
+            "default": "",
+            "title": "Nested Call Id",
+            "type": "string"
+          },
+          "nested_for": {
+            "default": "",
+            "title": "Nested For",
+            "type": "string"
+          },
           "type": {
             "const": "done",
             "default": "done",
@@ -760,6 +836,16 @@
             "title": "Message",
             "type": "string"
           },
+          "nested_call_id": {
+            "default": "",
+            "title": "Nested Call Id",
+            "type": "string"
+          },
+          "nested_for": {
+            "default": "",
+            "title": "Nested For",
+            "type": "string"
+          },
           "type": {
             "const": "error",
             "default": "error",
@@ -773,30 +859,6 @@
         "title": "ErrorEvent",
         "type": "object"
       },
-      "HandoffEvent": {
-        "properties": {
-          "source_agent": {
-            "title": "Source Agent",
-            "type": "string"
-          },
-          "target_agent": {
-            "title": "Target Agent",
-            "type": "string"
-          },
-          "type": {
-            "const": "handoff",
-            "default": "handoff",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "source_agent",
-          "target_agent"
-        ],
-        "title": "HandoffEvent",
-        "type": "object"
-      },
       "ListAgentEventsResponse": {
         "properties": {
           "items": {
@@ -804,7 +866,6 @@
               "discriminator": {
                 "mapping": {
                   "error": "#/components/schemas/ErrorEvent",
-                  "handoff": "#/components/schemas/HandoffEvent",
                   "text_complete": "#/components/schemas/TextCompleteEvent",
                   "text_delta": "#/components/schemas/TextDeltaEvent",
                   "thinking_complete": "#/components/schemas/ThinkingCompleteEvent",
@@ -836,9 +897,6 @@
                 },
                 {
                   "$ref": "#/components/schemas/ToolResultEvent"
-                },
-                {
-                  "$ref": "#/components/schemas/HandoffEvent"
                 },
                 {
                   "$ref": "#/components/schemas/ErrorEvent"
@@ -874,6 +932,27 @@
           "items"
         ],
         "title": "ListAgentSessionsResponse",
+        "type": "object"
+      },
+      "ListAgentsResponse": {
+        "properties": {
+          "default_code": {
+            "title": "Default Code",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInfoSchema"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "default_code"
+        ],
+        "title": "ListAgentsResponse",
         "type": "object"
       },
       "QuerySandboxContainersResponse": {
@@ -1248,6 +1327,16 @@
             "title": "Item Id",
             "type": "string"
           },
+          "nested_call_id": {
+            "default": "",
+            "title": "Nested Call Id",
+            "type": "string"
+          },
+          "nested_for": {
+            "default": "",
+            "title": "Nested For",
+            "type": "string"
+          },
           "text": {
             "title": "Text",
             "type": "string"
@@ -1281,6 +1370,16 @@
             "title": "Item Id",
             "type": "string"
           },
+          "nested_call_id": {
+            "default": "",
+            "title": "Nested Call Id",
+            "type": "string"
+          },
+          "nested_for": {
+            "default": "",
+            "title": "Nested For",
+            "type": "string"
+          },
           "type": {
             "const": "text_delta",
             "default": "text_delta",
@@ -1304,6 +1403,16 @@
           },
           "item_id": {
             "title": "Item Id",
+            "type": "string"
+          },
+          "nested_call_id": {
+            "default": "",
+            "title": "Nested Call Id",
+            "type": "string"
+          },
+          "nested_for": {
+            "default": "",
+            "title": "Nested For",
             "type": "string"
           },
           "text": {
@@ -1337,6 +1446,16 @@
           },
           "item_id": {
             "title": "Item Id",
+            "type": "string"
+          },
+          "nested_call_id": {
+            "default": "",
+            "title": "Nested Call Id",
+            "type": "string"
+          },
+          "nested_for": {
+            "default": "",
+            "title": "Nested For",
             "type": "string"
           },
           "type": {
@@ -1373,6 +1492,16 @@
             "title": "Name",
             "type": "string"
           },
+          "nested_call_id": {
+            "default": "",
+            "title": "Nested Call Id",
+            "type": "string"
+          },
+          "nested_for": {
+            "default": "",
+            "title": "Nested For",
+            "type": "string"
+          },
           "type": {
             "const": "tool_call",
             "default": "tool_call",
@@ -1402,6 +1531,16 @@
             "default": false,
             "title": "Is Error",
             "type": "boolean"
+          },
+          "nested_call_id": {
+            "default": "",
+            "title": "Nested Call Id",
+            "type": "string"
+          },
+          "nested_for": {
+            "default": "",
+            "title": "Nested For",
+            "type": "string"
           },
           "output": {
             "default": "",
@@ -1477,6 +1616,11 @@
       },
       "UserMessageEvent": {
         "properties": {
+          "target_agent_code": {
+            "default": "",
+            "title": "Target Agent Code",
+            "type": "string"
+          },
           "text": {
             "title": "Text",
             "type": "string"
@@ -1800,6 +1944,52 @@
         "summary": "List Agent Events Route",
         "tags": [
           "agent-sessions"
+        ]
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "operationId": "list_agents_handler_api_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_ListAgentsResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Agents Handler",
+        "tags": [
+          "agents"
         ]
       }
     },

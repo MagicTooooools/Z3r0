@@ -1,0 +1,324 @@
+"""Per-conversation Agent runtime: turn execution and pool lifecycle."""
+
+import asyncio
+import time
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+from typing import Any
+
+from agents import Runner, TResponseInputItem
+from agents.stream_events import AgentUpdatedStreamEvent
+from openai.types.responses import (
+    EasyInputMessageParam,
+    ResponseInputMessageContentListParam,
+    ResponseInputTextParam,
+)
+
+from config import get_config
+from core.agents import AgentRegistry
+from core.context import AgentRuntimeContext
+from core.events import event_from_sdk_stream
+from core.session import Z3r0Session
+from database import get_engine
+from logger import get_logger
+from schema.agent_event_schema import (
+    AgentEventSchema,
+    DoneEvent,
+    ErrorEvent,
+    TextCompleteEvent,
+    TextDeltaEvent,
+    ThinkingCompleteEvent,
+    ThinkingDeltaEvent,
+    UserMessageEvent,
+)
+
+
+logger = get_logger(__name__)
+
+
+@dataclass
+class _DeltaBuffer:
+    is_thinking: bool
+    item_id: str
+    content: str = ""
+
+
+class AgentSession:
+    def __init__(self, session_id: str, registry: AgentRegistry) -> None:
+        self.session_id = session_id
+        self._registry = registry
+        self._turn_lock = asyncio.Lock()
+        self._current_task: asyncio.Task | None = None
+
+    def is_running(self) -> bool:
+        task = self._current_task
+        return task is not None and not task.done()
+
+    async def stream_turn(
+        self, text: str, agent_code: str, context: AgentRuntimeContext,
+    ) -> AsyncIterator[AgentEventSchema]:
+        async with self._turn_lock:
+            task = asyncio.current_task()
+            self._current_task = task
+            try:
+                async for event in self._run_turn(text, agent_code, context):
+                    yield event
+            finally:
+                if self._current_task is task:
+                    self._current_task = None
+
+    async def interrupt(self) -> bool:
+        task = self._current_task
+        if task is None or task.done():
+            return False
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return True
+
+    async def _run_turn(
+        self, text: str, agent_code: str, context: AgentRuntimeContext,
+    ) -> AsyncIterator[AgentEventSchema]:
+        agent = self._registry.get(agent_code)
+        yield UserMessageEvent(text=text, target_agent_code=agent_code)
+
+        memory_session = Z3r0Session(
+            session_id=self.session_id,
+            engine=get_engine(),
+            viewing_agent_code=agent_code,
+            agent_code_to_name=self._registry.code_to_name(),
+        )
+        # main and nested SDK streams converge into one queue
+        queue: asyncio.Queue[AgentEventSchema | None] = asyncio.Queue()
+        context.event_emitter = queue.put_nowait
+
+        result_holder: dict[str, Any] = {"result": None}
+        buffers: dict[str, _DeltaBuffer] = {}
+
+        async def _consume_main() -> None:
+            try:
+                stream = Runner.run_streamed(
+                    starting_agent=agent,
+                    session=memory_session,
+                    input=_build_user_input(text),
+                    context=context,
+                )
+                result_holder["result"] = stream
+                async for sdk_event in stream.stream_events():
+                    if isinstance(sdk_event, AgentUpdatedStreamEvent):
+                        continue
+                    event = event_from_sdk_stream(sdk_event, agent.name)
+                    if event is not None:
+                        queue.put_nowait(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("agent stream failed: %s", exc)
+                queue.put_nowait(ErrorEvent(agent_name=agent.name, message=str(exc)))
+            finally:
+                queue.put_nowait(None)
+
+        main_task = asyncio.create_task(_consume_main(), name="agent-main-stream")
+
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                _track_delta(buffers, event)
+                yield event
+            yield DoneEvent(agent_name=agent.name)
+        except asyncio.CancelledError:
+            if not main_task.done():
+                main_task.cancel()
+            raise
+        finally:
+            context.event_emitter = None
+            if not main_task.done():
+                main_task.cancel()
+                try:
+                    await main_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            await _flush_partial_context(result_holder["result"], memory_session, buffers)
+
+
+@dataclass
+class _PooledSession:
+    session: AgentSession
+    last_used_at: float = field(default_factory=time.monotonic)
+
+
+class AgentSessionPool:
+    def __init__(self, registry: AgentRegistry | None = None) -> None:
+        cfg = get_config().agent_pool
+        self._registry = registry or AgentRegistry()
+        self._max_size = cfg.max_size
+        self._ttl = cfg.ttl_seconds
+        self._sweep_interval = cfg.sweep_interval_seconds
+        self._pool: dict[str, _PooledSession] = {}
+        self._sweeper_task: asyncio.Task | None = None
+
+    @property
+    def registry(self) -> AgentRegistry:
+        return self._registry
+
+    async def start(self) -> None:
+        if self._sweeper_task is not None and not self._sweeper_task.done():
+            return
+        self._sweeper_task = asyncio.create_task(self._sweep_loop(), name="agent-pool-sweeper")
+        logger.debug(
+            "agent pool started (ttl=%ds, interval=%ds, max_size=%d)",
+            self._ttl, self._sweep_interval, self._max_size,
+        )
+
+    async def stop(self) -> None:
+        task, self._sweeper_task = self._sweeper_task, None
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        entries = list(self._pool.values())
+        self._pool.clear()
+        await asyncio.gather(*(entry.session.interrupt() for entry in entries), return_exceptions=True)
+        logger.debug("agent pool stopped")
+
+    def get_or_create(self, session_id: str) -> AgentSession:
+        entry = self._pool.get(session_id)
+        if entry is None:
+            entry = _PooledSession(session=AgentSession(session_id, self._registry))
+            self._pool[session_id] = entry
+            logger.debug("agent pool created session=%s", session_id)
+            self._enforce_capacity()
+        else:
+            entry.last_used_at = time.monotonic()
+        return entry.session
+
+    async def discard(self, session_id: str) -> None:
+        entry = self._pool.pop(session_id, None)
+        if entry is None:
+            return
+        await entry.session.interrupt()
+        logger.debug("agent pool discarded session=%s", session_id)
+
+    async def try_interrupt(self, session_id: str) -> bool:
+        entry = self._pool.get(session_id)
+        if entry is None:
+            return False
+        return await entry.session.interrupt()
+
+    async def _sweep_loop(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(self._sweep_interval)
+                self._sweep_expired(time.monotonic())
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("agent pool sweep iteration failed")
+
+    def _sweep_expired(self, now: float) -> None:
+        if self._ttl <= 0:
+            return
+        expired = [
+            sid for sid, entry in self._pool.items()
+            if not entry.session.is_running() and now - entry.last_used_at > self._ttl
+        ]
+        for sid in expired:
+            del self._pool[sid]
+            logger.debug("agent pool evicted idle session=%s", sid)
+
+    def _enforce_capacity(self) -> None:
+        # only idle entries are evicted; running sessions may briefly exceed the cap
+        overflow = len(self._pool) - self._max_size
+        if overflow <= 0:
+            return
+        idle = sorted(
+            ((sid, entry) for sid, entry in self._pool.items() if not entry.session.is_running()),
+            key=lambda kv: kv[1].last_used_at,
+        )
+        for sid, _ in idle[:overflow]:
+            del self._pool[sid]
+            logger.debug("agent pool evicted LRU session=%s", sid)
+
+
+_pool: AgentSessionPool | None = None
+
+
+def get_agent_pool() -> AgentSessionPool:
+    global _pool
+    if _pool is None:
+        _pool = AgentSessionPool()
+    return _pool
+
+
+def get_agent_registry() -> AgentRegistry:
+    return get_agent_pool().registry
+
+
+_DELTA_TYPES: tuple[type, ...] = (TextDeltaEvent, ThinkingDeltaEvent)
+_COMPLETE_TYPES: tuple[type, ...] = (TextCompleteEvent, ThinkingCompleteEvent)
+
+
+def _build_user_input(text: str) -> list[TResponseInputItem]:
+    text_item: ResponseInputTextParam = {"type": "input_text", "text": text}
+    content: ResponseInputMessageContentListParam = [text_item]
+    message: EasyInputMessageParam = {"type": "message", "role": "user", "content": content}
+    return [message]
+
+
+def _track_delta(buffers: dict[str, _DeltaBuffer], event: AgentEventSchema) -> None:
+    if isinstance(event, _DELTA_TYPES):
+        buf = buffers.get(event.item_id)
+        if buf is None:
+            buf = _DeltaBuffer(is_thinking=isinstance(event, ThinkingDeltaEvent), item_id=event.item_id)
+            buffers[event.item_id] = buf
+        buf.content += event.delta
+    elif isinstance(event, _COMPLETE_TYPES):
+        buffers.pop(event.item_id, None)
+
+
+async def _flush_partial_context(
+    result: Any, memory_session: Z3r0Session, buffers: dict[str, _DeltaBuffer],
+) -> None:
+    """On cancellation, persist accumulated deltas so the next turn sees the truncated context."""
+    if result is None or getattr(result, "is_complete", True):
+        return
+    try:
+        result.cancel(mode="immediate")
+    except Exception:
+        logger.warning("failed to cancel SDK stream", exc_info=True)
+    items: list[TResponseInputItem] = [
+        _partial_reasoning_item(buf) if buf.is_thinking else _partial_assistant_item(buf)
+        for buf in buffers.values() if buf.content
+    ]
+    if not items:
+        return
+    try:
+        await memory_session.add_items(items)
+    except Exception:
+        logger.warning("failed to inject partial assistant context", exc_info=True)
+
+
+def _partial_assistant_item(buf: _DeltaBuffer) -> TResponseInputItem:
+    return {
+        "id": f"partial_{buf.item_id}",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": buf.content, "annotations": []}],
+        "status": "incomplete",
+    }
+
+
+def _partial_reasoning_item(buf: _DeltaBuffer) -> TResponseInputItem:
+    return {
+        "id": f"partial_{buf.item_id}",
+        "type": "reasoning",
+        "summary": [{"type": "summary_text", "text": buf.content}],
+        "status": "incomplete",
+    }
