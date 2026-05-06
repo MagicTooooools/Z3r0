@@ -1,0 +1,11 @@
+.git
+.gitignore
+.gitattributes
+
+*.log
+*.tmp
+
+build.sh
+
+**/.DS_Store
+**/Thumbs.db
