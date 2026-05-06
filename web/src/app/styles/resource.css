@@ -263,6 +263,26 @@
   white-space: nowrap;
 }
 
+.novnc-fieldset {
+  display: grid;
+  gap: 10px;
+}
+
+.novnc-toggle-row {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.novnc-port-field {
+  margin: 0;
+}
+
 .port-mapping-fieldset {
   display: grid;
   gap: 10px;
@@ -272,9 +292,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   color: inherit;
   font-size: 13px;
   font-weight: 650;
+}
+
+.port-mapping-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .port-mapping-empty {

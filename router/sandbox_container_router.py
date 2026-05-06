@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query, WebSocket
 from handler.sandbox_container_handler import (
     create_sandbox_container_handler,
     delete_sandbox_container_handler,
+    generate_default_sandbox_container_port_mappings_handler,
     handle_container_shell_stream,
     query_available_sandbox_containers_handler,
     query_sandbox_containers_handler,
@@ -16,6 +17,7 @@ from schema.sandbox_container_schema import (
     CreateSandboxContainerRequest,
     DeleteSandboxContainerResponse,
     QuerySandboxContainersResponse,
+    SandboxContainerDefaultPortMappingsResponse,
     SandboxContainerSchema,
 )
 
@@ -61,6 +63,12 @@ async def query_available_sandbox_containers_route(
     )
 
 
+async def generate_default_sandbox_container_port_mappings_route(
+    image_id: int = Query(gt=0),
+) -> CommonResponse[SandboxContainerDefaultPortMappingsResponse]:
+    return await generate_default_sandbox_container_port_mappings_handler(image_id=image_id)
+
+
 router.add_api_route(
     "",
     create_sandbox_container_route,
@@ -68,6 +76,17 @@ router.add_api_route(
     response_model=CommonResponse[SandboxContainerSchema],
     responses={**COMMON_ERROR_RESPONSES, **BAD_REQUEST_RESPONSE, **CREATE_NOT_FOUND_RESPONSE},
 )
+
+
+router.add_api_route(
+    "/default-port-mappings",
+    generate_default_sandbox_container_port_mappings_route,
+    methods=["GET"],
+    dependencies=ADMIN_ONLY,
+    response_model=CommonResponse[SandboxContainerDefaultPortMappingsResponse],
+    responses={**COMMON_ERROR_RESPONSES, **BAD_REQUEST_RESPONSE, **CREATE_NOT_FOUND_RESPONSE},
+)
+
 
 router.add_api_route(
     "/available",

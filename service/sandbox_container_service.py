@@ -1,10 +1,12 @@
 import asyncio
+import secrets
 import shlex
 import socket as py_socket
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Literal
 from uuid import uuid4
 
 import docker
@@ -35,8 +37,20 @@ _STATUS_MONITOR_INTERVAL_SECONDS = 5
 _TOOL_BINDING_INSPECT_TTL_SECONDS = 3
 _COMMAND_CANCEL_JOIN_TIMEOUT_SECONDS = 3
 _COMMAND_TERMINATE_TIMEOUT_SECONDS = 5
+_RANDOM_HOST_PORT_MIN = 49152
+_RANDOM_HOST_PORT_MAX = 65535
+_RANDOM_HOST_PORT_ATTEMPTS = 128
 _status_monitor_task: asyncio.Task[None] | None = None
 _tool_binding_state_cache: dict[int, "_DockerStateCacheEntry"] = {}
+
+
+SandboxContainerProtocol = Literal["tcp", "udp"]
+
+
+@dataclass(frozen=True)
+class _ExposedPort:
+    container_port: int
+    protocol: SandboxContainerProtocol
 
 
 @dataclass(frozen=True)
@@ -50,6 +64,14 @@ class SandboxContainerRecord:
 class SandboxContainerMutationResult:
     record: SandboxContainerRecord | None
     changed: bool
+    message: str = ""
+    not_found: bool = False
+
+
+@dataclass(frozen=True)
+class SandboxContainerDefaultPortMappingsResult:
+    port_mappings: list[SandboxContainerPortMapping]
+    ok: bool
     message: str = ""
     not_found: bool = False
 
@@ -149,6 +171,42 @@ def _to_docker_ports(port_mappings: list[SandboxContainerPortMapping]) -> dict[s
     }
 
 
+def _parse_exposed_ports(exposed_ports: Any) -> list[_ExposedPort]:
+    if not isinstance(exposed_ports, dict):
+        return []
+
+    parsed: set[tuple[int, SandboxContainerProtocol]] = set()
+    for raw_port in exposed_ports:
+        if not isinstance(raw_port, str) or "/" not in raw_port:
+            continue
+        port_text, protocol = raw_port.rsplit("/", 1)
+        if protocol not in {"tcp", "udp"}:
+            continue
+        try:
+            container_port = int(port_text)
+        except ValueError:
+            continue
+        if 1 <= container_port <= 65535:
+            parsed.add((container_port, protocol))
+
+    return [
+        _ExposedPort(container_port=container_port, protocol=protocol)
+        for container_port, protocol in sorted(parsed, key=lambda item: (item[0], item[1]))
+    ]
+
+
+def _inspect_image_exposed_ports_sync(image_ref: str) -> list[_ExposedPort]:
+    client = docker.from_env()
+    try:
+        attrs = client.api.inspect_image(image_ref)
+        config = attrs.get("Config")
+        if not isinstance(config, dict):
+            return []
+        return _parse_exposed_ports(config.get("ExposedPorts"))
+    finally:
+        client.close()
+
+
 def _create_container_sync(
     image_ref: str,
     container_name: str,
@@ -157,14 +215,19 @@ def _create_container_sync(
 ) -> str:
     client = docker.from_env()
     try:
+        create_kwargs = {
+            "image": image_ref,
+            "name": container_name,
+            "ports": _to_docker_ports(port_mappings),
+            "stdin_open": True,
+            "tty": False,
+        }
+        if container_command:
+            create_kwargs["entrypoint"] = ["/bin/sh", "-lc"]
+            create_kwargs["command"] = [container_command]
+
         container = client.containers.create(
-            image=image_ref,
-            name=container_name,
-            entrypoint=["/bin/sh", "-lc"],
-            command=[container_command],
-            ports=_to_docker_ports(port_mappings),
-            stdin_open=True,
-            tty=True,
+            **create_kwargs,
         )
         return container.id
     finally:
@@ -486,6 +549,51 @@ async def _load_sandbox_container_record(id: int) -> SandboxContainerRecord | No
         return SandboxContainerRecord(container=row[0], image_name=row[1], owner_username=row[2])
 
 
+def _is_host_port_available(host_port: int, protocol: SandboxContainerProtocol) -> bool:
+    socket_type = py_socket.SOCK_STREAM if protocol == "tcp" else py_socket.SOCK_DGRAM
+    with py_socket.socket(py_socket.AF_INET, socket_type) as sock:
+        try:
+            sock.bind(("0.0.0.0", host_port))
+        except OSError:
+            return False
+    return True
+
+
+def _random_host_port(
+    protocol: SandboxContainerProtocol,
+    reserved: set[tuple[int, SandboxContainerProtocol]],
+) -> int:
+    port_count = _RANDOM_HOST_PORT_MAX - _RANDOM_HOST_PORT_MIN + 1
+    for _ in range(_RANDOM_HOST_PORT_ATTEMPTS):
+        host_port = _RANDOM_HOST_PORT_MIN + secrets.randbelow(port_count)
+        key = (host_port, protocol)
+        if key in reserved:
+            continue
+        if _is_host_port_available(host_port, protocol):
+            reserved.add(key)
+            return host_port
+    raise RuntimeError("failed to allocate host port")
+
+
+async def _load_reserved_host_ports() -> set[tuple[int, SandboxContainerProtocol]]:
+    async with get_async_session() as session:
+        result = await session.exec(select(SandboxContainer.port_mappings))
+        rows = result.all()
+
+    reserved: set[tuple[int, SandboxContainerProtocol]] = set()
+    for mappings in rows:
+        if not isinstance(mappings, list):
+            continue
+        for mapping in mappings:
+            if not isinstance(mapping, dict):
+                continue
+            host_port = mapping.get("host_port")
+            protocol = mapping.get("protocol")
+            if isinstance(host_port, int) and protocol in {"tcp", "udp"}:
+                reserved.add((host_port, protocol))
+    return reserved
+
+
 async def _save_sandbox_container_status(
     id: int,
     status: SandboxContainerStatus,
@@ -665,8 +773,13 @@ async def create_sandbox_container(
     image_id: int,
     owner_id: int,
     port_mappings: list[SandboxContainerPortMapping],
+    novnc_support: bool = False,
+    novnc_port: int = 0,
     container_command: str = DEFAULT_SANDBOX_CONTAINER_COMMAND,
 ) -> SandboxContainerMutationResult:
+    container_command = container_command.strip()
+    novnc_port = novnc_port if novnc_support else 0
+
     async with get_async_session() as session:
         sandbox_image = await session.get(SandboxImage, image_id)
         if sandbox_image is None:
@@ -719,6 +832,8 @@ async def create_sandbox_container(
         owner_id=owner_id,
         image_id=image_id,
         port_mappings=_serialize_port_mappings(port_mappings),
+        novnc_support=novnc_support,
+        novnc_port=novnc_port,
         status=SandboxContainerStatus.CREATED,
         created_at=now,
         updated_at=now,
@@ -742,6 +857,68 @@ async def create_sandbox_container(
         record=await _load_sandbox_container_record(sandbox_container.id),
         changed=True,
         message="sandbox container created",
+    )
+
+
+async def generate_default_sandbox_container_port_mappings(
+    image_id: int,
+) -> SandboxContainerDefaultPortMappingsResult:
+    async with get_async_session() as session:
+        sandbox_image = await session.get(SandboxImage, image_id)
+        if sandbox_image is None:
+            return SandboxContainerDefaultPortMappingsResult(
+                port_mappings=[],
+                ok=False,
+                message="sandbox image not found",
+                not_found=True,
+            )
+        if sandbox_image.status != SandboxImageStatus.READY:
+            return SandboxContainerDefaultPortMappingsResult(
+                port_mappings=[],
+                ok=False,
+                message="only ready sandbox images can generate port mappings",
+            )
+        image_ref = _image_ref(sandbox_image)
+
+    try:
+        exposed_ports = await asyncio.to_thread(_inspect_image_exposed_ports_sync, image_ref)
+    except Exception:
+        logger.exception("sandbox image exposed ports inspect failed: %s", image_id)
+        return SandboxContainerDefaultPortMappingsResult(
+            port_mappings=[],
+            ok=False,
+            message="failed to inspect sandbox image exposed ports",
+        )
+
+    if not exposed_ports:
+        return SandboxContainerDefaultPortMappingsResult(
+            port_mappings=[],
+            ok=True,
+            message="sandbox image has no exposed ports",
+        )
+
+    reserved = await _load_reserved_host_ports()
+    try:
+        port_mappings = [
+            SandboxContainerPortMapping(
+                container_port=exposed.container_port,
+                host_port=_random_host_port(exposed.protocol, reserved),
+                protocol=exposed.protocol,
+            )
+            for exposed in exposed_ports
+        ]
+    except RuntimeError:
+        logger.exception("sandbox container host port allocation failed for image: %s", image_id)
+        return SandboxContainerDefaultPortMappingsResult(
+            port_mappings=[],
+            ok=False,
+            message="failed to allocate host ports",
+        )
+
+    return SandboxContainerDefaultPortMappingsResult(
+        port_mappings=port_mappings,
+        ok=True,
+        message="sandbox container port mappings generated",
     )
 
 

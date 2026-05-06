@@ -68,6 +68,13 @@ def _pull_image_sync(id: int, image_name: str) -> tuple[str, int]:
     client = docker.from_env()
     job.client = client
     try:
+        try:
+            attrs = client.api.inspect_image(image_name)
+            logger.info("sandbox image found locally: %s", image_name)
+            return _image_metadata(attrs)
+        except docker.errors.ImageNotFound:
+            pass
+
         repository, tag = parse_repository_tag(image_name)
         for event in client.api.pull(repository, tag=tag, stream=True, decode=True):
             if job.cancel_event.is_set():
@@ -76,12 +83,16 @@ def _pull_image_sync(id: int, image_name: str) -> tuple[str, int]:
                 raise RuntimeError(str(event["error"]))
 
         attrs = client.api.inspect_image(image_name)
-        image_id: str = attrs["Id"]
-        image_size = attrs.get("Size", 0)
-        return image_id.removeprefix("sha256:"), max(int(image_size), 0)
+        return _image_metadata(attrs)
     finally:
         job.client = None
         client.close()
+
+
+def _image_metadata(attrs: dict) -> tuple[str, int]:
+    image_id: str = attrs["Id"]
+    image_size = attrs.get("Size", 0)
+    return image_id.removeprefix("sha256:"), max(int(image_size), 0)
 
 
 def _remove_image_sync(image_hash: str) -> None:

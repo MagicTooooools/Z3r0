@@ -108,6 +108,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandbox-containers/default-port-mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generate Default Sandbox Container Port Mappings Route */
+        get: operations["generate_default_sandbox_container_port_mappings_route_api_sandbox_containers_default_port_mappings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sandbox-containers/{id}": {
         parameters: {
             query?: never;
@@ -631,6 +648,20 @@ export interface components {
              */
             message: string;
         };
+        /** CommonResponse[SandboxContainerDefaultPortMappingsResponse] */
+        CommonResponse_SandboxContainerDefaultPortMappingsResponse_: {
+            /**
+             * Code
+             * @default 200
+             */
+            code: number;
+            data?: components["schemas"]["SandboxContainerDefaultPortMappingsResponse"] | null;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+        };
         /** CommonResponse[SandboxContainerSchema] */
         CommonResponse_SandboxContainerSchema_: {
             /**
@@ -715,6 +746,16 @@ export interface components {
             container_command: string;
             /** Image Id */
             image_id: number;
+            /**
+             * Novnc Port
+             * @default 0
+             */
+            novnc_port: number;
+            /**
+             * Novnc Support
+             * @default false
+             */
+            novnc_support: boolean;
             /** Port Mappings */
             port_mappings?: components["schemas"]["SandboxContainerPortMapping"][];
         };
@@ -878,6 +919,11 @@ export interface components {
             /** Size */
             size: number;
         };
+        /** SandboxContainerDefaultPortMappingsResponse */
+        SandboxContainerDefaultPortMappingsResponse: {
+            /** Port Mappings */
+            port_mappings: components["schemas"]["SandboxContainerPortMapping"][];
+        };
         /** SandboxContainerPortMapping */
         SandboxContainerPortMapping: {
             /** Container Port */
@@ -910,6 +956,10 @@ export interface components {
             image_id: number;
             /** Image Name */
             image_name: string;
+            /** Novnc Port */
+            novnc_port: number;
+            /** Novnc Support */
+            novnc_support: boolean;
             /** Owner Id */
             owner_id: number;
             /** Owner Username */
@@ -1587,6 +1637,73 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    generate_default_sandbox_container_port_mappings_route_api_sandbox_containers_default_port_mappings_get: {
+        parameters: {
+            query: {
+                image_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_SandboxContainerDefaultPortMappingsResponse_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Sandbox image not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

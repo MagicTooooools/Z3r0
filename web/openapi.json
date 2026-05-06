@@ -503,6 +503,32 @@
         "title": "CommonResponse[QueryWorkProjectsResponse]",
         "type": "object"
       },
+      "CommonResponse_SandboxContainerDefaultPortMappingsResponse_": {
+        "properties": {
+          "code": {
+            "default": 200,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SandboxContainerDefaultPortMappingsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "title": "CommonResponse[SandboxContainerDefaultPortMappingsResponse]",
+        "type": "object"
+      },
       "CommonResponse_SandboxContainerSchema_": {
         "properties": {
           "code": {
@@ -651,7 +677,6 @@
           "container_command": {
             "default": "trap 'exit 0' TERM INT; while :; do sleep 3600; done",
             "maxLength": 2000,
-            "minLength": 1,
             "title": "Container Command",
             "type": "string"
           },
@@ -659,6 +684,18 @@
             "exclusiveMinimum": 0.0,
             "title": "Image Id",
             "type": "integer"
+          },
+          "novnc_port": {
+            "default": 0,
+            "maximum": 65535.0,
+            "minimum": 0.0,
+            "title": "Novnc Port",
+            "type": "integer"
+          },
+          "novnc_support": {
+            "default": false,
+            "title": "Novnc Support",
+            "type": "boolean"
           },
           "port_mappings": {
             "items": {
@@ -1065,6 +1102,22 @@
         "title": "QueryWorkProjectsResponse",
         "type": "object"
       },
+      "SandboxContainerDefaultPortMappingsResponse": {
+        "properties": {
+          "port_mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SandboxContainerPortMapping"
+            },
+            "title": "Port Mappings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "port_mappings"
+        ],
+        "title": "SandboxContainerDefaultPortMappingsResponse",
+        "type": "object"
+      },
       "SandboxContainerPortMapping": {
         "properties": {
           "container_port": {
@@ -1127,6 +1180,14 @@
             "title": "Image Name",
             "type": "string"
           },
+          "novnc_port": {
+            "title": "Novnc Port",
+            "type": "integer"
+          },
+          "novnc_support": {
+            "title": "Novnc Support",
+            "type": "boolean"
+          },
           "owner_id": {
             "title": "Owner Id",
             "type": "integer"
@@ -1159,6 +1220,8 @@
           "image_name",
           "container_command",
           "port_mappings",
+          "novnc_support",
+          "novnc_port",
           "status",
           "owner_id",
           "owner_username",
@@ -2250,6 +2313,94 @@
           }
         ],
         "summary": "Query Available Sandbox Containers Route",
+        "tags": [
+          "sandbox-containers"
+        ]
+      }
+    },
+    "/api/sandbox-containers/default-port-mappings": {
+      "get": {
+        "operationId": "generate_default_sandbox_container_port_mappings_route_api_sandbox_containers_default_port_mappings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_SandboxContainerDefaultPortMappingsResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Sandbox image not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Generate Default Sandbox Container Port Mappings Route",
         "tags": [
           "sandbox-containers"
         ]

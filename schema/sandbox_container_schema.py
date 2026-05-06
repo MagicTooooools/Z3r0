@@ -40,6 +40,8 @@ class SandboxContainerSchema(BaseModel):
     image_name: str
     container_command: str
     port_mappings: list[SandboxContainerPortMapping]
+    novnc_support: bool
+    novnc_port: int
     status: SandboxContainerStatus
     owner_id: int
     owner_username: str
@@ -50,8 +52,10 @@ class SandboxContainerSchema(BaseModel):
 # create sandbox container request schema
 class CreateSandboxContainerRequest(BaseModel):
     image_id: int = Field(gt=0)
-    container_command: str = Field(default=DEFAULT_SANDBOX_CONTAINER_COMMAND, min_length=1, max_length=2000)
+    container_command: str = Field(default=DEFAULT_SANDBOX_CONTAINER_COMMAND, max_length=2000)
     port_mappings: list[SandboxContainerPortMapping] = Field(default_factory=list, max_length=32)
+    novnc_support: bool = False
+    novnc_port: int = Field(default=0, ge=0, le=65535)
 
     @field_validator("container_command", mode="before")
     @classmethod
@@ -59,12 +63,11 @@ class CreateSandboxContainerRequest(BaseModel):
         if value is None:
             return DEFAULT_SANDBOX_CONTAINER_COMMAND
         if isinstance(value, str):
-            command = value.strip()
-            return command or DEFAULT_SANDBOX_CONTAINER_COMMAND
+            return value.strip()
         return value
 
     @model_validator(mode="after")
-    def validate_unique_port_mappings(self):
+    def validate_container_contract(self):
         container_ports: set[tuple[int, str]] = set()
         host_ports: set[tuple[int, str]] = set()
         for mapping in self.port_mappings:
@@ -76,6 +79,14 @@ class CreateSandboxContainerRequest(BaseModel):
                 raise ValueError("host ports must be unique per protocol")
             container_ports.add(container_key)
             host_ports.add(host_key)
+
+        if not self.novnc_support:
+            self.novnc_port = 0
+            return self
+        if self.novnc_port <= 0:
+            raise ValueError("novnc port is required when novnc support is enabled")
+        if (self.novnc_port, "tcp") not in container_ports:
+            raise ValueError("novnc port must match a mapped tcp container port")
         return self
 
 
@@ -89,3 +100,8 @@ class QuerySandboxContainersResponse(BaseModel):
     page: int
     size: int
     items: list[SandboxContainerSchema]
+
+
+# default sandbox container port mappings generated from image metadata
+class SandboxContainerDefaultPortMappingsResponse(BaseModel):
+    port_mappings: list[SandboxContainerPortMapping]

@@ -17,6 +17,8 @@ class SandboxContainer(SQLModel, table=True):
     owner_id: int = Field(default=0, foreign_key="system_users.id", index=True)
     image_id: int = Field(default=0, foreign_key="sandbox_images.id", index=True)
     port_mappings: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    novnc_support: bool = Field(default=False)
+    novnc_port: int = Field(default=0)
     status: SandboxContainerStatus = Field(default=SandboxContainerStatus.CREATED)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

@@ -2,7 +2,7 @@ import { Button } from "@douyinfe/semi-ui";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { Maximize2, Minimize2, Minus, SquareTerminal, X } from "lucide-react";
+import { Maximize2, Minimize2, Minus, Monitor, SquareTerminal, X } from "lucide-react";
 import {
   CSSProperties,
   createContext,
@@ -17,7 +17,7 @@ import {
   useState,
   SetStateAction,
 } from "react";
-import { buildContainerShellUrl } from "../../shared/api/sandboxContainers";
+import { buildContainerNoVNCUrl, buildContainerShellUrl } from "../../shared/api/sandboxContainers";
 import { showApiError } from "../../shared/api/feedback";
 import type { SandboxContainer } from "../../shared/api/types";
 
@@ -38,7 +38,19 @@ type ShellWindowState = {
   height: number;
 };
 
+type NoVNCWindowState = {
+  containerId: number;
+  containerName: string;
+  dockState: ShellDockState;
+  url: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 type ContainerShellContextValue = {
+  openNoVNC: (container: SandboxContainer) => void;
   openShell: (container: SandboxContainer) => void;
 };
 
@@ -63,6 +75,8 @@ type FitTerminalOptions = {
 
 const DEFAULT_WIDTH = 760;
 const DEFAULT_HEIGHT = 460;
+const NOVNC_DEFAULT_WIDTH = 1280;
+const NOVNC_DEFAULT_HEIGHT = 762;
 const MIN_WIDTH = 420;
 const MIN_HEIGHT = 260;
 const MAXIMIZED_MARGIN = 12;
@@ -81,6 +95,7 @@ export function useContainerShell() {
 export function ContainerShellProvider({ children }: { children: ReactNode }) {
   const [shell, setShell] = useState<ShellWindowState | null>(null);
   const [flight, setFlight] = useState<ShellFlightState | null>(null);
+  const [noVNC, setNoVNC] = useState<NoVNCWindowState | null>(null);
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -88,6 +103,7 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
   const flightRef = useRef<HTMLDivElement | null>(null);
   const flightFrameRef = useRef<number | null>(null);
   const dragRef = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
+  const noVNCDragRef = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
   const resizeRef = useRef<{ width: number; height: number; startX: number; startY: number } | null>(null);
   const fitWithoutSnapRef = useRef(false);
   const connectionKeyRef = useRef(0);
@@ -201,6 +217,40 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
     connectionKeyRef.current += 1;
   }, [disposeShellResources, fitTerminal, shell]);
 
+  const closeNoVNC = useCallback(() => {
+    noVNCDragRef.current = null;
+    setNoVNC(null);
+  }, []);
+
+  const minimizeNoVNC = useCallback(() => {
+    setNoVNC((current) => current ? { ...current, dockState: "minimized" } : current);
+  }, []);
+
+  const restoreNoVNC = useCallback(() => {
+    setNoVNC((current) => current ? { ...current, dockState: "normal" } : current);
+  }, []);
+
+  const openNoVNC = useCallback((container: SandboxContainer) => {
+    try {
+      const url = buildContainerNoVNCUrl(container);
+      setNoVNC((current) => {
+        if (current?.containerId === container.id && current.url === url) {
+          return { ...current, containerName: container.container_name, dockState: "normal" };
+        }
+
+        return {
+          containerId: container.id,
+          containerName: container.container_name,
+          dockState: "normal",
+          url,
+          ...getInitialNoVNCRect(),
+        };
+      });
+    } catch (error) {
+      showApiError(error);
+    }
+  }, []);
+
   useEffect(() => {
     if (!activeContainerHash || activeConnectionKey === null || terminalRef.current || !terminalHostRef.current) return;
 
@@ -276,6 +326,8 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => closeShell(), [closeShell]);
 
+  useEffect(() => () => closeNoVNC(), [closeNoVNC]);
+
   useEffect(() => () => cancelFlightFrame(flightFrameRef), []);
 
   useEffect(() => {
@@ -299,6 +351,11 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onWindowResize = () => {
       setShell((current) => current?.isMaximized ? { ...current, ...getMaximizedShellRect() } : current);
+      setNoVNC((current) => current ? {
+        ...current,
+        x: clamp(current.x, 8, window.innerWidth - 80),
+        y: clamp(current.y, 8, window.innerHeight - 80),
+      } : current);
       if (shell?.dockState === "normal") window.setTimeout(fitTerminal, 0);
     };
     window.addEventListener("resize", onWindowResize);
@@ -316,6 +373,16 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const noVNCDrag = noVNCDragRef.current;
+    if (noVNCDrag) {
+      setNoVNC((current) => current ? {
+        ...current,
+        x: clamp(noVNCDrag.x + event.clientX - noVNCDrag.startX, 8, window.innerWidth - 80),
+        y: clamp(noVNCDrag.y + event.clientY - noVNCDrag.startY, 8, window.innerHeight - 80),
+      } : current);
+      return;
+    }
+
     const resize = resizeRef.current;
     if (resize) {
       setShell((current) => current ? {
@@ -328,6 +395,7 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
 
   const stopPointerAction = useCallback(() => {
     dragRef.current = null;
+    noVNCDragRef.current = null;
     resizeRef.current = null;
   }, []);
 
@@ -340,10 +408,12 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
     };
   }, [onPointerMove, stopPointerAction]);
 
-  const contextValue = useMemo<ContainerShellContextValue>(() => ({ openShell }), [openShell]);
+  const contextValue = useMemo<ContainerShellContextValue>(() => ({ openNoVNC, openShell }), [openNoVNC, openShell]);
   const shellWindowStyle = shell ? buildShellWindowStyle(shell) : undefined;
   const shellFlightStyle = flight ? buildShellFlightStyle(flight) : undefined;
   const shellWindowClassName = shell ? `shell-window${shell.dockState === "minimized" ? " shell-window-hidden" : ""}${shell.isMaximized ? " shell-window-maximized" : ""}` : "shell-window";
+  const noVNCWindowStyle = noVNC ? buildNoVNCWindowStyle(noVNC) : undefined;
+  const noVNCWindowClassName = noVNC ? `shell-window novnc-window${noVNC.dockState === "minimized" ? " shell-window-hidden" : ""}` : "shell-window novnc-window";
 
   return (
     <ContainerShellContext.Provider value={contextValue}>
@@ -395,6 +465,37 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
           ) : null}
         </>
       ) : null}
+      {noVNC ? (
+        <>
+          <div className={noVNCWindowClassName} style={noVNCWindowStyle}>
+            <div
+              className="shell-window-header"
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId);
+                noVNCDragRef.current = { x: noVNC.x, y: noVNC.y, startX: event.clientX, startY: event.clientY };
+              }}
+            >
+              <div className="shell-window-title">
+                <Monitor size={16} />
+                <span>{noVNC.containerName}</span>
+                <em>screen</em>
+              </div>
+              <div className="shell-window-actions" onPointerDown={(event) => event.stopPropagation()}>
+                <Button icon={<Minus size={14} />} theme="borderless" onClick={minimizeNoVNC} aria-label="Minimize noVNC" />
+                <Button icon={<X size={14} />} theme="borderless" type="danger" onClick={closeNoVNC} aria-label="Close noVNC" />
+              </div>
+            </div>
+            <div className="novnc-body">
+              <iframe className="novnc-frame" src={noVNC.url} title={`noVNC ${noVNC.containerName}`} />
+            </div>
+          </div>
+          {noVNC.dockState === "minimized" ? (
+            <button className="shell-minimized-button novnc-minimized-button" type="button" onClick={restoreNoVNC}>
+              <Monitor size={20} />
+            </button>
+          ) : null}
+        </>
+      ) : null}
     </ContainerShellContext.Provider>
   );
 }
@@ -410,6 +511,26 @@ function buildShellWindowStyle(shell: ShellWindowState) {
     width: shell.width,
     height: shell.height,
   } satisfies CSSProperties;
+}
+
+function buildNoVNCWindowStyle(noVNC: NoVNCWindowState) {
+  return {
+    left: noVNC.x,
+    top: noVNC.y,
+    width: noVNC.width,
+    height: noVNC.height,
+  } satisfies CSSProperties;
+}
+
+function getInitialNoVNCRect(): ShellRect {
+  const width = Math.min(NOVNC_DEFAULT_WIDTH, Math.max(420, window.innerWidth - 24));
+  const height = Math.min(NOVNC_DEFAULT_HEIGHT, Math.max(300, window.innerHeight - 24));
+  return {
+    x: Math.max(12, Math.round((window.innerWidth - width) / 2)),
+    y: Math.max(72, Math.round((window.innerHeight - height) / 2)),
+    width,
+    height,
+  };
 }
 
 function getShellRect(shell: ShellWindowState): ShellRect {

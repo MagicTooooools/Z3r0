@@ -1,8 +1,8 @@
 import { Button, Popconfirm, Tag, Tooltip } from "@douyinfe/semi-ui";
-import { Box, Boxes, Fingerprint, Play, Plus, RefreshCw, Square, SquareTerminal, Trash2, User } from "lucide-react";
+import { Box, Boxes, Fingerprint, Monitor, Play, Plus, RefreshCw, Square, SquareTerminal, Trash2, User } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
-import { createSandboxContainer, deleteSandboxContainer, querySandboxContainers, startSandboxContainer, stopSandboxContainer } from "../../shared/api/sandboxContainers";
+import { canOpenContainerNoVNC, createSandboxContainer, deleteSandboxContainer, querySandboxContainers, startSandboxContainer, stopSandboxContainer } from "../../shared/api/sandboxContainers";
 import { querySandboxImages } from "../../shared/api/sandboxImages";
 import { showApiError, showApiSuccess } from "../../shared/api/feedback";
 import type { CreateSandboxContainerRequest, SandboxContainer, SandboxImage } from "../../shared/api/types";
@@ -27,7 +27,7 @@ export function SandboxContainersPage() {
   const [images, setImages] = useState<SandboxImage[]>([]);
   const [imagesLoading, setImagesLoading] = useState(false);
   const setHeaderActions = useAdminHeaderActions();
-  const { openShell } = useContainerShell();
+  const { openNoVNC, openShell } = useContainerShell();
 
   const loadReadyImages = useCallback(async () => {
     setImagesLoading(true);
@@ -131,12 +131,16 @@ export function SandboxContainersPage() {
     },
     { key: "updated", header: "Updated", width: "180px", render: (c) => formatDateTime(c.updated_at) },
     {
-      key: "actions", header: "Actions", width: "120px",
+      key: "actions", header: "Actions", width: "150px",
       render: (container) => (
         <div className="row-actions">
           <Button icon={<SquareTerminal size={15} />} theme="borderless"
             disabled={container.status !== "running" || !container.container_hash}
             aria-label={`Connect shell for ${container.container_name}`} onClick={() => openShell(container)}
+          />
+          <Button icon={<Monitor size={15} />} theme="borderless"
+            disabled={container.status !== "running" || !canOpenContainerNoVNC(container)}
+            aria-label={`Connect screen for ${container.container_name}`} onClick={() => openNoVNC(container)}
           />
           <Button icon={<Play size={15} />} theme="borderless" type="primary"
             disabled={container.status !== "created" && container.status !== "stopped"}

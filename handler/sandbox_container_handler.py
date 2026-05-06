@@ -14,6 +14,7 @@ from schema.sandbox_container_schema import (
     CreateSandboxContainerRequest,
     DeleteSandboxContainerResponse,
     QuerySandboxContainersResponse,
+    SandboxContainerDefaultPortMappingsResponse,
     SandboxContainerSchema,
 )
 from schema.system_user_schema import SystemUserRole
@@ -23,6 +24,7 @@ from service.sandbox_container_service import (
     SandboxContainerRecord,
     create_sandbox_container,
     delete_sandbox_container,
+    generate_default_sandbox_container_port_mappings,
     open_container_shell,
     query_available_sandbox_containers,
     query_sandbox_containers,
@@ -48,6 +50,8 @@ def _sandbox_container_schema(record: SandboxContainerRecord) -> SandboxContaine
         image_name=record.image_name,
         container_command=container.container_command,
         port_mappings=container.port_mappings,
+        novnc_support=container.novnc_support,
+        novnc_port=container.novnc_port,
         status=container.status,
         owner_id=container.owner_id,
         owner_username=record.owner_username,
@@ -81,8 +85,21 @@ async def create_sandbox_container_handler(
         owner_id=owner_id,
         container_command=request.container_command,
         port_mappings=request.port_mappings,
+        novnc_support=request.novnc_support,
+        novnc_port=request.novnc_port,
     )
     return _mutation_response(result)
+
+
+async def generate_default_sandbox_container_port_mappings_handler(image_id: int) -> CommonResponse:
+    result = await generate_default_sandbox_container_port_mappings(image_id=image_id)
+    if not result.ok:
+        status = HTTPStatus.NOT_FOUND if result.not_found else HTTPStatus.BAD_REQUEST
+        return CommonResponse(code=status.value, message=result.message)
+    return CommonResponse(
+        message=result.message,
+        data=SandboxContainerDefaultPortMappingsResponse(port_mappings=result.port_mappings),
+    )
 
 
 async def start_sandbox_container_handler(id: int) -> CommonResponse:
