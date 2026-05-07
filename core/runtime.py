@@ -19,6 +19,7 @@ from core.agents import AgentRegistry, AgentToolSnapshot, SessionAgentGraph
 from core.context import AgentRuntimeContext
 from core.events import event_from_sdk_stream
 from core.session import Z3r0Session
+from core.subordinates import cancel_session_subagent_runs
 from database import get_engine
 from logger import get_logger
 from schema.agent_event_schema import (
@@ -73,12 +74,19 @@ class AgentSession:
     async def interrupt(self) -> bool:
         task = self._current_task
         if task is None or task.done():
-            return False
+            return await cancel_session_subagent_runs(self.session_id)
         task.cancel()
+        subagent_cancel = asyncio.create_task(
+            cancel_session_subagent_runs(self.session_id),
+            name=f"agent-subagents-cancel-{self.session_id}",
+        )
         try:
             await task
         except asyncio.CancelledError:
             pass
+        finally:
+            await subagent_cancel
+            await cancel_session_subagent_runs(self.session_id)
         return True
 
     async def shutdown(self) -> None:
@@ -253,7 +261,7 @@ class AgentSessionPool:
     async def try_interrupt(self, session_id: str) -> bool:
         entry = self._pool.get(session_id)
         if entry is None:
-            return False
+            return await cancel_session_subagent_runs(session_id)
         return await entry.session.interrupt()
 
     async def invalidate_tool_bindings(self, container_id: int | None = None) -> None:

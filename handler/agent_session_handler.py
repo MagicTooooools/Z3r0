@@ -105,6 +105,8 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
             text = command.text.strip()
             if not text:
                 continue
+            if runner is not None and not runner.done():
+                await get_agent_pool().try_interrupt(session_id)
             await _cancel_task(runner)
             runner = asyncio.create_task(_run_turn(
                 websocket=websocket,

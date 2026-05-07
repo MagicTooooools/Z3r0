@@ -98,6 +98,45 @@ async def cancel_subagent_task_record(run_id: str, error: str = "") -> AgentSubo
     return await _finish_subagent_task(run_id, AgentSubordinateStatus.CANCELED, error=error)
 
 
+async def cancel_running_subagent_tasks_for_session(
+    session_id: str,
+    error: str = "",
+) -> list[AgentSubordinateTaskSnapshot]:
+    return await _cancel_running_subagent_tasks(error=error, session_id=session_id)
+
+
+async def cancel_running_subagent_tasks(error: str = "") -> list[AgentSubordinateTaskSnapshot]:
+    return await _cancel_running_subagent_tasks(error=error)
+
+
+async def _cancel_running_subagent_tasks(
+    *,
+    error: str = "",
+    session_id: str | None = None,
+) -> list[AgentSubordinateTaskSnapshot]:
+    now = datetime.now()
+    async with get_async_session() as session:
+        statement = select(AgentSubordinateTask).where(
+            AgentSubordinateTask.status == AgentSubordinateStatus.RUNNING.value,
+        )
+        if session_id is not None:
+            statement = statement.where(AgentSubordinateTask.session_id == session_id)
+        rows = (await session.exec(statement)).all()
+        for task in rows:
+            task.status = AgentSubordinateStatus.CANCELED.value
+            task.error = error
+            task.progress = ""
+            task.updated_at = now
+            task.finished_at = now
+            session.add(task)
+        if not rows:
+            return []
+        await session.commit()
+        for task in rows:
+            await session.refresh(task)
+        return [snapshot_from_task(task) for task in rows]
+
+
 async def mark_stale_running_subagent_tasks_failed() -> int:
     now = datetime.now()
     async with get_async_session() as session:
