@@ -84,5 +84,6 @@ COPY --from=dev-browser-assets /out/usr/local/lib/node_modules/dev-browser /usr/
 COPY --from=go-builder --chmod=755 /out/sandbox-proxy /usr/local/bin/sandbox-proxy
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 COPY supervisord.conf /supervisord.conf
+COPY .agents /root/.agents
 
 ENTRYPOINT [ "/entrypoint.sh" ]

@@ -14,7 +14,7 @@ from config import AgentConfig, WORKSPACE, get_config
 from core.context import AgentRuntimeContext
 from core.events import event_from_sdk_stream
 from core.session import Z3r0Session
-from core.tools import execute_command
+from core.tools import execute_command, load_skill
 from database import get_engine
 from logger import get_logger
 from schema.agent_event_schema import AgentEventSchema, ErrorEvent
@@ -47,12 +47,14 @@ class AgentSpec:
 class AgentToolSnapshot:
     sandbox_container_id: int | None = None
     sandbox_container_generation: int = 0
+    sandbox_skill_metadata: tuple[str, ...] = ()
 
     @classmethod
     def from_context(cls, context: AgentRuntimeContext) -> "AgentToolSnapshot":
         return cls(
             sandbox_container_id=context.sandbox_container_id,
             sandbox_container_generation=context.sandbox_container_generation,
+            sandbox_skill_metadata=context.sandbox_skill_metadata,
         )
 
 
@@ -75,7 +77,10 @@ _AGENT_SPECS: tuple[AgentSpec, ...] = (
     ),
     AgentSpec(
         code="cse",
-        tools=(ToolMount(execute_command, requires_sandbox_container=True),),
+        tools=(
+            ToolMount(execute_command, requires_sandbox_container=True),
+            ToolMount(load_skill, requires_sandbox_container=True),
+        ),
     ),
 )
 
@@ -114,6 +119,12 @@ class AgentRegistry:
         agent_path = WORKSPACE / "agents" / spec.code
         soul = (agent_path / "SOUL.md").read_text(encoding="utf-8").strip()
         rules = (agent_path / "AGENTS.md").read_text(encoding="utf-8").strip()
+        instructions = _build_instructions(
+            soul,
+            rules,
+            graph.tool_snapshot,
+            include_sandbox_skills=_has_tool(spec, load_skill),
+        )
 
         tools: list[Tool] = [
             mount.tool for mount in spec.tools
@@ -129,7 +140,7 @@ class AgentRegistry:
         return Agent(
             name=cfg.name,
             model=LitellmModel(base_url=cfg.base_url, api_key=cfg.api_key, model=cfg.model),
-            instructions=f"{soul}\n\n{rules}",
+            instructions=instructions,
             tools=tools,
         )
 
@@ -230,6 +241,39 @@ def _build_subagent_tool(parent_code: str, mount: SubagentMount, *, graph: Sessi
         _delegate,
         name_override=mount.tool_name,
         description_override=mount.tool_description,
+    )
+
+
+def _has_tool(spec: AgentSpec, tool: Tool) -> bool:
+    return any(mount.tool is tool for mount in spec.tools)
+
+
+def _build_instructions(
+    soul: str,
+    rules: str,
+    tool_snapshot: AgentToolSnapshot,
+    *,
+    include_sandbox_skills: bool,
+) -> str:
+    parts = [soul, rules]
+    if include_sandbox_skills and tool_snapshot.sandbox_container_id is not None:
+        parts.append(_build_sandbox_skill_instructions(tool_snapshot.sandbox_skill_metadata))
+    return "\n\n".join(part for part in parts if part)
+
+
+def _build_sandbox_skill_instructions(skill_metadata: tuple[str, ...]) -> str:
+    if not skill_metadata:
+        return (
+            "# Sandbox Skills\n\n"
+            "No sandbox skills were discovered under `/root/.agents/skills` for the selected container."
+        )
+
+    return (
+        "# Sandbox Skills\n\n"
+        "The selected sandbox container exposes these skill metadata blocks from "
+        "`/root/.agents/skills`. Only YAML Front Matter is shown here; use the "
+        "`load_skill` tool to read the full `SKILL.md` before applying a skill.\n\n"
+        + "\n\n".join(skill_metadata)
     )
 
 

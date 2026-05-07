@@ -1,5 +1,6 @@
 import asyncio
 from http import HTTPStatus
+import shlex
 
 from fastapi.websockets import WebSocketState
 import jwt
@@ -9,6 +10,7 @@ from pydantic import ValidationError
 from config import get_config
 from core.context import AgentRuntimeContext, AgentUserContext
 from core.runtime import get_agent_pool
+from core.tools import SANDBOX_SKILLS_DIR
 from logger import get_logger
 from middleware.auth import AuthUser
 from schema.agent_event_schema import (
@@ -26,9 +28,12 @@ from schema.agent_session_schema import (
 from schema.response_schema import CommonResponse
 from service import agent_session_service
 from service.sandbox_container_service import resolve_sandbox_container_tool_binding
+from service.sandbox_container_service import execute_sandbox_container_command
 
 
 logger = get_logger(__name__)
+
+_MAX_SANDBOX_SKILLS = 32
 
 
 async def create_agent_session_handler(user: AuthUser) -> CommonResponse:
@@ -203,6 +208,7 @@ async def _build_runtime_context(
 ) -> AgentRuntimeContext:
     selected_container_id = None
     selected_container_generation = 0
+    sandbox_skill_metadata: tuple[str, ...] = ()
     if sandbox_container_id is not None:
         binding = await resolve_sandbox_container_tool_binding(
             id=sandbox_container_id,
@@ -212,6 +218,7 @@ async def _build_runtime_context(
         if binding is not None:
             selected_container_id = binding.id
             selected_container_generation = binding.generation
+            sandbox_skill_metadata = await _load_sandbox_skill_metadata(binding.id)
 
     return AgentRuntimeContext(
         session_id=session_id,
@@ -223,7 +230,73 @@ async def _build_runtime_context(
         ),
         sandbox_container_id=selected_container_id,
         sandbox_container_generation=selected_container_generation,
+        sandbox_skill_metadata=sandbox_skill_metadata,
     )
+
+
+async def _load_sandbox_skill_metadata(container_id: int) -> tuple[str, ...]:
+    try:
+        result = await execute_sandbox_container_command(
+            id=container_id,
+            command=_build_skill_metadata_command(),
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.debug("failed to load sandbox skill metadata: %s", container_id, exc_info=True)
+        return ()
+    if result.exit_code != 0 or not result.output.strip():
+        return ()
+    return tuple(_parse_skill_metadata_output(result.output))
+
+
+def _build_skill_metadata_command() -> str:
+    skills_dir = shlex.quote(SANDBOX_SKILLS_DIR)
+    return f"""
+if [ -d {skills_dir} ]; then
+  find {skills_dir} -mindepth 2 -maxdepth 2 -name SKILL.md -type f | sort | head -n {_MAX_SANDBOX_SKILLS} | while IFS= read -r skill_file; do
+    skill_name=$(basename "$(dirname "$skill_file")")
+    printf '===SKILL:%s===\n' "$skill_name"
+    awk '
+      NR == 1 && $0 == "---" {{ print; in_fm = 1; next }}
+      in_fm {{ print; if ($0 == "---") exit }}
+    ' "$skill_file"
+  done
+fi
+""".strip()
+
+
+def _parse_skill_metadata_output(output: str) -> list[str]:
+    blocks: list[str] = []
+    current_name = ""
+    current_lines: list[str] = []
+    for raw_line in output.splitlines():
+        if raw_line.startswith("===SKILL:") and raw_line.endswith("==="):
+            _append_skill_metadata(blocks, current_name, current_lines)
+            current_name = raw_line.removeprefix("===SKILL:").removesuffix("===").strip()
+            current_lines = []
+            continue
+        current_lines.append(raw_line)
+    _append_skill_metadata(blocks, current_name, current_lines)
+    return blocks
+
+
+def _append_skill_metadata(blocks: list[str], name: str, lines: list[str]) -> None:
+    if not name or not lines:
+        return
+    front_matter = _front_matter_from_lines(lines)
+    if front_matter is None:
+        return
+    blocks.append(f"## {name}\n\n```yaml\n{front_matter}\n```")
+
+
+def _front_matter_from_lines(lines: list[str]) -> str | None:
+    if not lines or lines[0] != "---":
+        return None
+    for index, line in enumerate(lines[1:], start=1):
+        if line == "---":
+            return "\n".join(lines[:index + 1]).strip()
+    return None
 
 
 def _decode_ws_token(token: str) -> AuthUser | None:
