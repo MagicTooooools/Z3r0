@@ -1,5 +1,5 @@
 import { Button, Popconfirm, Tag, Tooltip } from "@douyinfe/semi-ui";
-import { Box, Boxes, Fingerprint, Monitor, Play, Plus, RefreshCw, Square, SquareTerminal, Trash2, User } from "lucide-react";
+import { Box, Boxes, Fingerprint, FolderOpen, Monitor, Play, Plus, RefreshCw, Square, SquareTerminal, Trash2, User } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
 import { canOpenContainerNoVNC, createSandboxContainer, deleteSandboxContainer, querySandboxContainers, startSandboxContainer, stopSandboxContainer } from "../../shared/api/sandboxContainers";
@@ -27,7 +27,7 @@ export function SandboxContainersPage() {
   const [images, setImages] = useState<SandboxImage[]>([]);
   const [imagesLoading, setImagesLoading] = useState(false);
   const setHeaderActions = useAdminHeaderActions();
-  const { openNoVNC, openShell } = useContainerShell();
+  const { openFileManager, openNoVNC, openShell } = useContainerShell();
 
   const loadReadyImages = useCallback(async () => {
     setImagesLoading(true);
@@ -134,6 +134,10 @@ export function SandboxContainersPage() {
       key: "actions", header: "Actions", width: "150px",
       render: (container) => (
         <div className="row-actions">
+          <Button icon={<FolderOpen size={15} />} theme="borderless"
+            disabled={container.status !== "running" || !container.container_hash}
+            aria-label={`Browse files for ${container.container_name}`} onClick={() => openFileManager(container)}
+          />
           <Button icon={<SquareTerminal size={15} />} theme="borderless"
             disabled={container.status !== "running" || !container.container_hash}
             aria-label={`Connect shell for ${container.container_name}`} onClick={() => openShell(container)}

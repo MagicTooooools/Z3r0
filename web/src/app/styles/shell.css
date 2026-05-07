@@ -226,6 +226,468 @@
 }
 
 
+.filemanager-minimized-button {
+  top: calc(50% + 108px);
+}
+
+
+/* ── file manager ─────────────────────────────────────────────────────────── */
+
+.file-manager-body {
+  position: relative;
+  display: grid;
+  grid-template-rows: 36px 32px minmax(0, 1fr) 28px;
+  min-width: 0;
+  min-height: 0;
+  color: #d8e1ec;
+  user-select: none;
+}
+
+.file-manager-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  background: #111827;
+  border-bottom: 1px solid rgba(216, 225, 236, 0.08);
+}
+
+.file-manager-toolbar .semi-button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  color: #b7c5d5;
+}
+
+.file-manager-toolbar .semi-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.file-manager-toolbar .semi-button:disabled {
+  opacity: 0.3;
+}
+
+.file-manager-separator {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: rgba(216, 225, 236, 0.12);
+}
+
+.file-manager-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 12px;
+  background: #0d1321;
+  border-bottom: 1px solid rgba(216, 225, 236, 0.06);
+  overflow: hidden;
+}
+
+.file-manager-breadcrumb-sep {
+  color: rgba(216, 225, 236, 0.36);
+  margin: 0 2px;
+  font-size: 13px;
+}
+
+.file-manager-breadcrumb-item {
+  padding: 4px 6px;
+  color: #8ea3ba;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.file-manager-breadcrumb-item:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.file-manager-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-color: rgba(126, 151, 179, 0.48) rgba(255, 255, 255, 0.04);
+  scrollbar-width: thin;
+}
+
+.file-manager-list-row {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(216, 225, 236, 0.04);
+  cursor: pointer;
+}
+
+.file-manager-list-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.file-manager-list-row-selected {
+  background: rgba(53, 80, 110, 0.28);
+}
+
+.file-manager-list-row-selected:hover {
+  background: rgba(53, 80, 110, 0.36);
+}
+
+.file-manager-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 28px;
+  color: #8ea3ba;
+  background: #0d1321;
+  border-bottom-color: rgba(216, 225, 236, 0.1);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: default;
+}
+
+.file-manager-list-head:hover {
+  background: #0d1321;
+}
+
+.file-manager-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.file-manager-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.file-manager-cell-muted {
+  color: #8ea3ba;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.file-manager-empty {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  color: #8ea3ba;
+  font-size: 13px;
+}
+
+.file-manager-icons {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  padding: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-color: rgba(126, 151, 179, 0.48) rgba(255, 255, 255, 0.04);
+  scrollbar-width: thin;
+}
+
+.file-manager-icon-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 80px;
+  padding: 10px 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.file-manager-icon-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.file-manager-icon-item-selected {
+  background: rgba(53, 80, 110, 0.28);
+}
+
+.file-manager-icon-item-selected:hover {
+  background: rgba(53, 80, 110, 0.36);
+}
+
+.file-manager-icon-item span {
+  overflow: hidden;
+  max-width: 100%;
+  text-align: center;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-manager-create-row {
+  cursor: default;
+  background: rgba(53, 80, 110, 0.16);
+}
+
+.file-manager-create-row:hover {
+  background: rgba(53, 80, 110, 0.16);
+}
+
+.file-manager-inline-input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.file-manager-inline-input::placeholder {
+  color: #8ea3ba;
+}
+
+.file-manager-icon-item .file-manager-inline-input {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+}
+
+.file-manager-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: #0d1321;
+  border-top: 1px solid rgba(216, 225, 236, 0.08);
+  font-size: 11px;
+  color: #8ea3ba;
+}
+
+.file-manager-clipboard-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #60a5fa;
+}
+
+.file-manager-clipboard-hint button {
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: 0;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.file-manager-list::-webkit-scrollbar,
+.file-manager-icons::-webkit-scrollbar {
+  width: 10px;
+}
+
+.file-manager-list::-webkit-scrollbar-track,
+.file-manager-icons::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 1px solid rgba(216, 225, 236, 0.06);
+}
+
+.file-manager-list::-webkit-scrollbar-thumb,
+.file-manager-icons::-webkit-scrollbar-thumb {
+  background: rgba(126, 151, 179, 0.48);
+  border: 2px solid #0b111c;
+  border-radius: 999px;
+}
+
+.file-manager-list::-webkit-scrollbar-thumb:hover,
+.file-manager-icons::-webkit-scrollbar-thumb:hover {
+  background: rgba(166, 188, 213, 0.68);
+}
+
+
+/* ── file viewer overlay ──────────────────────────────────────────────────── */
+
+.file-manager-viewer-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: #0b111c;
+}
+
+/* ── file viewer ──────────────────────────────────────────────────────────── */
+
+.fv-body {
+  display: grid;
+  grid-template-rows: 36px minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  color: #d8e1ec;
+  user-select: none;
+}
+
+.fv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 12px;
+  background: #111827;
+  border-bottom: 1px solid rgba(216, 225, 236, 0.08);
+}
+
+.fv-toolbar .semi-button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  color: #b7c5d5;
+  font-size: 12px;
+}
+
+.fv-toolbar .semi-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.fv-title {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fv-meta {
+  flex: 0 0 auto;
+  color: #8ea3ba;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.fv-spacer {
+  flex: 1;
+}
+
+.fv-loading,
+.fv-error,
+.fv-binary {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 0;
+  color: #8ea3ba;
+  font-size: 13px;
+}
+
+.fv-binary p {
+  margin: 0;
+  font-size: 14px;
+  color: #b7c5d5;
+}
+
+.fv-binary-icon {
+  width: 56px;
+  height: 56px;
+  opacity: 0.4;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3C/svg%3E") no-repeat center;
+  mask-size: contain;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3C/svg%3E") no-repeat center;
+  -webkit-mask-size: contain;
+}
+
+.fv-image-viewer {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+  background: #05070b;
+}
+
+.fv-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.fv-preview {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fv-preview .cm-host {
+  height: 100%;
+}
+
+.fv-editor {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.fv-editor-cm {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fv-editor-cm .cm-host {
+  height: 100%;
+}
+
+.fv-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #111827;
+  border-top: 1px solid rgba(216, 225, 236, 0.08);
+}
+
+/* CodeMirror host — fill container */
+.cm-host {
+  min-height: 0;
+}
+
+.cm-host .cm-editor {
+  height: 100%;
+}
+
+.cm-host .cm-scroller {
+  overflow: auto;
+  scrollbar-color: rgba(126, 151, 179, 0.48) rgba(255, 255, 255, 0.04);
+  scrollbar-width: thin;
+}
+
+.cm-host .cm-scroller::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cm-host .cm-scroller::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 1px solid rgba(216, 225, 236, 0.06);
+}
+
+.cm-host .cm-scroller::-webkit-scrollbar-thumb {
+  background: rgba(126, 151, 179, 0.48);
+  border: 2px solid #0b111c;
+  border-radius: 999px;
+}
+
+
 @media (prefers-reduced-motion: reduce) {
   .shell-minimized-button {
     transition: none;

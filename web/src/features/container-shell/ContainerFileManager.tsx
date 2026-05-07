@@ -1,0 +1,462 @@
+import { Button, Popconfirm, Tag, Toast, Tooltip } from "@douyinfe/semi-ui";
+import {
+  ArrowLeft, ArrowRight, ArrowUp, Clipboard, ClipboardPaste,
+  Copy, File, FilePlus, Folder, FolderOpen, FolderPlus, Grid3X3, List,
+  RefreshCw, Scissors, Trash2,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  copyContainerFiles, createContainerDirectory, deleteContainerFiles,
+  listContainerFiles, moveContainerFiles, writeContainerFile,
+} from "../../shared/api/sandboxContainers";
+import { showApiError } from "../../shared/api/feedback";
+import type { ContainerFileInfo } from "../../shared/api/types";
+import { formatDateTime } from "../../shared/lib/date";
+import { formatBytes } from "../../shared/lib/number";
+import { FileViewer } from "./FileViewer";
+
+type ViewMode = "list" | "icon";
+type ClipboardState = { action: "copy" | "cut"; paths: string[]; sourceDir: string } | null;
+
+type Props = {
+  containerId: number;
+  containerHash: string;
+  containerName: string;
+};
+
+export function ContainerFileManager({ containerId, containerHash, containerName: _containerName }: Props) {
+  const [path, setPath] = useState("/");
+  const [files, setFiles] = useState<ContainerFileInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [clipboard, setClipboard] = useState<ClipboardState>(null);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [pathHistory, setPathHistory] = useState<string[]>(["/"]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [viewingFile, setViewingFile] = useState<ContainerFileInfo | null>(null);
+  const [createType, setCreateType] = useState<"file" | "dir" | null>(null);
+
+  const loadFiles = useCallback(async (dir: string) => {
+    setLoading(true);
+    try {
+      const response = await listContainerFiles(containerId, { path: dir });
+      const fileList = response.data?.files ?? [];
+      fileList.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      setFiles(fileList);
+      setPath(dir);
+      setSelectedPaths(new Set());
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [containerId]);
+
+  useEffect(() => { void loadFiles(path); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const navigateTo = useCallback((dir: string) => {
+    const newHistory = pathHistory.slice(0, historyIndex + 1);
+    newHistory.push(dir);
+    setPathHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    void loadFiles(dir);
+  }, [pathHistory, historyIndex, loadFiles]);
+
+  const goBack = useCallback(() => {
+    if (historyIndex <= 0) return;
+    const newIndex = historyIndex - 1;
+    setHistoryIndex(newIndex);
+    void loadFiles(pathHistory[newIndex]);
+  }, [historyIndex, pathHistory, loadFiles]);
+
+  const goForward = useCallback(() => {
+    if (historyIndex >= pathHistory.length - 1) return;
+    const newIndex = historyIndex + 1;
+    setHistoryIndex(newIndex);
+    void loadFiles(pathHistory[newIndex]);
+  }, [historyIndex, pathHistory, loadFiles]);
+
+  const goUp = useCallback(() => {
+    if (path === "/") return;
+    const parent = path.replace(/\/[^/]*$/, "") || "/";
+    navigateTo(parent);
+  }, [path, navigateTo]);
+
+  const refresh = useCallback(() => {
+    void loadFiles(path);
+  }, [path, loadFiles]);
+
+  const handleFileClick = useCallback((file: ContainerFileInfo, event: React.MouseEvent) => {
+    if (event.ctrlKey || event.metaKey) {
+      setSelectedPaths((prev) => {
+        const next = new Set(prev);
+        if (next.has(file.path)) next.delete(file.path);
+        else next.add(file.path);
+        return next;
+      });
+      return;
+    }
+    setSelectedPaths(new Set([file.path]));
+  }, []);
+
+  const handleFileDoubleClick = useCallback((file: ContainerFileInfo) => {
+    if (file.type === "directory") {
+      navigateTo(file.path);
+      return;
+    }
+    void openFileViewer(file);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigateTo]);
+
+  const openFileViewer = useCallback((file: ContainerFileInfo) => {
+    setViewingFile(file);
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    if (selectedPaths.size === 0) return;
+    setClipboard({ action: "copy", paths: Array.from(selectedPaths), sourceDir: path });
+    Toast.success(`${selectedPaths.size} item(s) copied to clipboard`);
+  }, [selectedPaths, path]);
+
+  const handleCut = useCallback(() => {
+    if (selectedPaths.size === 0) return;
+    setClipboard({ action: "cut", paths: Array.from(selectedPaths), sourceDir: path });
+    Toast.success(`${selectedPaths.size} item(s) cut to clipboard`);
+  }, [selectedPaths, path]);
+
+  const handlePaste = useCallback(async () => {
+    if (!clipboard) return;
+    setLoading(true);
+    try {
+      if (clipboard.action === "copy") {
+        await copyContainerFiles(containerId, { sources: clipboard.paths, destination: path });
+      } else {
+        await moveContainerFiles(containerId, { sources: clipboard.paths, destination: path });
+        setClipboard(null);
+      }
+      Toast.success(`${clipboard.action === "copy" ? "Copied" : "Moved"} ${clipboard.paths.length} item(s)`);
+      await loadFiles(path);
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [clipboard, containerId, path, loadFiles]);
+
+  const handleDelete = useCallback(async () => {
+    if (selectedPaths.size === 0) return;
+    setLoading(true);
+    try {
+      await deleteContainerFiles(containerId, { paths: Array.from(selectedPaths) });
+      Toast.success(`${selectedPaths.size} item(s) deleted`);
+      await loadFiles(path);
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedPaths, containerId, path, loadFiles]);
+
+  const startCreate = useCallback((type: "file" | "dir") => {
+    setCreateType(type);
+    setSelectedPaths(new Set());
+  }, []);
+
+  const handleCreateConfirm = useCallback(async (name: string) => {
+    if (!name.trim() || !createType) return;
+    const itemPath = path.replace(/\/$/, "") + "/" + name.trim();
+    setLoading(true);
+    try {
+      if (createType === "dir") {
+        await createContainerDirectory(containerId, { path: itemPath });
+      } else {
+        await writeContainerFile(containerId, { path: itemPath, content: "" });
+      }
+      Toast.success(createType === "dir" ? "Directory created" : "File created");
+      await loadFiles(path);
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      setLoading(false);
+      setCreateType(null);
+    }
+  }, [createType, containerId, path, loadFiles]);
+
+  const handleCreateCancel = useCallback(() => {
+    setCreateType(null);
+  }, []);
+
+  const breadcrumbs = useMemo(() => {
+    if (path === "/") return [{ label: "/", path: "/" }];
+    const parts = path.split("/").filter(Boolean);
+    return [
+      { label: "/", path: "/" },
+      ...parts.map((part, i) => ({
+        label: part,
+        path: "/" + parts.slice(0, i + 1).join("/"),
+      })),
+    ];
+  }, [path]);
+
+  const toolbarDisabled = loading;
+  const hasSelection = selectedPaths.size > 0;
+  const canPaste = clipboard !== null && clipboard.sourceDir !== path;
+
+  return (
+    <div className="file-manager-body">
+      <div className="file-manager-toolbar">
+        <Button icon={<ArrowLeft size={15} />} theme="borderless" disabled={historyIndex <= 0 || toolbarDisabled} onClick={goBack} aria-label="Back" />
+        <Button icon={<ArrowRight size={15} />} theme="borderless" disabled={historyIndex >= pathHistory.length - 1 || toolbarDisabled} onClick={goForward} aria-label="Forward" />
+        <Button icon={<ArrowUp size={15} />} theme="borderless" disabled={path === "/" || toolbarDisabled} onClick={goUp} aria-label="Up" />
+        <Button icon={<RefreshCw size={15} />} theme="borderless" disabled={toolbarDisabled} onClick={refresh} aria-label="Refresh" />
+        <span className="file-manager-separator" />
+        <Button icon={<FilePlus size={15} />} theme="borderless" disabled={toolbarDisabled || createType !== null} onClick={() => startCreate("file")} aria-label="New file" />
+        <Button icon={<FolderPlus size={15} />} theme="borderless" disabled={toolbarDisabled || createType !== null} onClick={() => startCreate("dir")} aria-label="New folder" />
+        <span className="file-manager-separator" />
+        <Tooltip content="Copy selected">
+          <Button icon={<Copy size={15} />} theme="borderless" disabled={!hasSelection || toolbarDisabled} onClick={handleCopy} aria-label="Copy" />
+        </Tooltip>
+        <Tooltip content="Cut selected">
+          <Button icon={<Scissors size={15} />} theme="borderless" disabled={!hasSelection || toolbarDisabled} onClick={handleCut} aria-label="Cut" />
+        </Tooltip>
+        <Tooltip content={canPaste ? `Paste ${clipboard?.paths.length ?? 0} item(s)` : "Nothing to paste"}>
+          <Button icon={<ClipboardPaste size={15} />} theme="borderless" disabled={!canPaste || toolbarDisabled} onClick={() => void handlePaste()} aria-label="Paste" />
+        </Tooltip>
+        <Popconfirm title="Delete selected items" content={`Delete ${selectedPaths.size} selected item(s)?`} okType="danger" onConfirm={() => void handleDelete()}>
+          <Button icon={<Trash2 size={15} />} theme="borderless" type="danger" disabled={!hasSelection || toolbarDisabled} aria-label="Delete" />
+        </Popconfirm>
+        <span className="file-manager-separator" />
+        <Tooltip content="List view">
+          <Button icon={<List size={15} />} theme="borderless" type={viewMode === "list" ? "primary" : "tertiary"} disabled={toolbarDisabled} onClick={() => setViewMode("list")} aria-label="List view" />
+        </Tooltip>
+        <Tooltip content="Icon view">
+          <Button icon={<Grid3X3 size={15} />} theme="borderless" type={viewMode === "icon" ? "primary" : "tertiary"} disabled={toolbarDisabled} onClick={() => setViewMode("icon")} aria-label="Icon view" />
+        </Tooltip>
+      </div>
+
+      <div className="file-manager-breadcrumb">
+        {breadcrumbs.map((crumb, i) => (
+          <span key={crumb.path}>
+            {i > 1 && <span className="file-manager-breadcrumb-sep">/</span>}
+            <button type="button" className="file-manager-breadcrumb-item" onClick={() => navigateTo(crumb.path)}>
+              {crumb.label}
+            </button>
+          </span>
+        ))}
+      </div>
+
+      {viewMode === "list" ? (
+        <div className="file-manager-list">
+          <FileListHeader />
+          {createType && (
+            <InlineCreateRow
+              type={createType}
+              onConfirm={handleCreateConfirm}
+              onCancel={handleCreateCancel}
+            />
+          )}
+          {files.length === 0 && !createType ? (
+            <div className="file-manager-empty">{loading ? "Loading..." : "This directory is empty"}</div>
+          ) : (
+            files.map((file) => (
+              <FileListRow
+                key={file.path}
+                file={file}
+                selected={selectedPaths.has(file.path)}
+                onClick={(e) => handleFileClick(file, e)}
+                onDoubleClick={() => handleFileDoubleClick(file)}
+              />
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="file-manager-icons">
+          {createType && (
+            <InlineCreateIcon
+              type={createType}
+              onConfirm={handleCreateConfirm}
+              onCancel={handleCreateCancel}
+            />
+          )}
+          {files.length === 0 && !createType ? (
+            <div className="file-manager-empty">{loading ? "Loading..." : "This directory is empty"}</div>
+          ) : (
+            files.map((file) => (
+              <FileIconItem
+                key={file.path}
+                file={file}
+                selected={selectedPaths.has(file.path)}
+                onClick={(e) => handleFileClick(file, e)}
+                onDoubleClick={() => handleFileDoubleClick(file)}
+              />
+            ))
+          )}
+        </div>
+      )}
+
+      <div className="file-manager-statusbar">
+        <span>{files.length} item(s)</span>
+        {clipboard && (
+          <span className="file-manager-clipboard-hint">
+            <Clipboard size={12} /> {clipboard.action === "cut" ? "Cut" : "Copied"} {clipboard.paths.length} item(s) — <button type="button" onClick={() => setClipboard(null)}>clear</button>
+          </span>
+        )}
+      </div>
+
+      {viewingFile ? (
+        <div className="file-manager-viewer-overlay">
+          <FileViewer
+            containerId={containerId}
+            containerHash={containerHash}
+            file={viewingFile}
+            onClose={() => setViewingFile(null)}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+
+const FILE_LIST_HEADER_COLS: [string, string][] = [
+  ["name", "minmax(0, 1.2fr)"],
+  ["size", "92px"],
+  ["modified", "168px"],
+  ["perms", "92px"],
+];
+
+function FileListHeader() {
+  return (
+    <div className="file-manager-list-row file-manager-list-head" style={{ gridTemplateColumns: FILE_LIST_HEADER_COLS.map(([, w]) => w).join(" ") }}>
+      <div>Name</div>
+      <div>Size</div>
+      <div>Modified</div>
+      <div>Perms</div>
+    </div>
+  );
+}
+
+function FileListRow({ file, selected, onClick, onDoubleClick }: {
+  file: ContainerFileInfo;
+  selected: boolean;
+  onClick: (e: React.MouseEvent) => void;
+  onDoubleClick: () => void;
+}) {
+  return (
+    <div
+      className={`file-manager-list-row${selected ? " file-manager-list-row-selected" : ""}`}
+      style={{ gridTemplateColumns: FILE_LIST_HEADER_COLS.map(([, w]) => w).join(" ") }}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+    >
+      <div className="file-manager-name">
+        {file.type === "directory" ? <Folder size={15} /> : file.type === "symlink" ? <File size={15} /> : <File size={15} />}
+        <span>{file.name}</span>
+      </div>
+      <div className="file-manager-cell-muted">{file.type === "directory" ? "—" : formatBytes(file.size)}</div>
+      <div className="file-manager-cell-muted">{formatDateTime(new Date(file.modified_at * 1000).toISOString())}</div>
+      <div><Tag size="small">{file.permissions}</Tag></div>
+    </div>
+  );
+}
+
+function FileIconItem({ file, selected, onClick, onDoubleClick }: {
+  file: ContainerFileInfo;
+  selected: boolean;
+  onClick: (e: React.MouseEvent) => void;
+  onDoubleClick: () => void;
+}) {
+  return (
+    <div
+      className={`file-manager-icon-item${selected ? " file-manager-icon-item-selected" : ""}`}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      title={file.name}
+    >
+      {file.type === "directory" ? <FolderOpen size={32} /> : <File size={32} />}
+      <span>{file.name}</span>
+    </div>
+  );
+}
+
+function InlineCreateRow({ type, onConfirm, onCancel }: {
+  type: "file" | "dir";
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [name, setName] = useState("");
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const commit = () => {
+    if (name.trim()) onConfirm(name);
+    else onCancel();
+  };
+
+  return (
+    <div
+      className="file-manager-list-row file-manager-create-row"
+      style={{ gridTemplateColumns: FILE_LIST_HEADER_COLS.map(([, w]) => w).join(" ") }}
+    >
+      <div className="file-manager-name">
+        {type === "dir" ? <Folder size={15} /> : <File size={15} />}
+        <input
+          ref={inputRef}
+          className="file-manager-inline-input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder={type === "dir" ? "New folder name" : "New file name"}
+        />
+      </div>
+      <div className="file-manager-cell-muted">—</div>
+      <div className="file-manager-cell-muted">—</div>
+      <div className="file-manager-cell-muted">—</div>
+    </div>
+  );
+}
+
+function InlineCreateIcon({ type, onConfirm, onCancel }: {
+  type: "file" | "dir";
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [name, setName] = useState("");
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const commit = () => {
+    if (name.trim()) onConfirm(name);
+    else onCancel();
+  };
+
+  return (
+    <div className="file-manager-icon-item file-manager-create-row">
+      {type === "dir" ? <FolderOpen size={32} /> : <File size={32} />}
+      <input
+        ref={inputRef}
+        className="file-manager-inline-input"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") onCancel();
+        }}
+        onBlur={() => onCancel()}
+        placeholder={type === "dir" ? "New folder" : "New file"}
+      />
+    </div>
+  );
+}

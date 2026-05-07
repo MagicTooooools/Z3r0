@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import secrets
 import shlex
 import socket as py_socket
@@ -21,6 +22,8 @@ from model.sandbox_image_model import SandboxImage
 from model.system_user_model import SystemUser
 from schema.sandbox_container_schema import (
     DEFAULT_SANDBOX_CONTAINER_COMMAND,
+    ContainerFileInfo,
+    ContainerFileType,
     SandboxContainerPortMapping,
     SandboxContainerStatus,
 )
@@ -1355,3 +1358,137 @@ async def execute_sandbox_container_command(id: int, command: str) -> SandboxCon
     except Exception:
         logger.exception("sandbox container command execution failed: %s", id)
         raise RuntimeError("failed to execute sandbox container command")
+
+
+# ── container file operations ─────────────────────────────────────────────────
+
+
+def _exec_in_container_sync(container_hash: str, cmd: str) -> tuple[str, int]:
+    client = docker.from_env()
+    try:
+        exit_code, output = client.containers.get(container_hash).exec_run(
+            cmd=["/bin/sh", "-c", cmd],
+            stdout=True,
+            stderr=True,
+            stdin=False,
+            tty=False,
+            demux=False,
+        )
+        text = output.decode(errors="replace") if isinstance(output, bytes) else str(output or "")
+        code = exit_code if isinstance(exit_code, int) else 1
+        return text, code
+    finally:
+        client.close()
+
+
+def _parse_find_output(raw: str, base_path: str) -> list[ContainerFileInfo]:
+    files: list[ContainerFileInfo] = []
+    for line in raw.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) != 7:
+            continue
+        name, type_char, size_str, mtime_str, owner, group, perms = parts
+        type_map = {"f": ContainerFileType.FILE, "d": ContainerFileType.DIRECTORY, "l": ContainerFileType.SYMLINK}
+        file_type = type_map.get(type_char)
+        if file_type is None:
+            continue
+        try:
+            size = int(size_str)
+        except ValueError:
+            size = 0
+        try:
+            modified_at = int(float(mtime_str))
+        except ValueError:
+            modified_at = 0
+        base = base_path.rstrip("/")
+        files.append(ContainerFileInfo(
+            name=name,
+            type=file_type,
+            size=size,
+            modified_at=modified_at,
+            owner=owner,
+            group=group,
+            permissions=perms,
+            path=f"{base}/{name}",
+        ))
+    return files
+
+
+async def list_container_files(container_hash: str, path: str) -> list[ContainerFileInfo]:
+    safe_path = shlex.quote(path)
+    cmd = f"find {safe_path} -maxdepth 1 -mindepth 1 -printf '%f\\t%y\\t%s\\t%T@\\t%u\\t%g\\t%#m\\n' 2>/dev/null"
+    stdout, exit_code = await asyncio.to_thread(_exec_in_container_sync, container_hash, cmd)
+    if exit_code != 0:
+        raise RuntimeError(f"failed to list container files (exit code {exit_code}): {stdout.strip() or '(empty output)'}")
+    return _parse_find_output(stdout, path)
+
+
+async def get_container_file_info(container_hash: str, path: str) -> ContainerFileInfo | None:
+    parent = path.rsplit("/", 1)[0] or "/"
+    name = path.rsplit("/", 1)[-1] or path
+    safe_parent = shlex.quote(parent)
+    safe_name = shlex.quote(name)
+    cmd = f"find {safe_parent} -maxdepth 1 -name {safe_name} -printf '%f\\t%y\\t%s\\t%T@\\t%u\\t%g\\t%#m\\n' 2>/dev/null"
+    stdout, _exit_code = await asyncio.to_thread(_exec_in_container_sync, container_hash, cmd)
+    files = _parse_find_output(stdout, parent)
+    return files[0] if files else None
+
+
+async def read_container_file(container_hash: str, path: str, max_bytes: int = 1_048_576, *, base64_mode: bool = False) -> str:
+    safe_path = shlex.quote(path)
+    if base64_mode:
+        cmd = f"base64 {safe_path} 2>/dev/null | head -c {max_bytes * 2}"
+    else:
+        cmd = f"head -c {max_bytes} {safe_path} 2>/dev/null"
+    stdout, exit_code = await asyncio.to_thread(_exec_in_container_sync, container_hash, cmd)
+    if exit_code != 0:
+        raise RuntimeError(f"failed to read container file: {stdout.strip()}")
+    return stdout
+
+
+async def write_container_file(container_hash: str, path: str, content: str) -> bool:
+    encoded = base64.b64encode(content.encode()).decode()
+    safe_path = shlex.quote(path)
+    cmd = f"echo {shlex.quote(encoded)} | base64 -d > {safe_path}"
+    stdout, exit_code = await asyncio.to_thread(_exec_in_container_sync, container_hash, cmd)
+    return exit_code == 0
+
+
+async def copy_container_files(container_hash: str, sources: list[str], destination: str) -> bool:
+    quoted_sources = " ".join(shlex.quote(src) for src in sources)
+    safe_dest = shlex.quote(destination)
+    cmd = f"cp -r {quoted_sources} {safe_dest}"
+    stdout, exit_code = await asyncio.to_thread(_exec_in_container_sync, container_hash, cmd)
+    return exit_code == 0
+
+
+async def move_container_files(container_hash: str, sources: list[str], destination: str) -> bool:
+    quoted_sources = " ".join(shlex.quote(src) for src in sources)
+    safe_dest = shlex.quote(destination)
+    cmd = f"mv {quoted_sources} {safe_dest}"
+    stdout, exit_code = await asyncio.to_thread(_exec_in_container_sync, container_hash, cmd)
+    return exit_code == 0
+
+
+async def delete_container_files(container_hash: str, paths: list[str]) -> bool:
+    quoted_paths = " ".join(shlex.quote(p) for p in paths)
+    cmd = f"rm -rf {quoted_paths}"
+    stdout, exit_code = await asyncio.to_thread(_exec_in_container_sync, container_hash, cmd)
+    return exit_code == 0
+
+
+async def create_container_directory(container_hash: str, path: str) -> bool:
+    safe_path = shlex.quote(path)
+    cmd = f"mkdir -p {safe_path}"
+    stdout, exit_code = await asyncio.to_thread(_exec_in_container_sync, container_hash, cmd)
+    return exit_code == 0
+
+
+async def resolve_file_container(id: int) -> tuple[str, SandboxContainerStatus] | None:
+    async with get_async_session() as session:
+        sandbox_container = await session.get(SandboxContainer, id)
+        if sandbox_container is None:
+            return None
+        return sandbox_container.container_hash, sandbox_container.status

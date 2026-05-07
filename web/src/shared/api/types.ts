@@ -71,6 +71,20 @@ export type StartSandboxContainerResponse = JsonResponse<paths["/api/sandbox-con
 export type StopSandboxContainerPathParams = PathParameters<paths["/api/sandbox-containers/{id}/stop"]["post"]>;
 export type StopSandboxContainerResponse = JsonResponse<paths["/api/sandbox-containers/{id}/stop"]["post"]>;
 
+export type ListContainerFilesParams = QueryParameters<paths["/api/sandbox-containers/{id}/files"]["get"]>;
+export type ListContainerFilesResponse = JsonResponse<paths["/api/sandbox-containers/{id}/files"]["get"]>;
+export type ContainerFileInfo = components["schemas"]["ContainerFileInfo"];
+export type ContainerFileType = components["schemas"]["ContainerFileType"];
+
+export type ReadContainerFileParams = QueryParameters<paths["/api/sandbox-containers/{id}/files/read"]["get"]>;
+export type ReadContainerFileResponse = JsonResponse<paths["/api/sandbox-containers/{id}/files/read"]["get"]>;
+
+export type ContainerFileWriteRequest = JsonRequestBody<paths["/api/sandbox-containers/{id}/files/write"]["post"]>;
+export type ContainerFileCopyRequest = JsonRequestBody<paths["/api/sandbox-containers/{id}/files/copy"]["post"]>;
+export type ContainerFileMoveRequest = JsonRequestBody<paths["/api/sandbox-containers/{id}/files/move"]["post"]>;
+export type ContainerFileDeleteRequest = JsonRequestBody<paths["/api/sandbox-containers/{id}/files/delete"]["post"]>;
+export type ContainerFileMkdirRequest = JsonRequestBody<paths["/api/sandbox-containers/{id}/files/mkdir"]["post"]>;
+
 export type QueryWorkProjectsParams = QueryParameters<paths["/api/work-projects"]["get"]>;
 export type QueryWorkProjectsResponse = JsonResponse<paths["/api/work-projects"]["get"]>;
 export type QueryWorkProjectsData = NonNullable<QueryWorkProjectsResponse["data"]>;

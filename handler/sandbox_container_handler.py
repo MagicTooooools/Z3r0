@@ -11,28 +11,46 @@ from config import get_config
 from logger import get_logger
 from schema.response_schema import CommonResponse
 from schema.sandbox_container_schema import (
+    ContainerFileCopyRequest,
+    ContainerFileDeleteRequest,
+    ContainerFileMkdirRequest,
+    ContainerFileMoveRequest,
+    ContainerFileReadResponse,
+    ContainerFileType,
+    ContainerFileWriteRequest,
     CreateSandboxContainerRequest,
     DeleteSandboxContainerResponse,
+    ListContainerFilesResponse,
     QuerySandboxContainersResponse,
     SandboxContainerDefaultPortMappingsResponse,
     SandboxContainerSchema,
+    SandboxContainerStatus,
 )
 from schema.system_user_schema import SystemUserRole
 from service.sandbox_container_service import (
     ContainerShellSession,
     SandboxContainerMutationResult,
     SandboxContainerRecord,
+    copy_container_files,
+    create_container_directory,
     create_sandbox_container,
+    delete_container_files,
     delete_sandbox_container,
     generate_default_sandbox_container_port_mappings,
+    get_container_file_info,
+    list_container_files,
+    move_container_files,
     open_container_shell,
     query_available_sandbox_containers,
     query_sandbox_containers,
+    read_container_file,
     read_container_shell,
     resize_container_shell,
+    resolve_file_container,
     resolve_shell_container,
     start_sandbox_container,
     stop_sandbox_container,
+    write_container_file,
     write_container_shell,
 )
 
@@ -286,3 +304,128 @@ def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(minimum, min(number, maximum))
+
+
+# ── container file manager handlers ───────────────────────────────────────────
+
+
+def _file_container_common_response(data: Any = None, message: str = "success") -> CommonResponse:
+    return CommonResponse(data=data, message=message)
+
+
+def _file_container_error(code: int, message: str) -> CommonResponse:
+    return CommonResponse(code=code, message=message)
+
+
+async def _resolve_running_container(id: int, action: str) -> tuple[str, CommonResponse | None]:
+    """Resolve container and check it is running. Returns (hash, error_or_none)."""
+    resolved = await resolve_file_container(id)
+    if resolved is None:
+        return "", _file_container_error(HTTPStatus.NOT_FOUND.value, "sandbox container not found")
+    container_hash, status = resolved
+    if status != SandboxContainerStatus.RUNNING:
+        return "", _file_container_error(HTTPStatus.BAD_REQUEST.value, f"only running sandbox containers can {action}")
+    return container_hash, None
+
+
+async def handle_list_files(id: int, path: str) -> CommonResponse:
+    container_hash, error = await _resolve_running_container(id, "browse files")
+    if error:
+        return error
+    try:
+        files = await list_container_files(container_hash, path)
+    except Exception:
+        logger.exception("failed to list container files: %s", id)
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to list container files")
+    return _file_container_common_response(ListContainerFilesResponse(path=path, files=files))
+
+
+async def handle_read_file(id: int, path: str, base64_mode: bool = False) -> CommonResponse:
+    container_hash, error = await _resolve_running_container(id, "read files")
+    if error:
+        return error
+    try:
+        info = await get_container_file_info(container_hash, path)
+        if info is None:
+            return _file_container_error(HTTPStatus.NOT_FOUND.value, "file not found")
+        if info.type == ContainerFileType.DIRECTORY:
+            return _file_container_error(HTTPStatus.BAD_REQUEST.value, "cannot read a directory")
+    except Exception:
+        logger.exception("failed to get container file info: %s", id)
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to get container file info")
+    try:
+        content = await read_container_file(container_hash, path, base64_mode=base64_mode)
+    except Exception:
+        logger.exception("failed to read container file: %s", id)
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to read container file")
+    return _file_container_common_response(ContainerFileReadResponse(path=path, content=content, size=len(content.encode())))
+
+
+async def handle_write_file(id: int, body: ContainerFileWriteRequest) -> CommonResponse:
+    container_hash, error = await _resolve_running_container(id, "write files")
+    if error:
+        return error
+    try:
+        ok = await write_container_file(container_hash, body.path, body.content)
+    except Exception:
+        logger.exception("failed to write container file: %s", id)
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to write container file")
+    if not ok:
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to write container file")
+    return _file_container_common_response(message="file written")
+
+
+async def handle_copy_files(id: int, body: ContainerFileCopyRequest) -> CommonResponse:
+    container_hash, error = await _resolve_running_container(id, "copy files")
+    if error:
+        return error
+    try:
+        ok = await copy_container_files(container_hash, body.sources, body.destination)
+    except Exception:
+        logger.exception("failed to copy container files: %s", id)
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to copy container files")
+    if not ok:
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to copy container files")
+    return _file_container_common_response(message="files copied")
+
+
+async def handle_move_files(id: int, body: ContainerFileMoveRequest) -> CommonResponse:
+    container_hash, error = await _resolve_running_container(id, "move files")
+    if error:
+        return error
+    try:
+        ok = await move_container_files(container_hash, body.sources, body.destination)
+    except Exception:
+        logger.exception("failed to move container files: %s", id)
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to move container files")
+    if not ok:
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to move container files")
+    return _file_container_common_response(message="files moved")
+
+
+async def handle_delete_files(id: int, body: ContainerFileDeleteRequest) -> CommonResponse:
+    container_hash, error = await _resolve_running_container(id, "delete files")
+    if error:
+        return error
+    try:
+        ok = await delete_container_files(container_hash, body.paths)
+    except Exception:
+        logger.exception("failed to delete container files: %s", id)
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to delete container files")
+    if not ok:
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to delete container files")
+    return _file_container_common_response(message="files deleted")
+
+
+async def handle_mkdir(id: int, body: ContainerFileMkdirRequest) -> CommonResponse:
+    container_hash, error = await _resolve_running_container(id, "create directories")
+    if error:
+        return error
+    try:
+        ok = await create_container_directory(container_hash, body.path)
+    except Exception:
+        logger.exception("failed to create container directory: %s", id)
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to create container directory")
+    if not ok:
+        return _file_container_error(HTTPStatus.INTERNAL_SERVER_ERROR.value, "failed to create container directory")
+    return _file_container_common_response(message="directory created")

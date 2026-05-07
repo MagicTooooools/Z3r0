@@ -105,3 +105,57 @@ class QuerySandboxContainersResponse(BaseModel):
 # default sandbox container port mappings generated from image metadata
 class SandboxContainerDefaultPortMappingsResponse(BaseModel):
     port_mappings: list[SandboxContainerPortMapping]
+
+
+# ── container file manager schemas ────────────────────────────────────────────
+
+
+class ContainerFileType(StrEnum):
+    FILE = "file"
+    DIRECTORY = "directory"
+    SYMLINK = "symlink"
+
+
+class ContainerFileInfo(BaseModel):
+    name: str
+    type: ContainerFileType
+    size: int
+    modified_at: int
+    owner: str
+    group: str
+    permissions: str
+    path: str
+
+
+class ListContainerFilesResponse(BaseModel):
+    path: str
+    files: list[ContainerFileInfo]
+
+
+class ContainerFileReadResponse(BaseModel):
+    path: str
+    content: str
+    size: int
+
+
+class ContainerFileWriteRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+    content: str = Field(min_length=0, max_length=1_048_576)
+
+
+class ContainerFileCopyRequest(BaseModel):
+    sources: list[str] = Field(min_length=1, max_length=100)
+    destination: str = Field(min_length=1, max_length=4096)
+
+
+class ContainerFileMoveRequest(BaseModel):
+    sources: list[str] = Field(min_length=1, max_length=100)
+    destination: str = Field(min_length=1, max_length=4096)
+
+
+class ContainerFileDeleteRequest(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=100)
+
+
+class ContainerFileMkdirRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)

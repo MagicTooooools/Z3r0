@@ -2,7 +2,7 @@ import { Button } from "@douyinfe/semi-ui";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { Maximize2, Minimize2, Minus, Monitor, SquareTerminal, X } from "lucide-react";
+import { Maximize2, Minimize2, Minus, Monitor, FolderOpen, SquareTerminal, X } from "lucide-react";
 import {
   CSSProperties,
   createContext,
@@ -21,6 +21,7 @@ import {
 import { buildContainerNoVNCUrl, buildContainerShellUrl } from "../../shared/api/sandboxContainers";
 import { showApiError } from "../../shared/api/feedback";
 import type { SandboxContainer } from "../../shared/api/types";
+import { ContainerFileManager } from "./ContainerFileManager";
 
 type ShellStatus = "idle" | "connecting" | "open" | "closed";
 type ShellDockState = "normal" | "minimized";
@@ -50,7 +51,13 @@ type NoVNCWindowState = FloatingWindowStateBase & {
   url: string;
 };
 
+type FileManagerWindowState = FloatingWindowStateBase & {
+  containerId: number;
+  containerHash: string;
+};
+
 type ContainerShellContextValue = {
+  openFileManager: (container: SandboxContainer) => void;
   openNoVNC: (container: SandboxContainer) => void;
   openShell: (container: SandboxContainer) => void;
 };
@@ -63,7 +70,7 @@ type ShellFlightState = {
   to: ShellRect;
 };
 
-type FloatingWindowDockSlot = "shell" | "novnc";
+type FloatingWindowDockSlot = "shell" | "novnc" | "filemanager";
 
 type WindowDragState = {
   x: number;
@@ -133,6 +140,8 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
   const [shellFlight, setShellFlight] = useState<ShellFlightState | null>(null);
   const [noVNC, setNoVNC] = useState<NoVNCWindowState | null>(null);
   const [noVNCFlight, setNoVNCFlight] = useState<ShellFlightState | null>(null);
+  const [fileManager, setFileManager] = useState<FileManagerWindowState | null>(null);
+  const [fileManagerFlight, setFileManagerFlight] = useState<ShellFlightState | null>(null);
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -141,8 +150,11 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
   const shellFlightFrameRef = useRef<number | null>(null);
   const noVNCFlightRef = useRef<HTMLDivElement | null>(null);
   const noVNCFlightFrameRef = useRef<number | null>(null);
+  const fileManagerFlightRef = useRef<HTMLDivElement | null>(null);
+  const fileManagerFlightFrameRef = useRef<number | null>(null);
   const dragRef = useRef<WindowDragState | null>(null);
   const noVNCDragRef = useRef<WindowDragState | null>(null);
+  const fileManagerDragRef = useRef<WindowDragState | null>(null);
   const resizeRef = useRef<{ width: number; height: number; startX: number; startY: number } | null>(null);
   const fitWithoutSnapRef = useRef(false);
   const connectionKeyRef = useRef(0);
@@ -299,6 +311,46 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const closeFileManager = useCallback(() => {
+    cancelFlightFrame(fileManagerFlightFrameRef);
+    fileManagerDragRef.current = null;
+    setFileManagerFlight(null);
+    setFileManager(null);
+  }, []);
+
+  const minimizeFileManager = useCallback(() => {
+    if (!fileManager) return;
+    cancelFlightFrame(fileManagerFlightFrameRef);
+    setFileManagerFlight(buildFileManagerFlight(fileManager, "minimize"));
+    setFileManager((current) => current ? { ...current, dockState: "minimized" } : current);
+  }, [fileManager]);
+
+  const restoreFileManager = useCallback(() => {
+    if (!fileManager) return;
+    cancelFlightFrame(fileManagerFlightFrameRef);
+    setFileManagerFlight(buildFileManagerFlight(fileManager, "restore"));
+  }, [fileManager]);
+
+  const openFileManager = useCallback((container: SandboxContainer) => {
+    if (!container.container_hash) return;
+
+    cancelFlightFrame(fileManagerFlightFrameRef);
+    setFileManagerFlight(null);
+    setFileManager((current) => {
+      if (current?.containerId === container.id) {
+        return { ...current, containerName: container.container_name, dockState: "normal" };
+      }
+
+      return {
+        containerId: container.id,
+        containerHash: container.container_hash,
+        containerName: container.container_name,
+        dockState: "normal",
+        ...getInitialFileManagerRect(),
+      };
+    });
+  }, []);
+
   useEffect(() => {
     if (!activeContainerHash || activeConnectionKey === null || terminalRef.current || !terminalHostRef.current) return;
 
@@ -376,9 +428,12 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => closeNoVNC(), [closeNoVNC]);
 
+  useEffect(() => () => closeFileManager(), [closeFileManager]);
+
   useEffect(() => () => {
     cancelFlightFrame(shellFlightFrameRef);
     cancelFlightFrame(noVNCFlightFrameRef);
+    cancelFlightFrame(fileManagerFlightFrameRef);
   }, []);
 
   useEffect(() => {
@@ -401,6 +456,16 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
       setNoVNCFlight(null);
     });
   }, [noVNCFlight]);
+
+  useEffect(() => {
+    if (!fileManagerFlight || !fileManagerFlightRef.current) return;
+    return animateWindowFlight(fileManagerFlightRef.current, fileManagerFlight, fileManagerFlightFrameRef, () => {
+      if (fileManagerFlight.direction === "restore") {
+        setFileManager((current) => current ? { ...current, dockState: "normal" } : current);
+      }
+      setFileManagerFlight(null);
+    });
+  }, [fileManagerFlight]);
 
   useEffect(() => {
     if (!shell || shell.dockState !== "normal") return;
@@ -442,6 +507,15 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const fmDrag = fileManagerDragRef.current;
+    if (fmDrag) {
+      setFileManager((current) => current ? {
+        ...current,
+        ...getDraggedWindowPosition(fmDrag, event),
+      } : current);
+      return;
+    }
+
     const resize = resizeRef.current;
     if (resize) {
       setShell((current) => current ? {
@@ -455,6 +529,7 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
   const stopPointerAction = useCallback(() => {
     dragRef.current = null;
     noVNCDragRef.current = null;
+    fileManagerDragRef.current = null;
     resizeRef.current = null;
   }, []);
 
@@ -467,9 +542,10 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
     };
   }, [onPointerMove, stopPointerAction]);
 
-  const contextValue = useMemo<ContainerShellContextValue>(() => ({ openNoVNC, openShell }), [openNoVNC, openShell]);
+  const contextValue = useMemo<ContainerShellContextValue>(() => ({ openFileManager, openNoVNC, openShell }), [openFileManager, openNoVNC, openShell]);
   const shellFlightStyle = shellFlight ? buildWindowFlightStyle(shellFlight) : undefined;
   const noVNCFlightStyle = noVNCFlight ? buildWindowFlightStyle(noVNCFlight) : undefined;
+  const fileManagerFlightStyle = fileManagerFlight ? buildWindowFlightStyle(fileManagerFlight) : undefined;
 
   return (
     <ContainerShellContext.Provider value={contextValue}>
@@ -541,6 +617,38 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
           ) : null}
           {noVNCFlight ? (
             <FloatingWindowFlight frameRef={noVNCFlightRef} flight={noVNCFlight} icon={<Monitor size={15} />} style={noVNCFlightStyle} />
+          ) : null}
+        </>
+      ) : null}
+      {fileManager ? (
+        <>
+          <FloatingWindow
+            actions={(
+              <>
+                <Button icon={<Minus size={14} />} theme="borderless" onClick={minimizeFileManager} aria-label="Minimize file manager" />
+                <Button icon={<X size={14} />} theme="borderless" type="danger" onClick={closeFileManager} aria-label="Close file manager" />
+              </>
+            )}
+            dockState={fileManager.dockState}
+            icon={<FolderOpen size={16} />}
+            meta="files"
+            rect={fileManager}
+            title={fileManager.containerName}
+            onHeaderPointerDown={(event) => {
+              fileManagerDragRef.current = beginWindowDrag(fileManager, event, { capturePointer: true });
+            }}
+          >
+            <ContainerFileManager
+              containerId={fileManager.containerId}
+              containerHash={fileManager.containerHash}
+              containerName={fileManager.containerName}
+            />
+          </FloatingWindow>
+          {fileManager.dockState === "minimized" && !fileManagerFlight ? (
+            <MinimizedWindowButton className="filemanager-minimized-button" ariaLabel="Restore file manager" icon={<FolderOpen size={20} />} onClick={restoreFileManager} />
+          ) : null}
+          {fileManagerFlight ? (
+            <FloatingWindowFlight frameRef={fileManagerFlightRef} flight={fileManagerFlight} icon={<FolderOpen size={15} />} style={fileManagerFlightStyle} />
           ) : null}
         </>
       ) : null}
@@ -669,6 +777,17 @@ function getInitialNoVNCRect(): ShellRect {
   };
 }
 
+function getInitialFileManagerRect(): ShellRect {
+  const width = Math.min(760, Math.max(420, window.innerWidth - 24));
+  const height = Math.min(520, Math.max(300, window.innerHeight - 24));
+  return {
+    x: Math.max(24, window.innerWidth - width - 36),
+    y: Math.max(92, window.innerHeight - height - 36),
+    width,
+    height,
+  };
+}
+
 function getShellRect(shell: ShellWindowState): ShellRect {
   return getWindowRect(shell);
 }
@@ -715,6 +834,18 @@ function buildNoVNCFlight(noVNC: NoVNCWindowState, direction: ShellFlightState["
   };
 }
 
+function buildFileManagerFlight(fm: FileManagerWindowState, direction: ShellFlightState["direction"]): ShellFlightState {
+  const fmRect = getWindowRect(fm);
+  const dockRect = getDockRect("filemanager");
+  return {
+    direction,
+    containerName: fm.containerName,
+    meta: "files",
+    from: direction === "minimize" ? fmRect : dockRect,
+    to: direction === "minimize" ? dockRect : fmRect,
+  };
+}
+
 function buildWindowFlightStyle(flight: ShellFlightState) {
   const base = getFlightBaseRect(flight);
   return {
@@ -728,9 +859,12 @@ function buildWindowFlightStyle(flight: ShellFlightState) {
 }
 
 function getDockRect(slot: FloatingWindowDockSlot): ShellRect {
+  let yOffset = 0;
+  if (slot === "novnc") yOffset = DOCK_BUTTON_GAP;
+  else if (slot === "filemanager") yOffset = DOCK_BUTTON_GAP * 2;
   return {
     x: window.innerWidth - DOCK_BUTTON_RIGHT - DOCK_BUTTON_SIZE,
-    y: (window.innerHeight / 2) + (slot === "novnc" ? DOCK_BUTTON_GAP : 0),
+    y: (window.innerHeight / 2) + yOffset,
     width: DOCK_BUTTON_SIZE,
     height: DOCK_BUTTON_SIZE,
   };

@@ -5,6 +5,13 @@ from handler.sandbox_container_handler import (
     delete_sandbox_container_handler,
     generate_default_sandbox_container_port_mappings_handler,
     handle_container_shell_stream,
+    handle_copy_files,
+    handle_delete_files,
+    handle_list_files,
+    handle_mkdir,
+    handle_move_files,
+    handle_read_file,
+    handle_write_file,
     query_available_sandbox_containers_handler,
     query_sandbox_containers_handler,
     start_sandbox_container_handler,
@@ -14,8 +21,15 @@ from middleware.auth import AuthUser, require_admin, require_user
 from router._responses import BAD_REQUEST_RESPONSE, COMMON_ERROR_RESPONSES, not_found_response
 from schema.response_schema import CommonResponse
 from schema.sandbox_container_schema import (
+    ContainerFileCopyRequest,
+    ContainerFileDeleteRequest,
+    ContainerFileMkdirRequest,
+    ContainerFileMoveRequest,
+    ContainerFileReadResponse,
+    ContainerFileWriteRequest,
     CreateSandboxContainerRequest,
     DeleteSandboxContainerResponse,
+    ListContainerFilesResponse,
     QuerySandboxContainersResponse,
     SandboxContainerDefaultPortMappingsResponse,
     SandboxContainerSchema,
@@ -130,6 +144,123 @@ router.add_api_route(
     dependencies=ADMIN_ONLY,
     response_model=CommonResponse[QuerySandboxContainersResponse],
     responses=COMMON_ERROR_RESPONSES,
+)
+
+
+# ── container file manager routes ──────────────────────────────────────────────
+
+
+async def list_container_files_route(
+    id: int,
+    path: str = Query(default="/"),
+) -> CommonResponse[ListContainerFilesResponse]:
+    return await handle_list_files(id=id, path=path)
+
+
+async def read_container_file_route(
+    id: int,
+    path: str = Query(default=""),
+    base64: bool = Query(default=False),
+) -> CommonResponse[ContainerFileReadResponse]:
+    return await handle_read_file(id=id, path=path, base64_mode=base64)
+
+
+async def write_container_file_route(
+    id: int,
+    body: ContainerFileWriteRequest,
+) -> CommonResponse:
+    return await handle_write_file(id=id, body=body)
+
+
+async def copy_container_files_route(
+    id: int,
+    body: ContainerFileCopyRequest,
+) -> CommonResponse:
+    return await handle_copy_files(id=id, body=body)
+
+
+async def move_container_files_route(
+    id: int,
+    body: ContainerFileMoveRequest,
+) -> CommonResponse:
+    return await handle_move_files(id=id, body=body)
+
+
+async def delete_container_files_route(
+    id: int,
+    body: ContainerFileDeleteRequest,
+) -> CommonResponse:
+    return await handle_delete_files(id=id, body=body)
+
+
+async def mkdir_container_files_route(
+    id: int,
+    body: ContainerFileMkdirRequest,
+) -> CommonResponse:
+    return await handle_mkdir(id=id, body=body)
+
+
+router.add_api_route(
+    "/{id}/files",
+    list_container_files_route,
+    methods=["GET"],
+    dependencies=ADMIN_ONLY,
+    response_model=CommonResponse[ListContainerFilesResponse],
+    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE, **BAD_REQUEST_RESPONSE},
+)
+
+router.add_api_route(
+    "/{id}/files/read",
+    read_container_file_route,
+    methods=["GET"],
+    dependencies=ADMIN_ONLY,
+    response_model=CommonResponse[ContainerFileReadResponse],
+    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE, **BAD_REQUEST_RESPONSE},
+)
+
+router.add_api_route(
+    "/{id}/files/write",
+    write_container_file_route,
+    methods=["POST"],
+    dependencies=ADMIN_ONLY,
+    response_model=CommonResponse,
+    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE, **BAD_REQUEST_RESPONSE},
+)
+
+router.add_api_route(
+    "/{id}/files/copy",
+    copy_container_files_route,
+    methods=["POST"],
+    dependencies=ADMIN_ONLY,
+    response_model=CommonResponse,
+    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE, **BAD_REQUEST_RESPONSE},
+)
+
+router.add_api_route(
+    "/{id}/files/move",
+    move_container_files_route,
+    methods=["POST"],
+    dependencies=ADMIN_ONLY,
+    response_model=CommonResponse,
+    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE, **BAD_REQUEST_RESPONSE},
+)
+
+router.add_api_route(
+    "/{id}/files/delete",
+    delete_container_files_route,
+    methods=["POST"],
+    dependencies=ADMIN_ONLY,
+    response_model=CommonResponse,
+    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE, **BAD_REQUEST_RESPONSE},
+)
+
+router.add_api_route(
+    "/{id}/files/mkdir",
+    mkdir_container_files_route,
+    methods=["POST"],
+    dependencies=ADMIN_ONLY,
+    response_model=CommonResponse,
+    responses={**COMMON_ERROR_RESPONSES, **NOT_FOUND_RESPONSE, **BAD_REQUEST_RESPONSE},
 )
 
 

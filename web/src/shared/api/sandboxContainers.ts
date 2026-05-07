@@ -2,15 +2,24 @@ import { apiRequest } from "./client";
 import { buildQuery } from "./query";
 import { getStoredAccessToken } from "../auth/session";
 import type {
+  ContainerFileCopyRequest,
+  ContainerFileDeleteRequest,
+  ContainerFileMkdirRequest,
+  ContainerFileMoveRequest,
+  ContainerFileWriteRequest,
   CreateSandboxContainerRequest,
   CreateSandboxContainerResponse,
   DeleteSandboxContainerResponse,
   GenerateDefaultSandboxContainerPortMappingsParams,
   GenerateDefaultSandboxContainerPortMappingsResponse,
+  ListContainerFilesParams,
+  ListContainerFilesResponse,
   QueryAvailableSandboxContainersParams,
   QueryAvailableSandboxContainersResponse,
   QuerySandboxContainersParams,
   QuerySandboxContainersResponse,
+  ReadContainerFileParams,
+  ReadContainerFileResponse,
   SandboxContainer,
   SandboxContainerPathParams,
   StartSandboxContainerPathParams,
@@ -91,4 +100,35 @@ export function buildContainerNoVNCUrl(container: SandboxContainer) {
   url.searchParams.set("resize", "remote");
   url.searchParams.set("path", "websockify");
   return url.toString();
+}
+
+
+// ── container file operations ──────────────────────────────────────────────
+
+export function listContainerFiles(id: number, params: ListContainerFilesParams) {
+  return apiRequest<ListContainerFilesResponse>(`${SANDBOX_CONTAINERS_PATH}/${id}/files${buildQuery(params)}`);
+}
+
+export function readContainerFile(id: number, params: ReadContainerFileParams) {
+  return apiRequest<ReadContainerFileResponse>(`${SANDBOX_CONTAINERS_PATH}/${id}/files/read${buildQuery(params)}`);
+}
+
+export function writeContainerFile(id: number, payload: ContainerFileWriteRequest) {
+  return apiRequest(`${SANDBOX_CONTAINERS_PATH}/${id}/files/write`, { method: "POST", body: payload });
+}
+
+export function copyContainerFiles(id: number, payload: ContainerFileCopyRequest) {
+  return apiRequest(`${SANDBOX_CONTAINERS_PATH}/${id}/files/copy`, { method: "POST", body: payload });
+}
+
+export function moveContainerFiles(id: number, payload: ContainerFileMoveRequest) {
+  return apiRequest(`${SANDBOX_CONTAINERS_PATH}/${id}/files/move`, { method: "POST", body: payload });
+}
+
+export function deleteContainerFiles(id: number, payload: ContainerFileDeleteRequest) {
+  return apiRequest(`${SANDBOX_CONTAINERS_PATH}/${id}/files/delete`, { method: "POST", body: payload });
+}
+
+export function createContainerDirectory(id: number, payload: ContainerFileMkdirRequest) {
+  return apiRequest(`${SANDBOX_CONTAINERS_PATH}/${id}/files/mkdir`, { method: "POST", body: payload });
 }
