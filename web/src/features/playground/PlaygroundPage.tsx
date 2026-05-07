@@ -7,9 +7,10 @@ import { showApiError } from "../../shared/api/feedback";
 import { queryAvailableSandboxContainers } from "../../shared/api/sandboxContainers";
 import type { SandboxContainer } from "../../shared/api/types";
 import { useAgentSessionContext } from "./AgentSessionProvider";
-import { ChatStream } from "./ChatStream";
+import { ChatStream, SubagentSidePanel } from "./ChatStream";
 import { Composer } from "./Composer";
 import { SandboxSelector } from "./SandboxSelector";
+import { useSubagentPanel } from "./useSubagentPanel";
 
 type PlaygroundLocationState = { sessionId?: string };
 
@@ -37,6 +38,7 @@ export function PlaygroundPage() {
   const [sandboxContainerId, setSandboxContainerId] = useState<number | null>(null);
   const [followLatest, setFollowLatest] = useState(true);
   const scrollToLatestRef = useRef<(() => void) | null>(null);
+  const { selectedSubagent, setSelectedSubagent, subagentTabs, closeSubagentPanel } = useSubagentPanel(chatState, activeSessionId);
 
   const loadSandboxes = useCallback(async () => {
     setSandboxLoading(true);
@@ -99,21 +101,33 @@ export function PlaygroundPage() {
   };
 
   return (
-    <div className="playground-shell">
+    <div className={`playground-shell${selectedSubagent ? " playground-shell-split" : ""}`}>
       <div className="playground-main">
-        <div className="playground-canvas">
-          <Spin spinning={historyLoading} wrapperClassName="playground-spin">
-            <ChatStream
-              nodes={chatState.nodes}
-              streaming={chatState.streaming}
-              agents={agents}
-              followLatest={followLatest}
-              onFollowLatestChange={setFollowLatest}
-              onScrollToLatestReady={(handler) => {
-                scrollToLatestRef.current = handler;
-              }}
-            />
-          </Spin>
+        <div className="playground-conversation-frame">
+          <div className="playground-canvas">
+            <Spin spinning={historyLoading} wrapperClassName="playground-spin">
+              <ChatStream
+                nodes={chatState.nodes}
+                streaming={chatState.streaming}
+                agents={agents}
+                followLatest={followLatest}
+                selectedSubagent={selectedSubagent}
+                onOpenSubagent={setSelectedSubagent}
+                onFollowLatestChange={setFollowLatest}
+                onScrollToLatestReady={(handler) => {
+                  scrollToLatestRef.current = handler;
+                }}
+              />
+            </Spin>
+          </div>
+          <SubagentSidePanel
+            nodes={chatState.nodes}
+            streaming={chatState.streaming}
+            tabs={subagentTabs}
+            selection={selectedSubagent}
+            onSelect={setSelectedSubagent}
+            onClose={closeSubagentPanel}
+          />
         </div>
         <div className="playground-composer">
           <Composer

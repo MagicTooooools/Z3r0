@@ -1,16 +1,50 @@
-import { Tag } from "@douyinfe/semi-ui";
-import { AlertOctagon, AtSign, Bot, Brain, ChevronDown, ChevronRight, GitBranch, Sparkles, Wrench } from "lucide-react";
+import { Button, Tag } from "@douyinfe/semi-ui";
+import {
+  AlertOctagon,
+  AtSign,
+  Bot,
+  Brain,
+  ChevronDown,
+  ChevronRight,
+  GitBranch,
+  PanelRightOpen,
+  Sparkles,
+  Wrench,
+  X,
+} from "lucide-react";
 import { TouchEvent as ReactTouchEvent, WheelEvent as ReactWheelEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AgentInfo } from "../../shared/api/types";
-import type { AgentItem, ChatNode, NestedTranscript } from "./playgroundReducer";
+import type {
+  AgentTranscript,
+  ChatNode,
+  ErrorItem,
+  ExecutionItem,
+  NestedTranscript,
+  SubagentExecutionItem,
+  TextItem,
+  ThinkingItem,
+  ToolExecutionItem,
+} from "./playgroundReducer";
+import { normalizeMarkdownForRender } from "./markdown";
+import {
+  findSubagentTarget,
+  isSelectedSubagent,
+  subagentStatusColor,
+  subordinateStatusLabel,
+  type SubagentSelection,
+  type SubagentTab,
+  type SubagentTarget,
+} from "./subagentView";
 
 type ChatStreamProps = {
   nodes: ChatNode[];
   streaming: boolean;
   agents: AgentInfo[];
   followLatest: boolean;
+  selectedSubagent: SubagentSelection | null;
+  onOpenSubagent: (selection: SubagentSelection) => void;
   onFollowLatestChange: (following: boolean) => void;
   onScrollToLatestReady: (handler: (() => void) | null) => void;
 };
@@ -20,6 +54,8 @@ export function ChatStream({
   streaming,
   agents,
   followLatest,
+  selectedSubagent,
+  onOpenSubagent,
   onFollowLatestChange,
   onScrollToLatestReady,
 }: ChatStreamProps) {
@@ -99,7 +135,7 @@ export function ChatStream({
         <p>
           Ask the security operations agent anything
           <br />
-          — penetration tests, code audits, or threat triage.
+          - penetration tests, code audits, or threat triage.
         </p>
       </div>
     );
@@ -120,12 +156,90 @@ export function ChatStream({
           return <UserBubble key={node.id} text={node.text} targetName={targetName} />;
         }
         const isLive = streaming && index === lastIndex;
-        if (!isLive && node.items.length === 0) return null;
-        return <AgentBlock key={node.id} agentName={node.agentName} items={node.items} live={isLive} />;
+        if (!isLive && isTranscriptEmpty(node)) return null;
+        return (
+          <AgentBlock
+            key={node.id}
+            transcript={node}
+            live={isLive}
+            selectedSubagent={selectedSubagent}
+            onOpenSubagent={onOpenSubagent}
+          />
+        );
       })}
-      {streaming && lastNode?.kind === "user" ? <AgentBlock key="pending-agent" agentName="" items={[]} live /> : null}
+      {streaming && lastNode?.kind === "user" ? (
+        <AgentBlock
+          key="pending-agent"
+          transcript={emptyAgentTranscript()}
+          live
+          selectedSubagent={selectedSubagent}
+          onOpenSubagent={onOpenSubagent}
+        />
+      ) : null}
       <div ref={tailRef} className="chat-tail" />
     </div>
+  );
+}
+
+export function SubagentSidePanel({
+  nodes,
+  streaming,
+  tabs,
+  selection,
+  onSelect,
+  onClose,
+}: {
+  nodes: ChatNode[];
+  streaming: boolean;
+  tabs: SubagentTab[];
+  selection: SubagentSelection | null;
+  onSelect: (selection: SubagentSelection) => void;
+  onClose: () => void;
+}) {
+  const target = useMemo(
+    () => selection ? findSubagentTarget(nodes, streaming, selection) : null,
+    [nodes, streaming, selection],
+  );
+  const open = Boolean(selection);
+  const title = target?.kind === "task"
+    ? target.item.agentCode || "subagent"
+    : target?.task?.agentCode || target?.transcript.agentName || "Subagent";
+
+  return (
+    <aside className={`subagent-side-panel${open ? " subagent-side-panel-open" : ""}`} aria-hidden={!open}>
+      <div className="subagent-side-panel-inner">
+        <div className="subagent-side-header">
+          <div className="subagent-side-heading">
+            <GitBranch size={15} />
+            <span>{tabs.length > 1 ? "Subagents" : title}</span>
+          </div>
+          <Button icon={<X size={14} />} theme="borderless" type="tertiary" onClick={onClose} aria-label="Close subagent panel" />
+        </div>
+        {tabs.length > 0 ? (
+          <div className="subagent-side-tabs" role="tablist" aria-label="Subagent messages">
+            {tabs.map((tab) => {
+              const active = selection?.agentCode === tab.agentCode;
+              return (
+                <button
+                  key={tab.agentCode}
+                  type="button"
+                  className={`subagent-tab${active ? " subagent-tab-active" : ""}`}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => onSelect(tab.selection)}
+                >
+                  <span className="subagent-tab-name" title={tab.agentCode || "subagent"}>{tab.agentCode || "subagent"}</span>
+                  <SubagentStatusTag status={tab.status} />
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+        <div className="subagent-side-body">
+          {target ? <SubagentTargetView target={target} /> : <div className="transcript-empty">Subagent output is no longer available.</div>}
+        </div>
+      </div>
+    </aside>
   );
 }
 
@@ -162,16 +276,21 @@ function UserBubble({ text, targetName }: { text: string; targetName: string }) 
 }
 
 function AgentBlock({
-  agentName,
-  items,
+  transcript,
   live,
+  selectedSubagent,
+  onOpenSubagent,
 }: {
-  agentName: string;
-  items: AgentItem[];
+  transcript: AgentTranscript;
   live: boolean;
+  selectedSubagent: SubagentSelection | null;
+  onOpenSubagent: (selection: SubagentSelection) => void;
 }) {
-  const lastItem = items[items.length - 1];
-  const isLastItemActive = live && !!lastItem && !isItemComplete(lastItem);
+  const activeContent = live && hasActiveContent(transcript.contentItems);
+  const activeThinkingId = live ? activeThinkingItemId(transcript.thinkingItems) : "";
+  const hasContent = transcript.contentItems.length > 0;
+  const isEmpty = isTranscriptEmpty(transcript);
+
   return (
     <div className="chat-row chat-row-agent">
       <div className="agent-avatar">
@@ -179,68 +298,54 @@ function AgentBlock({
       </div>
       <div className="agent-block">
         <div className="agent-header">
-          <span className="agent-name">{agentName || "Agent"}</span>
+          <span className="agent-name">{transcript.agentName || "Agent"}</span>
           {live ? <span className="agent-pulse" /> : null}
         </div>
         <div className="agent-body">
-          {items.length === 0
-            ? live
-              ? <PendingShimmer />
-              : null
-            : items.map((item, index) => (
-                <AgentItemView
-                  key={item.id}
-                  item={item}
-                  live={live && index === items.length - 1}
-                />
-              ))}
-          {live && !isLastItemActive ? <span className="caret" /> : null}
+          {isEmpty && live ? <PendingShimmer /> : null}
+          {transcript.thinkingItems.map((item) => (
+            <ThinkingBlock key={item.id} item={item} active={item.id === activeThinkingId} />
+          ))}
+          <ExecutionDock
+            items={transcript.executionItems}
+            live={live}
+            selectedSubagent={selectedSubagent}
+            onOpenSubagent={onOpenSubagent}
+          />
+          {hasContent ? <ContentStack items={transcript.contentItems} live={live} /> : null}
+          {transcript.errorItems.map((item) => <ErrorNotice key={item.id} item={item} />)}
+          {live && !isEmpty && !activeContent ? <span className="caret" /> : null}
         </div>
       </div>
     </div>
   );
 }
 
-function AgentItemView({ item, live }: { item: AgentItem; live: boolean }) {
-  switch (item.kind) {
-    case "thinking":
-      return <ThinkingBlock text={item.text} active={live && !item.complete} />;
-    case "text":
-      return <MarkdownText text={item.text} streaming={live && !item.complete} />;
-    case "tool":
-      return <ToolCard item={item} />;
-    case "subagent":
-      return <SubagentTaskCard item={item} />;
-    case "error":
-      return (
-        <div className="agent-error">
-          <AlertOctagon size={16} />
-          <span>{item.message}</span>
-        </div>
-      );
-  }
-}
-
-function isItemComplete(item: AgentItem) {
-  if (item.kind === "tool") return item.resolved;
-  if (item.kind === "subagent") return item.status !== "running";
-  if (item.kind === "error") return true;
-  return item.complete;
+function ContentStack({ items, live }: { items: TextItem[]; live: boolean }) {
+  const activeId = live ? activeTextItemId(items) : "";
+  return (
+    <div className="agent-content-stack">
+      {items.map((item) => (
+        <MarkdownText key={item.id} text={item.text} streaming={item.id === activeId && !item.complete} />
+      ))}
+    </div>
+  );
 }
 
 function MarkdownText({ text, streaming }: { text: string; streaming: boolean }) {
+  const markdown = useMemo(() => normalizeMarkdownForRender(text, streaming), [streaming, text]);
   if (!text) {
     return streaming ? <span className="caret" /> : null;
   }
   return (
     <div className="agent-text">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
       {streaming ? <span className="caret" /> : null}
     </div>
   );
 }
 
-function ThinkingBlock({ text, active }: { text: string; active: boolean }) {
+function ThinkingBlock({ item, active }: { item: ThinkingItem; active: boolean }) {
   // default open while streaming, collapsed for history; auto-collapse when the live turn finishes.
   const [open, setOpen] = useState(active);
   const wasActive = useRef(active);
@@ -251,7 +356,7 @@ function ThinkingBlock({ text, active }: { text: string; active: boolean }) {
     wasActive.current = active;
   }, [active]);
 
-  const cleaned = text.replace(/\n{2,}/g, "\n");
+  const cleaned = item.text.replace(/\n{2,}/g, "\n");
 
   useEffect(() => {
     if (open && active && bodyRef.current) {
@@ -263,7 +368,7 @@ function ThinkingBlock({ text, active }: { text: string; active: boolean }) {
     <div className={`thinking-block${active ? " thinking-block-active" : ""}`}>
       <button type="button" className="thinking-header" onClick={() => setOpen((next) => !next)}>
         <Brain size={14} />
-        <span>{active ? "Thinking…" : "Thought"}</span>
+        <span>{active ? "Thinking..." : "Thought"}</span>
         <span className="thinking-toggle">
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
@@ -279,92 +384,256 @@ function ThinkingBlock({ text, active }: { text: string; active: boolean }) {
   );
 }
 
-function ToolCard({ item }: { item: Extract<AgentItem, { kind: "tool" }> }) {
-  // auto-open while a nested subagent run is in flight so the user sees its
-  // progress live; otherwise let the user toggle as they wish
-  const hasNested = !!item.nested && item.nested.items.length > 0;
-  const nestedActive = hasNested && (!item.resolved || hasRunningSubagent(item.nested!));
-  const [openManual, setOpenManual] = useState(false);
-  const open = openManual || nestedActive;
+function ExecutionDock({
+  items,
+  live,
+  selectedSubagent,
+  onOpenSubagent,
+  allowSubagentOpen = true,
+}: {
+  items: ExecutionItem[];
+  live: boolean;
+  selectedSubagent?: SubagentSelection | null;
+  onOpenSubagent?: (selection: SubagentSelection) => void;
+  allowSubagentOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
 
-  const status = item.resolved ? (item.isError ? "error" : "ok") : "running";
-  const statusLabel = item.resolved ? (item.isError ? "Failed" : "Result") : "Running";
-  const statusColor = item.resolved ? (item.isError ? "red" : "green") : "amber";
-  const argsPreview = previewObject(item.arguments);
-  const outputPreview = previewString(item.output);
+  const runningCount = items.filter(isExecutionRunning).length;
+  const failedCount = items.filter(isExecutionFailed).length;
+  const statusLabel = failedCount > 0 ? `${failedCount} failed` : runningCount > 0 ? `${runningCount} running` : "Complete";
+  const statusTone = failedCount > 0 ? "red" : runningCount > 0 ? "amber" : "green";
 
   return (
-    <div className={`tool-card tool-${status}${hasNested ? " tool-card-with-nested" : ""}`}>
-      <button type="button" className="tool-head" onClick={() => setOpenManual((next) => !next)}>
-        <span className="tool-icon"><Wrench size={14} /></span>
-        <span className="tool-name">{item.name || item.callId}</span>
-        <Tag size="small" color={statusColor}>{statusLabel}</Tag>
-        <span className="tool-summary">{argsPreview}</span>
-        <span className="tool-toggle">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+    <div className={`execution-dock${open ? " execution-dock-open" : ""}${live && runningCount > 0 ? " execution-dock-live" : ""}`}>
+      <button type="button" className="execution-dock-header" onClick={() => setOpen((next) => !next)}>
+        <Wrench size={14} />
+        <span className="execution-dock-title">Execution</span>
+        <span className="execution-dock-count">{items.length}</span>
+        <Tag size="small" color={statusTone}>{statusLabel}</Tag>
+        <span className="execution-dock-toggle">
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
       </button>
       {open ? (
-        <div className="tool-detail">
-          <ToolSection label="Arguments" body={formatJson(item.arguments)} />
-          {hasNested ? <NestedTranscriptView nested={item.nested!} live={nestedActive} /> : null}
-          <ToolSection
-            label="Output"
-            body={item.resolved ? (outputPreview || "(empty)") : "Pending…"}
-            tone={item.isError ? "error" : undefined}
-          />
+        <div className="execution-dock-body">
+          {items.map((item) => (
+            item.kind === "tool"
+              ? (
+                <ToolExecutionRow
+                  key={item.id}
+                  item={item}
+                  live={live}
+                  selectedSubagent={allowSubagentOpen ? selectedSubagent : null}
+                  onOpenSubagent={allowSubagentOpen ? onOpenSubagent : undefined}
+                  allowSubagentOpen={allowSubagentOpen}
+                />
+              ) : (
+                <SubagentExecutionRow
+                  key={item.id}
+                  item={item}
+                  selected={allowSubagentOpen && isSelectedSubagent(selectedSubagent, { kind: "agent", agentCode: item.agentCode })}
+                  onOpenSubagent={allowSubagentOpen ? onOpenSubagent : undefined}
+                />
+              )
+          ))}
         </div>
-      ) : item.resolved ? (
-        <div className="tool-result-preview">{outputPreview || "(empty)"}</div>
       ) : null}
     </div>
   );
 }
 
-function NestedTranscriptView({ nested, live }: { nested: NestedTranscript; live: boolean }) {
+function ToolExecutionRow({
+  item,
+  live,
+  selectedSubagent,
+  onOpenSubagent,
+  allowSubagentOpen,
+}: {
+  item: ToolExecutionItem;
+  live: boolean;
+  selectedSubagent?: SubagentSelection | null;
+  onOpenSubagent?: (selection: SubagentSelection) => void;
+  allowSubagentOpen: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const nestedActive = !!item.nested && transcriptHasRunningExecution(item.nested);
+  const status = toolExecutionStatus(item);
+  const displayName = item.name || item.callId || "tool";
+  const detailOpen = open;
+
   return (
-    <div className="tool-section">
-      <div className="tool-section-label">
-        Subagent {nested.agentName ? `· ${nested.agentName}` : ""}
-      </div>
-      <div className={`nested-transcript${live ? " nested-transcript-live" : ""}`}>
-        {nested.items.map((subItem, index) => (
-          <AgentItemView
-            key={subItem.id}
-            item={subItem}
-            live={live && index === nested.items.length - 1}
+    <div className={`execution-row execution-row-${status.tone}`}>
+      <button type="button" className="execution-row-head" onClick={() => setOpen((next) => !next)}>
+        <span className="execution-row-icon"><Wrench size={13} /></span>
+        <span className="execution-row-name" title={displayName}>{displayName}</span>
+        <Tag size="small" color={status.color}>{status.label}</Tag>
+        <span className="execution-row-spacer" />
+        <span className="execution-row-toggle">{detailOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+      </button>
+      {detailOpen ? (
+        <div className="execution-row-detail">
+          <ExecutionSection label="Arguments" body={formatJson(item.arguments)} />
+          {allowSubagentOpen && (item.nested || item.subagentTask) ? (
+            <NestedTranscriptPanel
+              nested={item.nested ?? emptyAgentTranscript()}
+              task={item.subagentTask}
+              live={live && (nestedActive || item.subagentTask?.status === "running")}
+              selected={item.subagentTask ? isSelectedSubagent(selectedSubagent, { kind: "agent", agentCode: item.subagentTask.agentCode }) : false}
+              onOpenSubagent={onOpenSubagent}
+            />
+          ) : null}
+          <ExecutionSection
+            label="Output"
+            body={item.resolved ? (item.output || "(empty)") : "Pending..."}
+            tone={item.isError ? "error" : undefined}
           />
-        ))}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function hasRunningSubagent(nested: NestedTranscript) {
-  return nested.items.some((item) => item.kind === "subagent" && item.status === "running");
+function SubagentExecutionRow({
+  item,
+  selected,
+  onOpenSubagent,
+}: {
+  item: SubagentExecutionItem;
+  selected: boolean;
+  onOpenSubagent?: (selection: SubagentSelection) => void;
+}) {
+  return (
+    <div className={`execution-row execution-row-subagent execution-row-subagent-${item.status}${selected ? " execution-row-selected" : ""}`}>
+      <div className="execution-row-head execution-row-head-static">
+        <span className="execution-row-icon"><GitBranch size={13} /></span>
+        <span className="execution-row-name" title={item.agentCode || "subagent"}>{item.agentCode || "subagent"}</span>
+        <SubagentStatusTag status={item.status} />
+        <span className="execution-row-spacer" />
+      </div>
+      {onOpenSubagent ? (
+        <Button
+          className="execution-row-expand"
+          icon={<PanelRightOpen size={13} />}
+          size="small"
+          theme="borderless"
+          type="tertiary"
+          onClick={() => onOpenSubagent({ kind: "agent", agentCode: item.agentCode })}
+        >
+          Open
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
-function SubagentTaskCard({ item }: { item: Extract<AgentItem, { kind: "subagent" }> }) {
-  const isFailed = item.status === "failed" || item.status === "canceled";
-  const statusLabel = item.status === "running" ? "Running" : item.status === "completed" ? "Completed" : item.status === "canceled" ? "Canceled" : "Failed";
-  const body = item.status === "running"
-    ? item.progress || "Running"
-    : item.result || item.error || "(empty)";
+function NestedTranscriptPanel({
+  nested,
+  task,
+  live,
+  selected,
+  onOpenSubagent,
+}: {
+  nested: NestedTranscript;
+  task?: SubagentExecutionItem;
+  live: boolean;
+  selected: boolean;
+  onOpenSubagent?: (selection: SubagentSelection) => void;
+}) {
+  const itemCount = transcriptItemCount(nested);
+  if (itemCount === 0 && !task) return null;
+
   return (
-    <div className={`subagent-task subagent-task-${item.status}`}>
-      <div className="subagent-task-head">
+    <div className={`nested-panel${live ? " nested-panel-live" : ""}${selected ? " nested-panel-selected" : ""}`}>
+      <div className="nested-panel-head nested-panel-head-static">
         <GitBranch size={13} />
-        <span>{item.agentCode || "subagent"}</span>
-        <Tag size="small" color={isFailed ? "red" : item.status === "completed" ? "green" : "amber"}>{statusLabel}</Tag>
+        <span>Subagent{task?.agentCode ? ` - ${task.agentCode}` : nested.agentName ? ` - ${nested.agentName}` : ""}</span>
+        {task ? <SubagentStatusTag status={task.status} /> : null}
+        <span className="nested-panel-count">{itemCount}</span>
       </div>
-      <pre className={`subagent-task-body${isFailed ? " subagent-task-body-error" : ""}`}>{body}</pre>
+      <Button
+        className="nested-panel-expand"
+        icon={<PanelRightOpen size={13} />}
+        size="small"
+        theme="borderless"
+        type="tertiary"
+        disabled={!task}
+        onClick={() => task && onOpenSubagent?.({ kind: "agent", agentCode: task.agentCode })}
+      >
+        Open
+      </Button>
     </div>
   );
 }
 
-function ToolSection({ label, body, tone }: { label: string; body: string; tone?: "error" }) {
+function TranscriptView({ transcript, live, expanded = false }: { transcript: AgentTranscript; live: boolean; expanded?: boolean }) {
+  const activeThinkingId = live ? activeThinkingItemId(transcript.thinkingItems) : "";
   return (
-    <div className={`tool-section${tone ? ` tool-section-${tone}` : ""}`}>
-      <div className="tool-section-label">{label}</div>
-      <pre className="tool-section-body">{body}</pre>
+    <div className={expanded ? "transcript-view transcript-view-expanded" : "transcript-view"}>
+      {transcript.thinkingItems.map((item) => (
+        <ThinkingBlock key={item.id} item={item} active={item.id === activeThinkingId} />
+      ))}
+      <ExecutionDock items={transcript.executionItems} live={live} allowSubagentOpen={false} />
+      {transcript.contentItems.length > 0 ? <ContentStack items={transcript.contentItems} live={live} /> : null}
+      {transcript.errorItems.map((item) => <ErrorNotice key={item.id} item={item} />)}
+      {isTranscriptEmpty(transcript) ? <div className="transcript-empty">No subagent output yet.</div> : null}
+    </div>
+  );
+}
+
+function SubagentTargetView({ target }: { target: SubagentTarget }) {
+  if (target.kind === "transcript") {
+    return (
+      <div className="subagent-transcript-view">
+        {target.task ? <SubagentTaskMeta item={target.task} /> : null}
+        <TranscriptView transcript={target.transcript} live={target.live} expanded />
+      </div>
+    );
+  }
+
+  const failed = target.item.status === "failed" || target.item.status === "canceled";
+  const label = target.item.status === "running" ? "Progress" : failed ? "Error" : "Result";
+  const body = target.item.status === "running"
+    ? target.item.progress || "Running"
+    : target.item.result || target.item.error || "(empty)";
+
+  return (
+    <div className="subagent-task-view">
+      <SubagentTaskMeta item={target.item} />
+      <ExecutionSection label={label} body={body} tone={failed ? "error" : undefined} expanded />
+    </div>
+  );
+}
+
+function SubagentTaskMeta({ item }: { item: SubagentExecutionItem }) {
+  return (
+    <div className="subagent-task-meta">
+      <SubagentStatusTag status={item.status} />
+      <span>{item.runId}</span>
+      {item.status === "running" && item.progress ? <span>{item.progress}</span> : null}
+    </div>
+  );
+}
+
+function SubagentStatusTag({ status }: { status: SubagentExecutionItem["status"] }) {
+  return <Tag size="small" color={subagentStatusColor(status)}>{subordinateStatusLabel(status)}</Tag>;
+}
+
+function ExecutionSection({ label, body, tone, expanded = false }: { label: string; body: string; tone?: "error"; expanded?: boolean }) {
+  return (
+    <div className={`execution-section${tone ? ` execution-section-${tone}` : ""}${expanded ? " execution-section-expanded" : ""}`}>
+      <div className="execution-section-label">{label}</div>
+      <pre className="execution-section-body">{body}</pre>
+    </div>
+  );
+}
+
+function ErrorNotice({ item }: { item: ErrorItem }) {
+  return (
+    <div className="agent-error">
+      <AlertOctagon size={16} />
+      <span>{item.message}</span>
     </div>
   );
 }
@@ -377,17 +646,64 @@ function PendingShimmer() {
   );
 }
 
-function previewObject(value: Record<string, unknown>) {
-  const entries = Object.entries(value).slice(0, 3);
-  if (entries.length === 0) return "";
-  return entries
-    .map(([key, val]) => `${key}=${previewString(typeof val === "string" ? val : JSON.stringify(val))}`)
-    .join("  ");
+function isTranscriptEmpty(transcript: AgentTranscript) {
+  return transcript.thinkingItems.length === 0 &&
+    transcript.executionItems.length === 0 &&
+    transcript.contentItems.length === 0 &&
+    transcript.errorItems.length === 0;
 }
 
-function previewString(value: string, max = 60) {
-  const oneLine = value.replace(/\s+/g, " ").trim();
-  return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
+function emptyAgentTranscript(): AgentTranscript {
+  return {
+    agentName: "",
+    thinkingItems: [],
+    executionItems: [],
+    contentItems: [],
+    errorItems: [],
+  };
+}
+
+function activeThinkingItemId(items: ThinkingItem[]) {
+  return [...items].reverse().find((item) => !item.complete)?.id ?? "";
+}
+
+function activeTextItemId(items: TextItem[]) {
+  return [...items].reverse().find((item) => !item.complete)?.id ?? "";
+}
+
+function hasActiveContent(items: TextItem[]) {
+  return items.some((item) => !item.complete);
+}
+
+function isExecutionRunning(item: ExecutionItem) {
+  if (item.kind === "tool") {
+    return !item.resolved || item.subagentTask?.status === "running" || Boolean(item.nested && transcriptHasRunningExecution(item.nested));
+  }
+  return item.status === "running";
+}
+
+function isExecutionFailed(item: ExecutionItem) {
+  if (item.kind === "tool") {
+    return (item.resolved && item.isError) || item.subagentTask?.status === "failed" || item.subagentTask?.status === "canceled";
+  }
+  return item.status === "failed" || item.status === "canceled";
+}
+
+function transcriptHasRunningExecution(transcript: AgentTranscript): boolean {
+  return transcript.executionItems.some(isExecutionRunning);
+}
+
+function toolExecutionStatus(item: ToolExecutionItem): { label: string; color: "red" | "green" | "amber"; tone: "error" | "ok" | "running" } {
+  if (item.resolved && item.isError) return { label: "Failed", color: "red", tone: "error" };
+  if (item.subagentTask?.status === "failed" || item.subagentTask?.status === "canceled") {
+    return { label: subordinateStatusLabel(item.subagentTask.status), color: "red", tone: "error" };
+  }
+  if (!item.resolved || item.subagentTask?.status === "running") return { label: "Running", color: "amber", tone: "running" };
+  return { label: "Done", color: "green", tone: "ok" };
+}
+
+function transcriptItemCount(transcript: AgentTranscript) {
+  return transcript.thinkingItems.length + transcript.executionItems.length + transcript.contentItems.length + transcript.errorItems.length;
 }
 
 function formatJson(value: unknown) {

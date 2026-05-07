@@ -1,39 +1,68 @@
-import type { AgentContentEvent, AgentSubordinateStatus } from "../../shared/api/types";
+import type {
+  AgentContentEvent,
+  SubagentTaskEvent,
+  TextCompleteEvent,
+  ThinkingCompleteEvent,
+  ToolCallEvent,
+  ToolResultEvent,
+} from "../../shared/api/types";
 
-export type AgentItem =
-  | { kind: "thinking"; id: string; text: string; complete: boolean }
-  | { kind: "text"; id: string; text: string; complete: boolean }
-  | {
-      kind: "tool";
-      id: string;
-      callId: string;
-      name: string;
-      arguments: Record<string, unknown>;
-      output: string;
-      isError: boolean;
-      resolved: boolean;
-      nested?: NestedTranscript;
-    }
-  | {
-      kind: "subagent";
-      id: string;
-      runId: string;
-      agentCode: string;
-      status: AgentSubordinateStatus;
-      result: string;
-      error: string;
-      progress: string;
-    }
-  | { kind: "error"; id: string; message: string };
-
-export type NestedTranscript = {
-  agentName: string;
-  items: AgentItem[];
+export type ThinkingItem = {
+  kind: "thinking";
+  id: ThinkingCompleteEvent["item_id"];
+  text: ThinkingCompleteEvent["text"];
+  complete: boolean;
 };
+
+export type TextItem = {
+  kind: "text";
+  id: TextCompleteEvent["item_id"];
+  text: TextCompleteEvent["text"];
+  complete: boolean;
+};
+
+export type ToolExecutionItem = {
+  kind: "tool";
+  id: string;
+  callId: ToolCallEvent["call_id"];
+  name: ToolCallEvent["name"];
+  arguments: NonNullable<ToolCallEvent["arguments"]>;
+  output: ToolResultEvent["output"];
+  isError: ToolResultEvent["is_error"];
+  resolved: boolean;
+  nested?: NestedTranscript;
+  subagentTask?: SubagentExecutionItem;
+};
+
+export type SubagentExecutionItem = {
+  kind: "subagent";
+  id: SubagentTaskEvent["run_id"];
+  runId: SubagentTaskEvent["run_id"];
+  parentAgentCode: SubagentTaskEvent["parent_agent_code"];
+  agentCode: SubagentTaskEvent["agent_code"];
+  nestedCallId: SubagentTaskEvent["nested_call_id"];
+  status: SubagentTaskEvent["status"];
+  result: SubagentTaskEvent["result"];
+  error: SubagentTaskEvent["error"];
+  progress: SubagentTaskEvent["progress"];
+};
+
+export type ErrorItem = { kind: "error"; id: string; message: string };
+export type ExecutionItem = ToolExecutionItem | SubagentExecutionItem;
+
+export type AgentTranscript = {
+  agentName: string;
+  thinkingItems: ThinkingItem[];
+  executionItems: ExecutionItem[];
+  contentItems: TextItem[];
+  errorItems: ErrorItem[];
+};
+
+export type NestedTranscript = AgentTranscript;
 
 export type ChatNode =
   | { kind: "user"; id: string; text: string; targetAgentCode: string }
-  | { kind: "agent"; id: string; agentName: string; items: AgentItem[] };
+  | ({ kind: "agent"; id: string } & AgentTranscript);
 
 export type ChatState = {
   nodes: ChatNode[];
@@ -53,10 +82,7 @@ function newId() {
 }
 
 type AgentNode = Extract<ChatNode, { kind: "agent" }>;
-
-// shape compatible with both AgentNode and NestedTranscript so the same
-// reducer primitives can drive top-level and nested transcripts
-type ItemScope = { agentName: string; items: AgentItem[] };
+type StreamingItem = ThinkingItem | TextItem;
 
 export function appendUserMessage(state: ChatState, text: string, targetAgentCode = ""): ChatState {
   // idempotent w.r.t. the server echo: if the last node already matches, just refresh attribution
@@ -106,13 +132,14 @@ function routeToTopLevel(state: ChatState, event: AgentContentEvent): ChatState 
 
   let agent: AgentNode;
   if (lastNode?.kind === "agent") {
-    agent = { ...lastNode, items: lastNode.items.slice() };
+    agent = cloneAgentNode(lastNode);
     nodes[lastIndex] = agent;
   } else {
-    agent = { kind: "agent", id: newId(), agentName: "", items: [] };
+    agent = createAgentNode();
     nodes.push(agent);
   }
-  const finished = applyEventToScope(agent, event);
+
+  const finished = applyEventToTranscript(agent, event);
   const nextState = finished ? finishChatTurn({ ...state, nodes }) : { ...state, nodes };
   if (event.type === "tool_call" || event.type === "tool_result") {
     return drainPendingNested(nextState, event.call_id);
@@ -140,24 +167,47 @@ function routeToNestedNow(
   event: AgentContentEvent,
   nestedCallId: string,
 ): ChatState | null {
-  // nested events attach to the latest tool card whose callId matches; we
-  // walk agent nodes in reverse so we always target the in-flight delegation
+  if (event.type === "subagent_task") {
+    return routeSubagentTaskToToolNow(state, event, nestedCallId);
+  }
+
+  // Nested events attach to the latest top-level tool whose call id matches the backend attribution.
   const nodes = state.nodes.slice();
   for (let i = nodes.length - 1; i >= 0; i -= 1) {
     const node = nodes[i];
     if (node.kind !== "agent") continue;
-    const itemIndex = findToolItemIndex(node.items, nestedCallId);
+    const itemIndex = findToolItemIndex(node.executionItems, nestedCallId);
     if (itemIndex === -1) continue;
 
-    const items = node.items.slice();
-    const tool = { ...(items[itemIndex] as Extract<AgentItem, { kind: "tool" }>) };
-    const nested: NestedTranscript = tool.nested
-      ? { agentName: tool.nested.agentName, items: tool.nested.items.slice() }
-      : { agentName: "", items: [] };
-    applyEventToScope(nested, event);
+    const agent = cloneAgentNode(node);
+    const tool = { ...(agent.executionItems[itemIndex] as ToolExecutionItem) };
+    const nested = tool.nested ? cloneTranscript(tool.nested) : createTranscript();
+    applyEventToTranscript(nested, event);
     tool.nested = nested;
-    items[itemIndex] = tool;
-    nodes[i] = { ...node, items };
+    agent.executionItems[itemIndex] = tool;
+    nodes[i] = agent;
+    return { ...state, nodes };
+  }
+  return null;
+}
+
+function routeSubagentTaskToToolNow(
+  state: ChatState,
+  event: SubagentTaskEvent,
+  nestedCallId: string,
+): ChatState | null {
+  const nodes = state.nodes.slice();
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const node = nodes[i];
+    if (node.kind !== "agent") continue;
+    const itemIndex = findToolItemIndex(node.executionItems, nestedCallId);
+    if (itemIndex === -1) continue;
+
+    const agent = cloneAgentNode(node);
+    const tool = { ...(agent.executionItems[itemIndex] as ToolExecutionItem) };
+    tool.subagentTask = subagentExecutionItemFromEvent(event);
+    agent.executionItems[itemIndex] = tool;
+    nodes[i] = agent;
     return { ...state, nodes };
   }
   return null;
@@ -191,113 +241,91 @@ function clearPendingNested(state: ChatState): ChatState {
   return Object.keys(state.pendingNested).length ? { ...state, pendingNested: {} } : state;
 }
 
-function findToolItemIndex(items: AgentItem[], callId: string): number {
-  return items.findIndex((item) => item.kind === "tool" && item.callId === callId);
-}
-
 // ----------------------------------------------------------- primitives
 
-function applyEventToScope(scope: ItemScope, event: AgentContentEvent): boolean {
+function applyEventToTranscript(transcript: AgentTranscript, event: AgentContentEvent): boolean {
   // returns true when the event should also flip streaming off (final error)
   switch (event.type) {
     case "user_message":
       return false;
 
     case "thinking_delta":
-      setAgentName(scope, event.agent_name);
-      upsertStreamingItem(scope.items, "thinking", event.item_id, { delta: event.delta });
+      setAgentName(transcript, event.agent_name);
+      upsertStreamingItem(transcript.thinkingItems, "thinking", event.item_id, { delta: event.delta });
       return false;
 
     case "thinking_complete":
-      setAgentName(scope, event.agent_name);
-      upsertStreamingItem(scope.items, "thinking", event.item_id, { text: event.text, complete: true });
+      setAgentName(transcript, event.agent_name);
+      upsertStreamingItem(transcript.thinkingItems, "thinking", event.item_id, { text: event.text, complete: true });
       return false;
 
     case "text_delta":
-      setAgentName(scope, event.agent_name);
-      upsertStreamingItem(scope.items, "text", event.item_id, { delta: event.delta });
+      setAgentName(transcript, event.agent_name);
+      upsertStreamingItem(transcript.contentItems, "text", event.item_id, { delta: event.delta });
       return false;
 
     case "text_complete":
-      setAgentName(scope, event.agent_name);
-      upsertStreamingItem(scope.items, "text", event.item_id, { text: event.text, complete: true });
+      setAgentName(transcript, event.agent_name);
+      upsertStreamingItem(transcript.contentItems, "text", event.item_id, { text: event.text, complete: true });
       return false;
 
     case "tool_call":
-      setAgentName(scope, event.agent_name);
-      scope.items.push({
-        kind: "tool",
-        id: newId(),
-        callId: event.call_id,
-        name: event.name,
-        arguments: (event.arguments as Record<string, unknown>) ?? {},
-        output: "",
-        isError: false,
-        resolved: false,
-      });
+      setAgentName(transcript, event.agent_name);
+      upsertToolCall(transcript.executionItems, event.call_id, event.name, event.arguments ?? {});
       return false;
 
-    case "tool_result": {
-      setAgentName(scope, event.agent_name);
-      const index = findToolItemIndex(scope.items, event.call_id);
-      if (index === -1) {
-        scope.items.push({
-          kind: "tool",
-          id: newId(),
-          callId: event.call_id,
-          name: "",
-          arguments: {},
-          output: event.output,
-          isError: event.is_error,
-          resolved: true,
-        });
-        return false;
-      }
-      const existing = scope.items[index] as Extract<AgentItem, { kind: "tool" }>;
-      scope.items[index] = {
-        ...existing,
-        output: event.output,
-        isError: event.is_error,
-        resolved: true,
-      };
+    case "tool_result":
+      setAgentName(transcript, event.agent_name);
+      upsertToolResult(transcript.executionItems, event.call_id, event.output, event.is_error);
       return false;
-    }
 
-    case "subagent_task": {
-      setAgentName(scope, event.agent_name);
-      const index = scope.items.findIndex((item) => item.kind === "subagent" && item.runId === event.run_id);
-      const item = {
-        kind: "subagent" as const,
-        id: event.run_id,
-        runId: event.run_id,
-        agentCode: event.agent_code,
-        status: event.status,
-        result: event.result,
-        error: event.error,
-        progress: event.progress,
-      };
-      if (index === -1) {
-        scope.items.push(item);
-      } else {
-        scope.items[index] = item;
-      }
+    case "subagent_task":
+      setAgentName(transcript, event.agent_name);
+      upsertSubagentTask(transcript.executionItems, subagentExecutionItemFromEvent(event));
       return false;
-    }
 
     case "error":
-      setAgentName(scope, event.agent_name);
-      scope.items.push({ kind: "error", id: newId(), message: event.message || "agent run failed" });
+      setAgentName(transcript, event.agent_name);
+      transcript.errorItems.push({ kind: "error", id: newId(), message: event.message || "agent run failed" });
       return true;
   }
 }
 
-function setAgentName(scope: ItemScope, name: string) {
-  if (name && !scope.agentName) scope.agentName = name;
+function createAgentNode(): AgentNode {
+  return { kind: "agent", id: newId(), ...createTranscript() };
+}
+
+function createTranscript(): AgentTranscript {
+  return {
+    agentName: "",
+    thinkingItems: [],
+    executionItems: [],
+    contentItems: [],
+    errorItems: [],
+  };
+}
+
+function cloneAgentNode(node: AgentNode): AgentNode {
+  return { ...node, ...cloneTranscript(node) };
+}
+
+function cloneTranscript(transcript: AgentTranscript): AgentTranscript {
+  return {
+    agentName: transcript.agentName,
+    thinkingItems: transcript.thinkingItems.slice(),
+    executionItems: transcript.executionItems.slice(),
+    contentItems: transcript.contentItems.slice(),
+    errorItems: transcript.errorItems.slice(),
+  };
+}
+
+function setAgentName(transcript: AgentTranscript, name: string) {
+  if (name && !transcript.agentName) transcript.agentName = name;
 }
 
 function upsertStreamingItem(
-  items: AgentItem[],
-  kind: "text" | "thinking",
+  items: StreamingItem[],
+  kind: StreamingItem["kind"],
   itemId: string,
   patch: { delta?: string; text?: string; complete?: boolean },
 ) {
@@ -308,13 +336,86 @@ function upsertStreamingItem(
       id: itemId,
       text: patch.text ?? patch.delta ?? "",
       complete: Boolean(patch.complete),
-    });
+    } as StreamingItem);
     return;
   }
-  const existing = items[index] as Extract<AgentItem, { kind: "text" | "thinking" }>;
+  const existing = items[index];
   items[index] = {
     ...existing,
     text: patch.text ?? existing.text + (patch.delta ?? ""),
     complete: patch.complete ?? existing.complete,
   };
+}
+
+function upsertToolCall(
+  items: ExecutionItem[],
+  callId: string,
+  name: string,
+  argumentsValue: Record<string, unknown>,
+) {
+  const index = findToolItemIndex(items, callId);
+  if (index === -1) {
+    items.push({
+      kind: "tool",
+      id: callId || newId(),
+      callId,
+      name,
+      arguments: argumentsValue,
+      output: "",
+      isError: false,
+      resolved: false,
+    });
+    return;
+  }
+
+  const existing = items[index] as ToolExecutionItem;
+  items[index] = { ...existing, name, arguments: argumentsValue };
+}
+
+function upsertToolResult(items: ExecutionItem[], callId: string, output: string, isError: boolean) {
+  const index = findToolItemIndex(items, callId);
+  if (index === -1) {
+    items.push({
+      kind: "tool",
+      id: callId || newId(),
+      callId,
+      name: "",
+      arguments: {},
+      output,
+      isError,
+      resolved: true,
+    });
+    return;
+  }
+
+  const existing = items[index] as ToolExecutionItem;
+  items[index] = { ...existing, output, isError, resolved: true };
+}
+
+function upsertSubagentTask(items: ExecutionItem[], nextItem: SubagentExecutionItem) {
+  const index = items.findIndex((item) => item.kind === "subagent" && item.runId === nextItem.runId);
+  if (index === -1) {
+    items.push(nextItem);
+    return;
+  }
+  items[index] = nextItem;
+}
+
+function subagentExecutionItemFromEvent(event: SubagentTaskEvent): SubagentExecutionItem {
+  return {
+    kind: "subagent",
+    id: event.run_id,
+    runId: event.run_id,
+    parentAgentCode: event.parent_agent_code,
+    agentCode: event.agent_code,
+    nestedCallId: event.nested_call_id,
+    status: event.status,
+    result: event.result,
+    error: event.error,
+    progress: event.progress,
+  };
+}
+
+function findToolItemIndex(items: ExecutionItem[], callId: string): number {
+  return items.findIndex((item) => item.kind === "tool" && item.callId === callId);
 }
