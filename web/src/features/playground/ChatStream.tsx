@@ -16,6 +16,7 @@ import { TouchEvent as ReactTouchEvent, WheelEvent as ReactWheelEvent, useEffect
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AgentInfo } from "../../shared/api/types";
+import { formatDateTime } from "../../shared/lib/date";
 import type {
   AgentTranscript,
   ChatNode,
@@ -153,7 +154,7 @@ export function ChatStream({
       {nodes.map((node, index) => {
         if (node.kind === "user") {
           const targetName = agentNameByCode.get(node.targetAgentCode) ?? node.targetAgentCode;
-          return <UserBubble key={node.id} text={node.text} targetName={targetName} />;
+          return <UserBubble key={node.id} text={node.text} targetName={targetName} createdAt={node.createdAt} />;
         }
         const isLive = streaming && index === lastIndex;
         if (!isLive && isTranscriptEmpty(node)) return null;
@@ -259,17 +260,24 @@ function findScrollContainer(element: HTMLElement | null) {
   return null;
 }
 
-function UserBubble({ text, targetName }: { text: string; targetName: string }) {
+function MessageTimestamp({ value }: { value: string }) {
+  return <time className="message-timestamp" dateTime={value}>{formatDateTime(value)}</time>;
+}
+
+function UserBubble({ text, targetName, createdAt }: { text: string; targetName: string; createdAt: string }) {
   return (
     <div className="chat-row chat-row-user">
-      <div className="user-bubble">
-        {targetName ? (
-          <span className="user-bubble-mention">
-            <AtSign size={11} />
-            <span>{targetName}</span>
-          </span>
-        ) : null}
-        <span className="user-bubble-text">{text}</span>
+      <div className="chat-message chat-message-user">
+        <MessageTimestamp value={createdAt} />
+        <div className="user-bubble">
+          {targetName ? (
+            <span className="user-bubble-mention">
+              <AtSign size={11} />
+              <span>{targetName}</span>
+            </span>
+          ) : null}
+          <span className="user-bubble-text">{text}</span>
+        </div>
       </div>
     </div>
   );
@@ -288,6 +296,7 @@ function AgentBlock({
 }) {
   const activeContent = live && hasActiveContent(transcript.contentItems);
   const activeThinkingId = live ? activeThinkingItemId(transcript.thinkingItems) : "";
+  const thinkingActive = Boolean(activeThinkingId);
   const hasContent = transcript.contentItems.length > 0;
   const isEmpty = isTranscriptEmpty(transcript);
 
@@ -300,12 +309,11 @@ function AgentBlock({
         <div className="agent-header">
           <span className="agent-name">{transcript.agentName || "Agent"}</span>
           {live ? <span className="agent-pulse" /> : null}
+          {transcript.createdAt ? <MessageTimestamp value={transcript.createdAt} /> : null}
         </div>
         <div className="agent-body">
           {isEmpty && live ? <PendingShimmer /> : null}
-          {transcript.thinkingItems.map((item) => (
-            <ThinkingBlock key={item.id} item={item} active={item.id === activeThinkingId} />
-          ))}
+          <ThinkingBlock items={transcript.thinkingItems} active={thinkingActive} />
           <ExecutionDock
             items={transcript.executionItems}
             live={live}
@@ -345,7 +353,7 @@ function MarkdownText({ text, streaming }: { text: string; streaming: boolean })
   );
 }
 
-function ThinkingBlock({ item, active }: { item: ThinkingItem; active: boolean }) {
+function ThinkingBlock({ items, active }: { items: ThinkingItem[]; active: boolean }) {
   // default open while streaming, collapsed for history; auto-collapse when the live turn finishes.
   const [open, setOpen] = useState(active);
   const wasActive = useRef(active);
@@ -356,7 +364,12 @@ function ThinkingBlock({ item, active }: { item: ThinkingItem; active: boolean }
     wasActive.current = active;
   }, [active]);
 
-  const cleaned = item.text.replace(/\n{2,}/g, "\n");
+  const cleaned = useMemo(
+    () => items.map((item) => item.text.trim()).filter(Boolean).join("\n\n").replace(/\n{3,}/g, "\n\n"),
+    [items],
+  );
+
+  if (items.length === 0) return null;
 
   useEffect(() => {
     if (open && active && bodyRef.current) {
@@ -369,6 +382,7 @@ function ThinkingBlock({ item, active }: { item: ThinkingItem; active: boolean }
       <button type="button" className="thinking-header" onClick={() => setOpen((next) => !next)}>
         <Brain size={14} />
         <span>{active ? "Thinking..." : "Thought"}</span>
+        {items.length > 1 ? <span className="thinking-count">{items.length}</span> : null}
         <span className="thinking-toggle">
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
@@ -569,11 +583,10 @@ function NestedTranscriptPanel({
 
 function TranscriptView({ transcript, live, expanded = false }: { transcript: AgentTranscript; live: boolean; expanded?: boolean }) {
   const activeThinkingId = live ? activeThinkingItemId(transcript.thinkingItems) : "";
+  const thinkingActive = Boolean(activeThinkingId);
   return (
     <div className={expanded ? "transcript-view transcript-view-expanded" : "transcript-view"}>
-      {transcript.thinkingItems.map((item) => (
-        <ThinkingBlock key={item.id} item={item} active={item.id === activeThinkingId} />
-      ))}
+      <ThinkingBlock items={transcript.thinkingItems} active={thinkingActive} />
       <ExecutionDock items={transcript.executionItems} live={live} allowSubagentOpen={false} />
       {transcript.contentItems.length > 0 ? <ContentStack items={transcript.contentItems} live={live} /> : null}
       {transcript.errorItems.map((item) => <ErrorNotice key={item.id} item={item} />)}
@@ -655,6 +668,7 @@ function isTranscriptEmpty(transcript: AgentTranscript) {
 
 function emptyAgentTranscript(): AgentTranscript {
   return {
+    createdAt: "",
     agentName: "",
     thinkingItems: [],
     executionItems: [],

@@ -37,6 +37,7 @@ export type ToolExecutionItem = {
 export type SubagentExecutionItem = {
   kind: "subagent";
   id: SubagentTaskEvent["run_id"];
+  createdAt: SubagentTaskEvent["created_at"];
   runId: SubagentTaskEvent["run_id"];
   parentAgentCode: SubagentTaskEvent["parent_agent_code"];
   agentCode: SubagentTaskEvent["agent_code"];
@@ -51,6 +52,7 @@ export type ErrorItem = { kind: "error"; id: string; message: string };
 export type ExecutionItem = ToolExecutionItem | SubagentExecutionItem;
 
 export type AgentTranscript = {
+  createdAt: AgentContentEvent["created_at"] | "";
   agentName: string;
   thinkingItems: ThinkingItem[];
   executionItems: ExecutionItem[];
@@ -61,7 +63,7 @@ export type AgentTranscript = {
 export type NestedTranscript = AgentTranscript;
 
 export type ChatNode =
-  | { kind: "user"; id: string; text: string; targetAgentCode: string }
+  | { kind: "user"; id: string; createdAt: AgentContentEvent["created_at"]; text: string; targetAgentCode: string }
   | ({ kind: "agent"; id: string } & AgentTranscript);
 
 export type ChatState = {
@@ -71,8 +73,6 @@ export type ChatState = {
 };
 
 export const initialChatState: ChatState = { nodes: [], streaming: false, pendingNested: {} };
-
-const MAX_PENDING_NESTED_EVENTS = 64;
 
 function newId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -84,10 +84,15 @@ function newId() {
 type AgentNode = Extract<ChatNode, { kind: "agent" }>;
 type StreamingItem = ThinkingItem | TextItem;
 
-export function appendUserMessage(state: ChatState, text: string, targetAgentCode = ""): ChatState {
-  // idempotent w.r.t. the server echo: if the last node already matches, just refresh attribution
+export function appendUserMessage(
+  state: ChatState,
+  text: string,
+  targetAgentCode: string,
+  createdAt: AgentContentEvent["created_at"],
+): ChatState {
+  // idempotent w.r.t. duplicate server frames; repeated user text at a new timestamp remains a new message
   const lastNode = state.nodes[state.nodes.length - 1];
-  if (lastNode?.kind === "user" && lastNode.text === text) {
+  if (lastNode?.kind === "user" && lastNode.text === text && lastNode.createdAt === createdAt) {
     if (!targetAgentCode || lastNode.targetAgentCode === targetAgentCode) {
       return { ...state, streaming: true };
     }
@@ -97,7 +102,7 @@ export function appendUserMessage(state: ChatState, text: string, targetAgentCod
   }
   return {
     ...state,
-    nodes: [...state.nodes, { kind: "user", id: newId(), text, targetAgentCode }],
+    nodes: [...state.nodes, { kind: "user", id: newId(), createdAt, text, targetAgentCode }],
     streaming: true,
   };
 }
@@ -108,7 +113,7 @@ export function finishChatTurn(state: ChatState): ChatState {
 
 export function chatReduce(state: ChatState, event: AgentContentEvent): ChatState {
   if (event.type === "user_message") {
-    return appendUserMessage(state, event.text, event.target_agent_code);
+    return appendUserMessage(state, event.text, event.target_agent_code, event.created_at);
   }
 
   const nestedCallId = "nested_call_id" in event ? event.nested_call_id : "";
@@ -133,9 +138,10 @@ function routeToTopLevel(state: ChatState, event: AgentContentEvent): ChatState 
   let agent: AgentNode;
   if (lastNode?.kind === "agent") {
     agent = cloneAgentNode(lastNode);
+    if (!agent.createdAt) agent.createdAt = event.created_at;
     nodes[lastIndex] = agent;
   } else {
-    agent = createAgentNode();
+    agent = createAgentNode(event.created_at);
     nodes.push(agent);
   }
 
@@ -157,7 +163,7 @@ function routeToNested(state: ChatState, event: AgentContentEvent, nestedCallId:
     ...state,
     pendingNested: {
       ...state.pendingNested,
-      [nestedCallId]: [...queued, event].slice(-MAX_PENDING_NESTED_EVENTS),
+      [nestedCallId]: [...queued, event],
     },
   };
 }
@@ -181,7 +187,8 @@ function routeToNestedNow(
 
     const agent = cloneAgentNode(node);
     const tool = { ...(agent.executionItems[itemIndex] as ToolExecutionItem) };
-    const nested = tool.nested ? cloneTranscript(tool.nested) : createTranscript();
+    const nested = tool.nested ? cloneTranscript(tool.nested) : createTranscript(event.created_at);
+    if (!nested.createdAt) nested.createdAt = event.created_at;
     applyEventToTranscript(nested, event);
     tool.nested = nested;
     agent.executionItems[itemIndex] = tool;
@@ -291,12 +298,13 @@ function applyEventToTranscript(transcript: AgentTranscript, event: AgentContent
   }
 }
 
-function createAgentNode(): AgentNode {
-  return { kind: "agent", id: newId(), ...createTranscript() };
+function createAgentNode(createdAt: AgentContentEvent["created_at"]): AgentNode {
+  return { kind: "agent", id: newId(), ...createTranscript(createdAt) };
 }
 
-function createTranscript(): AgentTranscript {
+function createTranscript(createdAt: AgentContentEvent["created_at"] | "" = ""): AgentTranscript {
   return {
+    createdAt,
     agentName: "",
     thinkingItems: [],
     executionItems: [],
@@ -311,6 +319,7 @@ function cloneAgentNode(node: AgentNode): AgentNode {
 
 function cloneTranscript(transcript: AgentTranscript): AgentTranscript {
   return {
+    createdAt: transcript.createdAt,
     agentName: transcript.agentName,
     thinkingItems: transcript.thinkingItems.slice(),
     executionItems: transcript.executionItems.slice(),
@@ -405,6 +414,7 @@ function subagentExecutionItemFromEvent(event: SubagentTaskEvent): SubagentExecu
   return {
     kind: "subagent",
     id: event.run_id,
+    createdAt: event.created_at,
     runId: event.run_id,
     parentAgentCode: event.parent_agent_code,
     agentCode: event.agent_code,

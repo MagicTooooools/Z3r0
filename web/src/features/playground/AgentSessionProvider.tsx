@@ -26,7 +26,6 @@ import type {
   AgentStreamEvent,
 } from "../../shared/api/types";
 import {
-  appendUserMessage,
   chatReduce,
   chatReplay,
   finishChatTurn,
@@ -278,6 +277,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         }));
       })
       .catch((error) => {
+        ensuredRef.current.delete(sessionId);
         showApiError(error);
         updateRuntime(sessionId, (r) => ({ ...r, historyLoading: false }));
       });
@@ -333,10 +333,6 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     if (!runtime || runtime.historyLoading) return;
     pendingSendRef.current = null;
     setPendingAgentCode("");
-    updateRuntime(activeSessionId, (r) => ({
-      ...r,
-      state: appendUserMessage(r.state, queued.text, queued.agentCode),
-    }));
     sendCommand(activeSessionId, {
       action: "send",
       text: queued.text,
@@ -348,10 +344,6 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   const send = useCallback(async (text: string, sandboxContainerId: number | null = null) => {
     const agentCode = activeAgentCode;
     if (activeSessionId) {
-      updateRuntime(activeSessionId, (r) => ({
-        ...r,
-        state: appendUserMessage(r.state, text, agentCode),
-      }));
       await sendCommand(activeSessionId, {
         action: "send",
         text,

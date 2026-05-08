@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from http import HTTPStatus
 import shlex
 
@@ -157,13 +158,13 @@ async def _run_turn(
     except asyncio.CancelledError:
         raise
     except PermissionError:
-        await _send_event(websocket, ErrorEvent(message="agent session not found", code="not_found"), send_lock)
+        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message="agent session not found", code="not_found"), send_lock)
     except Exception as exc:
         logger.exception("agent turn failed for session=%s", session_id)
-        await _send_event(websocket, ErrorEvent(message=str(exc) or "agent turn failed"), send_lock)
+        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message=str(exc) or "agent turn failed"), send_lock)
     finally:
         if not saw_done:
-            await _send_event(websocket, DoneEvent(), send_lock)
+            await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
 
 
 async def _interrupt_turn(
@@ -174,15 +175,15 @@ async def _interrupt_turn(
     send_lock: asyncio.Lock,
 ) -> None:
     if not await agent_session_service.can_access_session(session_id, user.id, user.role):
-        await _send_event(websocket, ErrorEvent(message="agent session not found", code="not_found"), send_lock)
-        await _send_event(websocket, DoneEvent(), send_lock)
+        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message="agent session not found", code="not_found"), send_lock)
+        await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
         return
 
     had_local_runner = runner is not None and not runner.done()
     interrupted = await get_agent_pool().try_interrupt(session_id)
     await _cancel_task(runner)
     if interrupted and not had_local_runner:
-        await _send_event(websocket, DoneEvent(), send_lock)
+        await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
 
 
 async def _send_event(

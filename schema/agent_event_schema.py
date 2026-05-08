@@ -1,4 +1,5 @@
 from enum import StrEnum
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
@@ -25,6 +26,7 @@ class AgentStreamActionSchema(StrEnum):
 
 
 class _AgentScopedEvent(BaseModel):
+    created_at: datetime
     agent_name: str = ""
     # when set, this event was streamed from inside a nested subagent call.
     # `nested_for` is the parent agent code; `nested_call_id` matches the
@@ -36,6 +38,7 @@ class _AgentScopedEvent(BaseModel):
 
 class UserMessageEvent(BaseModel):
     type: Literal[AgentEventTypeSchema.USER_MESSAGE] = AgentEventTypeSchema.USER_MESSAGE
+    created_at: datetime
     text: str
     # the agent this message was @-mentioned to; UI renders it as a "@<name>" chip
     target_agent_code: str = ""

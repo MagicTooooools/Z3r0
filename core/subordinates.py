@@ -6,6 +6,7 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from agents import Agent, RunContextWrapper, Runner, Tool, TResponseInputItem, function_tool
@@ -40,6 +41,7 @@ class _DeltaBuffer:
     is_thinking: bool
     item_id: str
     content: str = ""
+    complete: bool = False
 
 
 @dataclass
@@ -406,7 +408,7 @@ async def _run_subagent_task(
     except Exception as exc:
         logger.exception("subagent task failed: %s", snapshot.run_id)
         await _flush_partial_context(result, memory_session, buffers)
-        tagged_error = _tag_nested(ErrorEvent(agent_name=child_agent.name, message=f"Subagent failed: {exc}"), snapshot)
+        tagged_error = _tag_nested(ErrorEvent(created_at=datetime.now(), agent_name=child_agent.name, message=f"Subagent failed: {exc}"), snapshot)
         await publish_subagent_event(snapshot.session_id, tagged_error)
         failed = await agent_subordinate_service.fail_subagent_task(snapshot.run_id, str(exc) or "subagent failed")
         if failed is not None:
@@ -441,6 +443,7 @@ def _progress_from_event(event: AgentEventSchema) -> str:
 
 def _task_event(snapshot: AgentSubordinateTaskSnapshot) -> AgentEventSchema:
     return SubagentTaskEvent(
+        created_at=snapshot.updated_at,
         agent_name=snapshot.agent_name,
         nested_for=snapshot.parent_agent_code,
         nested_call_id=snapshot.nested_call_id,
@@ -484,7 +487,12 @@ def _track_delta(buffers: dict[str, _DeltaBuffer], event: AgentEventSchema) -> N
             buffers[event.item_id] = buf
         buf.content += event.delta
     elif isinstance(event, _COMPLETE_TYPES):
-        buffers.pop(event.item_id, None)
+        buf = buffers.get(event.item_id)
+        if buf is None:
+            buf = _DeltaBuffer(is_thinking=isinstance(event, ThinkingCompleteEvent), item_id=event.item_id)
+            buffers[event.item_id] = buf
+        buf.content = event.text
+        buf.complete = True
 
 
 async def _flush_partial_context(
@@ -514,7 +522,7 @@ def _partial_assistant_item(buf: _DeltaBuffer) -> TResponseInputItem:
         "type": "message",
         "role": "assistant",
         "content": [{"type": "output_text", "text": buf.content, "annotations": []}],
-        "status": "incomplete",
+        "status": "completed" if buf.complete else "incomplete",
     }
 
 
@@ -523,7 +531,7 @@ def _partial_reasoning_item(buf: _DeltaBuffer) -> TResponseInputItem:
         "id": f"partial_{buf.item_id}",
         "type": "reasoning",
         "summary": [{"type": "summary_text", "text": buf.content}],
-        "status": "incomplete",
+        "status": "completed" if buf.complete else "incomplete",
     }
 
 

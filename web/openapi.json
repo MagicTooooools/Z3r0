@@ -1089,6 +1089,11 @@
             "title": "Agent Name",
             "type": "string"
           },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "nested_call_id": {
             "default": "",
             "title": "Nested Call Id",
@@ -1106,6 +1111,9 @@
             "type": "string"
           }
         },
+        "required": [
+          "created_at"
+        ],
         "title": "DoneEvent",
         "type": "object"
       },
@@ -1119,6 +1127,11 @@
           "code": {
             "default": "",
             "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
           "message": {
@@ -1143,6 +1156,7 @@
           }
         },
         "required": [
+          "created_at",
           "message"
         ],
         "title": "ErrorEvent",
@@ -1585,6 +1599,11 @@
             "title": "Agent Name",
             "type": "string"
           },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "error": {
             "default": "",
             "title": "Error",
@@ -1630,6 +1649,7 @@
           }
         },
         "required": [
+          "created_at",
           "run_id",
           "agent_code",
           "status"
@@ -1726,6 +1746,11 @@
             "title": "Agent Name",
             "type": "string"
           },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "item_id": {
             "title": "Item Id",
             "type": "string"
@@ -1752,6 +1777,7 @@
           }
         },
         "required": [
+          "created_at",
           "item_id",
           "text"
         ],
@@ -1763,6 +1789,11 @@
           "agent_name": {
             "default": "",
             "title": "Agent Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
           "delta": {
@@ -1791,6 +1822,7 @@
           }
         },
         "required": [
+          "created_at",
           "item_id",
           "delta"
         ],
@@ -1802,6 +1834,11 @@
           "agent_name": {
             "default": "",
             "title": "Agent Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
           "item_id": {
@@ -1830,6 +1867,7 @@
           }
         },
         "required": [
+          "created_at",
           "item_id",
           "text"
         ],
@@ -1841,6 +1879,11 @@
           "agent_name": {
             "default": "",
             "title": "Agent Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
           "delta": {
@@ -1869,6 +1912,7 @@
           }
         },
         "required": [
+          "created_at",
           "item_id",
           "delta"
         ],
@@ -1889,6 +1933,11 @@
           },
           "call_id": {
             "title": "Call Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
           "name": {
@@ -1913,6 +1962,7 @@
           }
         },
         "required": [
+          "created_at",
           "call_id",
           "name"
         ],
@@ -1928,6 +1978,11 @@
           },
           "call_id": {
             "title": "Call Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
           "is_error": {
@@ -1958,6 +2013,7 @@
           }
         },
         "required": [
+          "created_at",
           "call_id"
         ],
         "title": "ToolResultEvent",
@@ -2019,6 +2075,11 @@
       },
       "UserMessageEvent": {
         "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "target_agent_code": {
             "default": "",
             "title": "Target Agent Code",
@@ -2036,6 +2097,7 @@
           }
         },
         "required": [
+          "created_at",
           "text"
         ],
         "title": "UserMessageEvent",
@@ -3110,7 +3172,7 @@
     },
     "/api/sandbox-containers/{id}/files/mkdir": {
       "post": {
-        "operationId": "mkdir_container_route_api_sandbox_containers__id__files_mkdir_post",
+        "operationId": "mkdir_container_files_route_api_sandbox_containers__id__files_mkdir_post",
         "parameters": [
           {
             "in": "path",
@@ -3199,7 +3261,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "Mkdir Container Route",
+        "summary": "Mkdir Container Files Route",
         "tags": [
           "sandbox-containers"
         ]

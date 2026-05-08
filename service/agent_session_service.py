@@ -169,21 +169,29 @@ async def replay_session_events(
         )).all())
 
     code_to_name = get_agent_registry().code_to_name()
-    events: list[AgentContentEventSchema] = []
+    top_level_events: list[AgentContentEventSchema] = []
+    nested_events_by_call_id: dict[str, list[AgentContentEventSchema]] = {}
     for stored in stored_items:
         agent_name = code_to_name.get(stored.owner_code, "")
-        events.extend(events_from_sdk_message(
+        for event in events_from_sdk_message(
             stored.item, str(stored.message_id),
+            created_at=stored.created_at,
             owner_code=stored.owner_code,
             agent_name=agent_name,
             nested_for=stored.nested_for,
             nested_call_id=stored.nested_call_id,
-        ))
-    for task in reversed(sub_tasks):
-        index = _find_matching_tool_event_index(events, task.nested_call_id)
-        if index == -1:
+        ):
+            nested_call_id = getattr(event, "nested_call_id", "")
+            if nested_call_id:
+                nested_events_by_call_id.setdefault(nested_call_id, []).append(event)
+            else:
+                top_level_events.append(event)
+
+    task_events_by_call_id: dict[str, list[AgentContentEventSchema]] = {}
+    for task in sub_tasks:
+        if not task.nested_call_id:
             continue
-        events.insert(index + 1, event_from_subagent_task(
+        task_events_by_call_id.setdefault(task.nested_call_id, []).append(event_from_subagent_task(
             run_id=task.run_id,
             parent_agent_code=task.parent_agent_code,
             agent_code=task.agent_code,
@@ -193,18 +201,35 @@ async def replay_session_events(
             error=task.error,
             progress=task.progress,
             nested_call_id=task.nested_call_id,
+            created_at=task.updated_at,
         ))
+
+    return _attach_nested_replay_events(
+        top_level_events,
+        nested_events_by_call_id,
+        task_events_by_call_id,
+    )
+
+
+def _attach_nested_replay_events(
+    top_level_events: list[AgentContentEventSchema],
+    nested_events_by_call_id: dict[str, list[AgentContentEventSchema]],
+    task_events_by_call_id: dict[str, list[AgentContentEventSchema]],
+) -> list[AgentContentEventSchema]:
+    events: list[AgentContentEventSchema] = []
+    for event in top_level_events:
+        events.append(event)
+        if getattr(event, "type", "") != "tool_call":
+            continue
+        call_id = getattr(event, "call_id", "")
+        if not call_id:
+            continue
+        events.extend(task_events_by_call_id.pop(call_id, ()))
+        events.extend(nested_events_by_call_id.pop(call_id, ()))
+    for call_id in sorted(set(task_events_by_call_id) | set(nested_events_by_call_id)):
+        events.extend(task_events_by_call_id.get(call_id, ()))
+        events.extend(nested_events_by_call_id.get(call_id, ()))
     return events
-
-
-def _find_matching_tool_event_index(events: list[AgentContentEventSchema], nested_call_id: str) -> int:
-    if not nested_call_id:
-        return -1
-    for index in range(len(events) - 1, -1, -1):
-        event = events[index]
-        if getattr(event, "type", "") == "tool_call" and getattr(event, "call_id", "") == nested_call_id:
-            return index
-    return -1
 
 
 async def can_access_session(session_id: str, user_id: int, user_role: SystemUserRole) -> bool:

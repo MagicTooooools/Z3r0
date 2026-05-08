@@ -19,6 +19,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     load_config()
-    setup_logging(level="DEBUG", file_path=WORKSPACE / "app.log")
+    setup_logging(level="INFO", file_path=WORKSPACE / "app.log")
 
     main()

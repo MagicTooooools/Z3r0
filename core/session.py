@@ -4,6 +4,7 @@ nested-call attribution in `agent_message_meta` (1:1 FK to agent_messages.id).""
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from agents.extensions.memory import SQLAlchemySession
@@ -24,6 +25,7 @@ _FOREIGN_PREFIX = "[other agent: {name}]\n"
 @dataclass(frozen=True, slots=True)
 class StoredItem:
     message_id: int
+    created_at: datetime
     owner_code: str
     item: dict[str, Any]
     nested_for: str = ""
@@ -122,6 +124,7 @@ class Z3r0Session(SQLAlchemySession):
         viewer = self._viewing_agent_code
         pending_owner: str = ""
         pending_texts: list[str] = []
+        pending_ids: list[int] = []
 
         if self._nested_for:
             for stored in stored_items:
@@ -134,15 +137,18 @@ class Z3r0Session(SQLAlchemySession):
             return
 
         def flush() -> TResponseInputItem | None:
-            nonlocal pending_owner, pending_texts
+            nonlocal pending_owner, pending_texts, pending_ids
             if not pending_texts:
                 return None
             merged = _build_foreign_block(
+                source_code=pending_owner,
                 source_name=self._agent_code_to_name.get(pending_owner, pending_owner),
+                message_ids=pending_ids,
                 texts=pending_texts,
             )
             pending_owner = ""
             pending_texts = []
+            pending_ids = []
             return merged
 
         for stored in stored_items:
@@ -176,6 +182,7 @@ class Z3r0Session(SQLAlchemySession):
                 if (m := flush()) is not None:
                     yield m
             pending_owner = owner
+            pending_ids.append(stored.message_id)
             pending_texts.append(text)
 
         if (m := flush()) is not None:
@@ -188,6 +195,7 @@ async def fetch_stored_items(sess: AsyncSession, session_id: str) -> list[Stored
     stmt = (
         select(
             agent_messages.c.id,
+            agent_messages.c.created_at,
             agent_messages.c.message_data,
             meta_table.c.owner_code,
             meta_table.c.nested_for,
@@ -211,6 +219,7 @@ async def fetch_stored_items(sess: AsyncSession, session_id: str) -> list[Stored
             continue
         items.append(StoredItem(
             message_id=row.id,
+            created_at=row.created_at,
             owner_code=row.owner_code or "",
             item=item,
             nested_for=row.nested_for or "",
@@ -219,9 +228,12 @@ async def fetch_stored_items(sess: AsyncSession, session_id: str) -> list[Stored
     return items
 
 
-def _build_foreign_block(*, source_name: str, texts: list[str]) -> dict[str, Any]:
+def _build_foreign_block(*, source_code: str, source_name: str, message_ids: list[int], texts: list[str]) -> dict[str, Any]:
     body = "\n\n".join(texts)
+    first_id = message_ids[0] if message_ids else ""
+    last_id = message_ids[-1] if message_ids else ""
     return {
+        "id": f"foreign_{source_code}_{first_id}_{last_id}",
         "type": "message",
         "role": "assistant",
         "content": [{

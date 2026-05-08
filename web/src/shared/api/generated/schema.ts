@@ -202,8 +202,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mkdir Container Route */
-        post: operations["mkdir_container_route_api_sandbox_containers__id__files_mkdir_post"];
+        /** Mkdir Container Files Route */
+        post: operations["mkdir_container_files_route_api_sandbox_containers__id__files_mkdir_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1033,6 +1033,11 @@ export interface components {
              */
             agent_name: string;
             /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
              * Nested Call Id
              * @default
              */
@@ -1061,6 +1066,11 @@ export interface components {
              * @default
              */
             code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Message */
             message: string;
             /**
@@ -1242,6 +1252,11 @@ export interface components {
              */
             agent_name: string;
             /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
              * Error
              * @default
              */
@@ -1324,6 +1339,11 @@ export interface components {
              * @default
              */
             agent_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Item Id */
             item_id: string;
             /**
@@ -1351,6 +1371,11 @@ export interface components {
              * @default
              */
             agent_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Delta */
             delta: string;
             /** Item Id */
@@ -1378,6 +1403,11 @@ export interface components {
              * @default
              */
             agent_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Item Id */
             item_id: string;
             /**
@@ -1405,6 +1435,11 @@ export interface components {
              * @default
              */
             agent_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Delta */
             delta: string;
             /** Item Id */
@@ -1438,6 +1473,11 @@ export interface components {
             };
             /** Call Id */
             call_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Name */
             name: string;
             /**
@@ -1465,6 +1505,11 @@ export interface components {
             agent_name: string;
             /** Call Id */
             call_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /**
              * Is Error
              * @default false
@@ -1503,6 +1548,11 @@ export interface components {
         };
         /** UserMessageEvent */
         UserMessageEvent: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /**
              * Target Agent Code
              * @default
@@ -2261,7 +2311,7 @@ export interface operations {
             };
         };
     };
-    mkdir_container_route_api_sandbox_containers__id__files_mkdir_post: {
+    mkdir_container_files_route_api_sandbox_containers__id__files_mkdir_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from agents import Runner, TResponseInputItem
@@ -42,6 +43,7 @@ class _DeltaBuffer:
     is_thinking: bool
     item_id: str
     content: str = ""
+    complete: bool = False
 
 
 class AgentSession:
@@ -109,7 +111,7 @@ class AgentSession:
     ) -> AsyncIterator[AgentEventSchema]:
         graph = self._ensure_agent_graph(agent_code, context)
         agent = graph.get(agent_code)
-        yield UserMessageEvent(text=text, target_agent_code=agent_code)
+        yield UserMessageEvent(created_at=datetime.now(), text=text, target_agent_code=agent_code)
 
         memory_session = Z3r0Session(
             session_id=self.session_id,
@@ -142,7 +144,7 @@ class AgentSession:
                 raise
             except Exception as exc:
                 logger.exception("agent stream failed: %s", exc)
-                queue.put_nowait(ErrorEvent(agent_name=agent.name, message=str(exc)))
+                queue.put_nowait(ErrorEvent(created_at=datetime.now(), agent_name=agent.name, message=str(exc)))
             finally:
                 queue.put_nowait(None)
 
@@ -155,7 +157,7 @@ class AgentSession:
                     break
                 _track_delta(buffers, event)
                 yield event
-            yield DoneEvent(agent_name=agent.name)
+            yield DoneEvent(created_at=datetime.now(), agent_name=agent.name)
         except asyncio.CancelledError:
             if not main_task.done():
                 main_task.cancel()
@@ -347,7 +349,12 @@ def _track_delta(buffers: dict[str, _DeltaBuffer], event: AgentEventSchema) -> N
             buffers[event.item_id] = buf
         buf.content += event.delta
     elif isinstance(event, _COMPLETE_TYPES):
-        buffers.pop(event.item_id, None)
+        buf = buffers.get(event.item_id)
+        if buf is None:
+            buf = _DeltaBuffer(is_thinking=isinstance(event, ThinkingCompleteEvent), item_id=event.item_id)
+            buffers[event.item_id] = buf
+        buf.content = event.text
+        buf.complete = True
 
 
 async def _flush_partial_context(
@@ -378,7 +385,7 @@ def _partial_assistant_item(buf: _DeltaBuffer) -> TResponseInputItem:
         "type": "message",
         "role": "assistant",
         "content": [{"type": "output_text", "text": buf.content, "annotations": []}],
-        "status": "incomplete",
+        "status": "completed" if buf.complete else "incomplete",
     }
 
 
@@ -387,5 +394,5 @@ def _partial_reasoning_item(buf: _DeltaBuffer) -> TResponseInputItem:
         "id": f"partial_{buf.item_id}",
         "type": "reasoning",
         "summary": [{"type": "summary_text", "text": buf.content}],
-        "status": "incomplete",
+        "status": "completed" if buf.complete else "incomplete",
     }

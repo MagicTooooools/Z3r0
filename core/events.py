@@ -1,6 +1,7 @@
 """Normalize SDK stream events and stored items into our wire schema."""
 
 import json
+from datetime import datetime
 from typing import Any
 
 from agents.items import ToolCallItem, ToolCallOutputItem
@@ -41,13 +42,15 @@ _THINKING_TEXT_SUFFIX = "#text"
 _THINKING_SUMMARY_SUFFIX = "#summary"
 
 _TEXT_CONTENT_TYPES = {"input_text", "output_text", "text"}
+_PLACEHOLDER_ITEM_IDS = {"", "__fake_id__"}
 
 
 def event_from_sdk_stream(sdk_event: Any, current_agent: str) -> AgentEventSchema | None:
+    created_at = datetime.now()
     if isinstance(sdk_event, RawResponsesStreamEvent):
-        return _from_raw_response(sdk_event.data, current_agent)
+        return _from_raw_response(sdk_event.data, current_agent, created_at)
     if isinstance(sdk_event, RunItemStreamEvent):
-        return _from_run_item(sdk_event, current_agent)
+        return _from_run_item(sdk_event, current_agent, created_at)
     return None
 
 
@@ -55,6 +58,7 @@ def events_from_sdk_message(
     message: Any,
     fallback_id: str,
     *,
+    created_at: datetime,
     owner_code: str = "",
     agent_name: str = "",
     nested_for: str = "",
@@ -67,14 +71,15 @@ def events_from_sdk_message(
     scope = _scope(agent_name, nested_for, nested_call_id)
     match message.get("type"):
         case "message":
-            return _events_from_stored_message(message, item_id, scope, owner_code)
+            return _events_from_stored_message(message, item_id, created_at, scope, owner_code)
         case "reasoning":
             text = _stored_reasoning_text(message)
             if not text:
                 return []
-            return [ThinkingCompleteEvent(item_id=item_id + _THINKING_TEXT_SUFFIX, text=text, **scope)]
+            return [ThinkingCompleteEvent(created_at=created_at, item_id=item_id + _THINKING_TEXT_SUFFIX, text=text, **scope)]
         case "function_call":
             return [ToolCallEvent(
+                created_at=created_at,
                 call_id=str(message.get("call_id") or message.get("id") or ""),
                 name=str(message.get("name") or ""),
                 arguments=_parse_tool_arguments(message.get("arguments")),
@@ -82,6 +87,7 @@ def events_from_sdk_message(
             )]
         case "function_call_output":
             return [ToolResultEvent(
+                created_at=created_at,
                 call_id=str(message.get("call_id") or ""),
                 output=_normalize_to_str(message.get("output")),
                 is_error=_is_tool_error(message.get("status")),
@@ -101,8 +107,10 @@ def event_from_subagent_task(
     error: str = "",
     progress: str = "",
     nested_call_id: str = "",
+    created_at: datetime | None = None,
 ) -> SubagentTaskEvent:
     return SubagentTaskEvent(
+        created_at=created_at or datetime.now(),
         agent_name=agent_name,
         nested_for=parent_agent_code,
         nested_call_id=nested_call_id,
@@ -124,47 +132,52 @@ def _scope(agent_name: str, nested_for: str, nested_call_id: str) -> dict[str, s
     }
 
 
-def _from_raw_response(data: Any, current_agent: str) -> AgentEventSchema | None:
+def _from_raw_response(data: Any, current_agent: str, created_at: datetime) -> AgentEventSchema | None:
     if isinstance(data, ResponseTextDeltaEvent):
-        return TextDeltaEvent(agent_name=current_agent, item_id=data.item_id, delta=data.delta)
+        return TextDeltaEvent(created_at=created_at, agent_name=current_agent, item_id=data.item_id, delta=data.delta)
     if isinstance(data, ResponseTextDoneEvent):
-        return TextCompleteEvent(agent_name=current_agent, item_id=data.item_id, text=data.text)
+        return TextCompleteEvent(created_at=created_at, agent_name=current_agent, item_id=data.item_id, text=data.text)
     if isinstance(data, ResponseReasoningTextDeltaEvent):
         return ThinkingDeltaEvent(
+            created_at=created_at,
             agent_name=current_agent,
             item_id=data.item_id + _THINKING_TEXT_SUFFIX,
             delta=data.delta,
         )
     if isinstance(data, ResponseReasoningTextDoneEvent):
         return ThinkingCompleteEvent(
+            created_at=created_at,
             agent_name=current_agent,
             item_id=data.item_id + _THINKING_TEXT_SUFFIX,
             text=data.text,
         )
     if isinstance(data, ResponseReasoningSummaryTextDeltaEvent):
         return ThinkingDeltaEvent(
+            created_at=created_at,
             agent_name=current_agent,
             item_id=f"{data.item_id}{_THINKING_SUMMARY_SUFFIX}{getattr(data, 'summary_index', 0)}",
             delta=data.delta,
         )
     if isinstance(data, ResponseReasoningSummaryTextDoneEvent):
         return ThinkingCompleteEvent(
+            created_at=created_at,
             agent_name=current_agent,
             item_id=f"{data.item_id}{_THINKING_SUMMARY_SUFFIX}{getattr(data, 'summary_index', 0)}",
             text=data.text,
         )
     if isinstance(data, ResponseErrorEvent):
-        return ErrorEvent(agent_name=current_agent, message=data.message, code=data.code or "")
+        return ErrorEvent(created_at=created_at, agent_name=current_agent, message=data.message, code=data.code or "")
     return None
 
 
-def _from_run_item(event: RunItemStreamEvent, current_agent: str) -> AgentEventSchema | None:
+def _from_run_item(event: RunItemStreamEvent, current_agent: str, created_at: datetime) -> AgentEventSchema | None:
     item = event.item
     agent_name = item.agent.name if item.agent is not None else current_agent
 
     if event.name == "tool_called" and isinstance(item, ToolCallItem):
         raw = item.raw_item
         return ToolCallEvent(
+            created_at=created_at,
             agent_name=agent_name,
             call_id=_read_field(raw, "call_id") or _read_field(raw, "id") or "",
             name=_read_field(raw, "name") or item.title or "",
@@ -173,6 +186,7 @@ def _from_run_item(event: RunItemStreamEvent, current_agent: str) -> AgentEventS
     if event.name == "tool_output" and isinstance(item, ToolCallOutputItem):
         raw = item.raw_item
         return ToolResultEvent(
+            created_at=created_at,
             agent_name=agent_name,
             call_id=_read_field(raw, "call_id") or "",
             output=_normalize_to_str(item.output),
@@ -182,7 +196,7 @@ def _from_run_item(event: RunItemStreamEvent, current_agent: str) -> AgentEventS
 
 
 def _events_from_stored_message(
-    message: dict[str, Any], item_id: str, scope: dict[str, str], owner_code: str,
+    message: dict[str, Any], item_id: str, created_at: datetime, scope: dict[str, str], owner_code: str,
 ) -> list[AgentEventSchema]:
     text = _stored_message_text(message.get("content"))
     if not text:
@@ -191,9 +205,9 @@ def _events_from_stored_message(
     if role == "user" and scope.get("nested_for"):
         return []
     if role == "user":
-        return [UserMessageEvent(text=text, target_agent_code=owner_code)]
+        return [UserMessageEvent(created_at=created_at, text=text, target_agent_code=owner_code)]
     if role == "assistant":
-        return [TextCompleteEvent(item_id=item_id, text=text, **scope)]
+        return [TextCompleteEvent(created_at=created_at, item_id=item_id, text=text, **scope)]
     return []
 
 
@@ -226,7 +240,11 @@ def _stored_reasoning_text(message: dict[str, Any]) -> str:
 
 
 def _stored_item_id(message: dict[str, Any], fallback_id: str) -> str:
-    return str(message.get("id") or message.get("call_id") or fallback_id)
+    item_id = str(message.get("id") or "")
+    if item_id and item_id not in _PLACEHOLDER_ITEM_IDS:
+        return item_id
+    call_id = str(message.get("call_id") or "")
+    return call_id or fallback_id
 
 
 def _parse_tool_arguments(raw: Any) -> dict[str, Any]:
