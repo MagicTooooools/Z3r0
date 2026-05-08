@@ -73,6 +73,7 @@ type AgentSessionContextValue = {
 
   send: (text: string, sandboxContainerId?: number | null) => Promise<void>;
   interrupt: () => Promise<void>;
+  cancelAll: () => Promise<void>;
 };
 
 const AgentSessionContext = createContext<AgentSessionContextValue | null>(null);
@@ -373,6 +374,15 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [activeSessionId, sendCommand]);
 
+  const cancelAll = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      await sendCommand(activeSessionId, { action: "cancel_all" });
+    } catch (error) {
+      showApiError(error);
+    }
+  }, [activeSessionId, sendCommand]);
+
   const deleteSession = useCallback(async (sessionId: string) => {
     try {
       const response = await deleteAgentSession(sessionId);
@@ -407,13 +417,13 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     status: activeRuntime.status,
     historyLoading: activeRuntime.historyLoading,
     agents, defaultAgentCode, activeAgentCode, setActiveAgentCode,
-    send, interrupt,
+    send, interrupt, cancelAll,
   }), [
     sessions, sessionsLoading, refreshSessions, deleteSession,
     activeSessionId, selectSession,
     activeRuntime,
     agents, defaultAgentCode, activeAgentCode, setActiveAgentCode,
-    send, interrupt,
+    send, interrupt, cancelAll,
   ]);
 
   return <AgentSessionContext.Provider value={value}>{children}</AgentSessionContext.Provider>;

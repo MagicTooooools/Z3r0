@@ -539,7 +539,15 @@ export interface components {
              */
             updated_at: string;
         };
-        AgentStreamCommandSchema: components["schemas"]["AgentStreamSendCommand"] | components["schemas"]["AgentStreamInterruptCommand"];
+        /** AgentStreamCancelAllCommand */
+        AgentStreamCancelAllCommand: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            action: "cancel_all";
+        };
+        AgentStreamCommandSchema: components["schemas"]["AgentStreamSendCommand"] | components["schemas"]["AgentStreamInterruptCommand"] | components["schemas"]["AgentStreamCancelAllCommand"];
         /** AgentStreamInterruptCommand */
         AgentStreamInterruptCommand: {
             /**

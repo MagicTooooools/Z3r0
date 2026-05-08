@@ -1,7 +1,7 @@
 import { Button, TextArea } from "@douyinfe/semi-ui";
-import { ArrowDown, AtSign, Send, Square, X } from "lucide-react";
+import { AtSign, OctagonX, Send, Square, X } from "lucide-react";
 import { KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AgentMentionPicker, filterAgents } from "./AgentMentionPicker";
+import { AgentPicker } from "./AgentPicker";
 import type { AgentInfo } from "../../shared/api/types";
 
 type ComposerProps = {
@@ -9,29 +9,27 @@ type ComposerProps = {
   disabled?: boolean;
   agents: AgentInfo[];
   activeAgentCode: string;
-  showScrollToLatest?: boolean;
+  agentSwitchDisabled?: boolean;
+  canCancelAll?: boolean;
   onPickAgent: (code: string) => void;
-  onScrollToLatest?: () => void;
   onSend: (text: string) => void;
   onInterrupt: () => void;
+  onCancelAll: () => void;
 };
-
-// matches the `@token` immediately to the left of the caret (caret == end of text)
-const MENTION_REGEX = /(?:^|\s)@([\w-]*)$/;
 
 export function Composer({
   streaming,
   disabled = false,
   agents,
   activeAgentCode,
-  showScrollToLatest = false,
+  agentSwitchDisabled = false,
+  canCancelAll = false,
   onPickAgent,
-  onScrollToLatest,
   onSend,
   onInterrupt,
+  onCancelAll,
 }: ComposerProps) {
   const [text, setText] = useState("");
-  const [mention, setMention] = useState<{ start: number; filter: string } | null>(null);
   const [highlight, setHighlight] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -42,29 +40,20 @@ export function Composer({
     [agents, activeAgentCode],
   );
 
-  const candidates = useMemo(
-    () => filterAgents(agents, mention?.filter ?? ""),
-    [agents, mention],
-  );
-
-  const showPicker = pickerOpen || mention !== null;
-
   useEffect(() => {
-    if (!showPicker) return;
-    if (highlight >= candidates.length) {
-      setHighlight(Math.max(0, candidates.length - 1));
+    if (!pickerOpen) return;
+    if (highlight >= agents.length) {
+      setHighlight(Math.max(0, agents.length - 1));
     }
-  }, [candidates, highlight, showPicker]);
+  }, [agents.length, highlight, pickerOpen]);
 
   const closePicker = useCallback(() => {
-    setMention(null);
     setPickerOpen(false);
     setHighlight(0);
   }, []);
 
-  // close picker when the user clicks anywhere outside the composer wrapper
   useEffect(() => {
-    if (!showPicker) return;
+    if (!pickerOpen) return;
     const handler = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (target && wrapperRef.current?.contains(target)) return;
@@ -72,22 +61,11 @@ export function Composer({
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [closePicker, showPicker]);
+  }, [closePicker, pickerOpen]);
 
   const focusTextarea = useCallback(() => {
     wrapperRef.current?.querySelector("textarea")?.focus();
   }, []);
-
-  const handleChange = (value: string) => {
-    setText(value);
-    const match = value.match(MENTION_REGEX);
-    if (!match) {
-      if (mention) closePicker();
-      return;
-    }
-    setMention({ start: match.index! + match[0].indexOf("@"), filter: match[1] });
-    setHighlight(0);
-  };
 
   const submit = () => {
     const trimmed = text.trim();
@@ -98,48 +76,45 @@ export function Composer({
   };
 
   const pickAgent = (agent: AgentInfo) => {
+    if (agentSwitchDisabled) return;
     onPickAgent(agent.code);
-    if (mention) {
-      const before = text.slice(0, mention.start).trimEnd();
-      const after = text.slice(mention.start + 1 + mention.filter.length).trimStart();
-      setText(before && after ? `${before} ${after}` : `${before}${after}`);
-    }
     closePicker();
     focusTextarea();
   };
 
   const toggleChip = () => {
+    if (agentSwitchDisabled) return;
     setPickerOpen((next) => !next);
     focusTextarea();
   };
 
+  const agentSwitchDisabledReason = "Finish or cancel running subagent tasks before switching agents";
+
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showPicker && candidates.length > 0) {
-      if (event.key === "ArrowDown") {
+    if (pickerOpen) {
+      if (event.key === "Escape") {
         event.preventDefault();
-        setHighlight((index) => (index + 1) % candidates.length);
+        closePicker();
         return;
       }
-      if (event.key === "ArrowUp") {
+      if (event.key === "ArrowDown" && agents.length > 0) {
         event.preventDefault();
-        setHighlight((index) => (index - 1 + candidates.length) % candidates.length);
+        setHighlight((index) => (index + 1) % agents.length);
+        return;
+      }
+      if (event.key === "ArrowUp" && agents.length > 0) {
+        event.preventDefault();
+        setHighlight((index) => (index - 1 + agents.length) % agents.length);
         return;
       }
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        pickAgent(candidates[highlight]);
+        if (agents.length > 0 && !agentSwitchDisabled) pickAgent(agents[highlight]);
         return;
       }
-      // Tab confirms the highlighted candidate (Slack-style); when only one
-      // candidate is left this gives the user a one-key shortcut
       if (event.key === "Tab") {
         event.preventDefault();
-        pickAgent(candidates[highlight]);
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closePicker();
+        if (agents.length > 0 && !agentSwitchDisabled) pickAgent(agents[highlight]);
         return;
       }
     }
@@ -160,12 +135,13 @@ export function Composer({
   return (
     <div ref={wrapperRef} className={`composer${streaming ? " composer-streaming" : ""}`}>
       <div className="composer-input">
-        {showPicker ? (
+        {pickerOpen ? (
           <div className="composer-picker">
-            <AgentMentionPicker
-              agents={candidates}
-              filter={mention?.filter ?? ""}
+            <AgentPicker
+              agents={agents}
               highlightedIndex={highlight}
+              disabled={agentSwitchDisabled}
+              disabledReason={agentSwitchDisabledReason}
               onHover={setHighlight}
               onSelect={pickAgent}
             />
@@ -176,15 +152,16 @@ export function Composer({
             type="button"
             className="composer-agent-chip"
             onClick={toggleChip}
+            disabled={agentSwitchDisabled}
             aria-label={activeAgent ? `Speaking to ${activeAgent.name}` : "Pick an agent"}
-            title={activeAgent ? "Click to switch (or type @ in the message)" : "Pick an agent"}
+            title={agentSwitchDisabled ? agentSwitchDisabledReason : activeAgent ? "Click to switch agent" : "Pick an agent"}
           >
             <AtSign size={14} />
             <span>{activeAgent?.name || "Agent"}</span>
           </button>
           <TextArea
             value={text}
-            onChange={handleChange}
+            onChange={setText}
             onKeyDown={handleKeyDown}
             autosize={{ minRows: 1, maxRows: 8 }}
             disabled={disabled && !streaming}
@@ -193,7 +170,7 @@ export function Composer({
                 ? "Loading conversation history…"
                 : streaming
                   ? "Streaming response… press Enter or stop to interrupt"
-                  : "Send a message — type @ to switch agent · Shift+Enter for newline"
+                  : "Send a message · Shift+Enter for newline"
             }
           />
           <Button
@@ -206,17 +183,16 @@ export function Composer({
           >
             {action.label}
           </Button>
-          {showScrollToLatest ? (
-            <Button
-              className="composer-scroll-tail"
-              icon={<ArrowDown size={16} />}
-              theme="solid"
-              type="tertiary"
-              onClick={onScrollToLatest}
-              aria-label="Scroll to latest message"
-            />
-          ) : null}
-          {showPicker ? (
+          <Button
+            icon={<OctagonX size={16} />}
+            theme="solid"
+            type="danger"
+            onClick={onCancelAll}
+            disabled={disabled || !canCancelAll}
+            aria-label="Cancel all running subagent tasks"
+            title={canCancelAll ? "Cancel all running subagent tasks" : "No running subagent tasks"}
+          />
+          {pickerOpen ? (
             <Button
               icon={<X size={14} />}
               theme="borderless"

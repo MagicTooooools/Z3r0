@@ -202,6 +202,8 @@ def _events_from_stored_message(
     if not text:
         return []
     role = message.get("role")
+    if role == "user" and text.lstrip().startswith("# Internal "):
+        return []
     if role == "user" and scope.get("nested_for"):
         return []
     if role == "user":

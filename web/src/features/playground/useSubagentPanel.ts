@@ -2,30 +2,30 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChatState } from "./playgroundReducer";
 import {
   collectSubagentTabs,
-  currentAgentTranscript,
   type SubagentSelection,
 } from "./subagentView";
 
 export function useSubagentPanel(chatState: ChatState, scopeKey: string | null) {
   const [selectedSubagent, setSelectedSubagent] = useState<SubagentSelection | null>(null);
-  const knownRunsRef = useRef<Map<string, string>>(new Map());
+  const knownRunsRef = useRef<Set<string>>(new Set());
 
-  const currentAgent = useMemo(() => currentAgentTranscript(chatState.nodes), [chatState.nodes]);
-  const tabs = useMemo(() => collectSubagentTabs(currentAgent?.transcript ?? null), [currentAgent?.transcript]);
+  const tabs = useMemo(() => collectSubagentTabs(chatState.nodes), [chatState.nodes]);
 
   useEffect(() => {
-    knownRunsRef.current = new Map();
+    knownRunsRef.current = new Set();
     setSelectedSubagent(null);
-  }, [currentAgent?.id, scopeKey]);
+  }, [scopeKey]);
 
   useEffect(() => {
     const knownRuns = knownRunsRef.current;
     let newest: SubagentSelection | null = null;
 
     for (const tab of tabs) {
-      if (knownRuns.get(tab.agentCode) === tab.runId) continue;
-      knownRuns.set(tab.agentCode, tab.runId);
-      newest = tab.selection;
+      for (const runId of tab.runIds) {
+        if (knownRuns.has(runId)) continue;
+        knownRuns.add(runId);
+        newest = tab.selection;
+      }
     }
 
     if (chatState.streaming && newest) {

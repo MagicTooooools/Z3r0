@@ -73,9 +73,22 @@
         "title": "AgentSessionSummarySchema",
         "type": "object"
       },
+      "AgentStreamCancelAllCommand": {
+        "properties": {
+          "action": {
+            "const": "cancel_all",
+            "default": "cancel_all",
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "title": "AgentStreamCancelAllCommand",
+        "type": "object"
+      },
       "AgentStreamCommandSchema": {
         "discriminator": {
           "mapping": {
+            "cancel_all": "#/components/schemas/AgentStreamCancelAllCommand",
             "interrupt": "#/components/schemas/AgentStreamInterruptCommand",
             "send": "#/components/schemas/AgentStreamSendCommand"
           },
@@ -87,6 +100,9 @@
           },
           {
             "$ref": "#/components/schemas/AgentStreamInterruptCommand"
+          },
+          {
+            "$ref": "#/components/schemas/AgentStreamCancelAllCommand"
           }
         ]
       },

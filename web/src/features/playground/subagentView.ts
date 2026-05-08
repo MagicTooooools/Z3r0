@@ -1,49 +1,79 @@
-import type {
-  AgentTranscript,
-  ChatNode,
-  NestedTranscript,
-  SubagentExecutionItem,
-} from "./playgroundReducer";
-
-export type SubagentSelection = { kind: "agent"; agentCode: string };
+import type { ChatNode, NestedTranscript, SubagentExecutionItem } from "./playgroundReducer";
 
 export type SubagentTab = {
   selection: SubagentSelection;
-  runId: string;
   agentCode: string;
   status: SubagentExecutionItem["status"];
+  runIds: string[];
 };
 
-export type SubagentTarget =
-  | { kind: "task"; item: SubagentExecutionItem; live: boolean }
-  | { kind: "transcript"; transcript: NestedTranscript; task: SubagentExecutionItem; live: boolean };
+export type SubagentSelection = { kind: "agent"; agentCode: string };
 
-export function collectSubagentTabs(transcript: AgentTranscript | null): SubagentTab[] {
+export type SubagentRunTarget = {
+  task: SubagentExecutionItem;
+  transcript?: NestedTranscript;
+  live: boolean;
+};
+
+export type SubagentTarget = {
+  kind: "agent";
+  agentCode: string;
+  runs: SubagentRunTarget[];
+  live: boolean;
+};
+
+export function collectSubagentTabs(nodes: ChatNode[]): SubagentTab[] {
   const byAgentCode = new Map<string, SubagentTab>();
-  if (!transcript) return [];
+  const runIdsByAgentCode = new Map<string, Set<string>>();
 
-  for (const item of transcript.executionItems) {
-    const task = item.kind === "subagent" ? item : item.subagentTask;
-    if (!task?.agentCode) continue;
-    byAgentCode.set(task.agentCode, {
-      selection: { kind: "agent", agentCode: task.agentCode },
-      runId: task.runId,
-      agentCode: task.agentCode,
-      status: task.status,
-    });
+  for (const node of nodes) {
+    if (node.kind !== "agent") continue;
+    for (const item of node.executionItems) {
+      const task = item.kind === "subagent" ? item : item.subagentTask;
+      if (!task?.agentCode || !task.runId) continue;
+      let runIds = runIdsByAgentCode.get(task.agentCode);
+      if (!runIds) {
+        runIds = new Set();
+        runIdsByAgentCode.set(task.agentCode, runIds);
+      }
+      runIds.add(task.runId);
+
+      const current = byAgentCode.get(task.agentCode);
+      byAgentCode.set(task.agentCode, {
+        selection: { kind: "agent", agentCode: task.agentCode },
+        agentCode: task.agentCode,
+        status: mergeSubagentStatus(current?.status, task.status),
+        runIds: Array.from(runIds),
+      });
+    }
   }
   return Array.from(byAgentCode.values());
 }
 
-export function currentAgentTranscript(nodes: ChatNode[]): { id: string; transcript: AgentTranscript; live: boolean } | null {
-  const last = nodes[nodes.length - 1];
-  if (last?.kind !== "agent") return null;
-  return { id: last.id, transcript: last, live: true };
-}
-
 export function findSubagentTarget(nodes: ChatNode[], streaming: boolean, selection: SubagentSelection): SubagentTarget | null {
-  const current = currentAgentTranscript(nodes);
-  return current ? findSubagentTargetInTranscript(current.transcript, streaming && current.live, selection) : null;
+  const runs = new Map<string, SubagentRunTarget>();
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const node = nodes[i];
+    if (node.kind !== "agent") continue;
+    for (let j = node.executionItems.length - 1; j >= 0; j -= 1) {
+      const item = node.executionItems[j];
+      const task = item.kind === "subagent" ? item : item.subagentTask;
+      if (!task?.runId || task.agentCode !== selection.agentCode || runs.has(task.runId)) continue;
+      runs.set(task.runId, {
+        task,
+        transcript: item.kind === "tool" ? item.nested : undefined,
+        live: task.status === "running",
+      });
+    }
+  }
+  const orderedRuns = Array.from(runs.values()).reverse();
+  if (!orderedRuns.length) return null;
+  return {
+    kind: "agent",
+    agentCode: selection.agentCode,
+    runs: orderedRuns,
+    live: orderedRuns.some((run) => run.live),
+  };
 }
 
 export function isSelectedSubagent(current: SubagentSelection | null | undefined, next: SubagentSelection) {
@@ -68,22 +98,10 @@ export function subordinateStatusLabel(status: SubagentExecutionItem["status"]) 
   }
 }
 
-function findSubagentTargetInTranscript(
-  transcript: AgentTranscript,
-  live: boolean,
-  selection: SubagentSelection,
-): SubagentTarget | null {
-  for (let i = transcript.executionItems.length - 1; i >= 0; i -= 1) {
-    const item = transcript.executionItems[i];
-    if (item.kind === "subagent") {
-      if (item.agentCode === selection.agentCode) return { kind: "task", item, live };
-      continue;
-    }
-
-    if (item.subagentTask?.agentCode === selection.agentCode) {
-      if (item.nested) return { kind: "transcript", transcript: item.nested, task: item.subagentTask, live };
-      return { kind: "task", item: item.subagentTask, live };
-    }
-  }
-  return null;
+function mergeSubagentStatus(
+  current: SubagentExecutionItem["status"] | undefined,
+  next: SubagentExecutionItem["status"],
+): SubagentExecutionItem["status"] {
+  if (current === "running" || next === "running") return "running";
+  return next;
 }

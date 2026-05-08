@@ -67,6 +67,24 @@ async def get_subagent_task(
         return snapshot_from_task(task)
 
 
+async def list_subagent_tasks(
+    *,
+    session_id: str,
+    user_id: int,
+    user_role: SystemUserRole,
+    limit: int = 20,
+) -> list[AgentSubordinateTaskSnapshot]:
+    async with get_async_session() as session:
+        statement = (
+            select(AgentSubordinateTask)
+            .where(AgentSubordinateTask.session_id == session_id)
+            .order_by(AgentSubordinateTask.created_at.desc())
+            .limit(max(1, min(limit, 100)))
+        )
+        rows = (await session.exec(statement)).all()
+        return [snapshot_from_task(task) for task in rows if _can_access_task(task, session_id, user_id, user_role)]
+
+
 async def get_subagent_task_internal(run_id: str) -> AgentSubordinateTaskSnapshot | None:
     async with get_async_session() as session:
         task = await session.get(AgentSubordinateTask, run_id)
@@ -137,7 +155,7 @@ async def _cancel_running_subagent_tasks(
         return [snapshot_from_task(task) for task in rows]
 
 
-async def mark_stale_running_subagent_tasks_failed() -> int:
+async def mark_stale_running_subagent_tasks_failed() -> list[AgentSubordinateTaskSnapshot]:
     now = datetime.now()
     async with get_async_session() as session:
         rows = (await session.exec(
@@ -151,9 +169,11 @@ async def mark_stale_running_subagent_tasks_failed() -> int:
             session.add(task)
         if rows:
             await session.commit()
+            for task in rows:
+                await session.refresh(task)
     if rows:
         logger.info("stale subagent tasks marked failed: %d", len(rows))
-    return len(rows)
+    return [snapshot_from_task(task) for task in rows]
 
 
 async def _finish_subagent_task(

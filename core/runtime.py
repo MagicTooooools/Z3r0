@@ -33,6 +33,8 @@ from schema.agent_event_schema import (
     ThinkingDeltaEvent,
     UserMessageEvent,
 )
+from schema.agent_notification_schema import AgentNotificationKind, AgentNotificationSnapshot
+from service import agent_notification_service
 
 
 logger = get_logger(__name__)
@@ -73,26 +75,81 @@ class AgentSession:
                 if self._current_task is task:
                     self._current_task = None
 
+    async def stream_notification(
+        self, context: AgentRuntimeContext,
+    ) -> AsyncIterator[AgentEventSchema]:
+        async with self._turn_lock:
+            notification = await agent_notification_service.claim_next_pending_notification(
+                session_id=self.session_id,
+            )
+            if notification is None:
+                return
+            agent_code = notification.target_agent_code
+            notification_context = _context_for_notification(context, notification)
+            task = asyncio.current_task()
+            self._current_task = task
+            saw_error = False
+            try:
+                async for event in self._run_turn(
+                    _notification_prompt(notification),
+                    agent_code,
+                    notification_context,
+                    emit_user_message=False,
+                ):
+                    if isinstance(event, ErrorEvent):
+                        saw_error = True
+                    yield event
+            except asyncio.CancelledError:
+                await agent_notification_service.release_notification(notification.id)
+                raise
+            except GeneratorExit:
+                await agent_notification_service.release_notification(notification.id)
+                raise
+            except Exception as exc:
+                await agent_notification_service.fail_notification(notification.id, str(exc) or "notification handling failed")
+                raise
+            else:
+                if saw_error:
+                    await agent_notification_service.fail_notification(notification.id, "notification handling produced an error")
+                else:
+                    await agent_notification_service.complete_notification(notification.id)
+            finally:
+                if self._current_task is task:
+                    self._current_task = None
+
+    async def has_pending_notification(self) -> bool:
+        return await agent_notification_service.has_pending_notification(
+            session_id=self.session_id,
+        )
+
     async def interrupt(self) -> bool:
         task = self._current_task
         if task is None or task.done():
-            return await cancel_session_subagent_runs(self.session_id)
+            return False
         task.cancel()
-        subagent_cancel = asyncio.create_task(
-            cancel_session_subagent_runs(self.session_id),
-            name=f"agent-subagents-cancel-{self.session_id}",
-        )
         try:
             await task
         except asyncio.CancelledError:
             pass
-        finally:
-            await subagent_cancel
-            await cancel_session_subagent_runs(self.session_id)
         return True
 
+    async def cancel_all(self) -> bool:
+        task = self._current_task
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        canceled_subagents = await cancel_session_subagent_runs(self.session_id)
+        canceled_notifications = await agent_notification_service.cancel_session_notifications(
+            self.session_id,
+            "Agent session tasks canceled by user.",
+        )
+        return canceled_subagents or bool(canceled_notifications)
+
     async def shutdown(self) -> None:
-        await self.interrupt()
+        await self.cancel_all()
         self.close()
 
     def close(self) -> None:
@@ -102,16 +159,22 @@ class AgentSession:
         return self._tool_snapshot is not None and self._tool_snapshot.sandbox_container_id == container_id
 
     async def invalidate_tool_binding(self) -> None:
-        await self.interrupt()
+        await self.cancel_all()
         self._tool_snapshot = None
         self._dispose_agent_graph()
 
     async def _run_turn(
-        self, text: str, agent_code: str, context: AgentRuntimeContext,
+        self,
+        text: str,
+        agent_code: str,
+        context: AgentRuntimeContext,
+        *,
+        emit_user_message: bool = True,
     ) -> AsyncIterator[AgentEventSchema]:
         graph = self._ensure_agent_graph(agent_code, context)
         agent = graph.get(agent_code)
-        yield UserMessageEvent(created_at=datetime.now(), text=text, target_agent_code=agent_code)
+        if emit_user_message:
+            yield UserMessageEvent(created_at=datetime.now(), text=text, target_agent_code=agent_code)
 
         memory_session = Z3r0Session(
             session_id=self.session_id,
@@ -265,8 +328,19 @@ class AgentSessionPool:
     async def try_interrupt(self, session_id: str) -> bool:
         entry = self._pool.get(session_id)
         if entry is None:
-            return await cancel_session_subagent_runs(session_id)
+            return False
         return await entry.session.interrupt()
+
+    async def cancel_all(self, session_id: str) -> bool:
+        entry = self._pool.get(session_id)
+        if entry is None:
+            canceled_subagents = await cancel_session_subagent_runs(session_id)
+            canceled_notifications = await agent_notification_service.cancel_session_notifications(
+                session_id,
+                "Agent session tasks canceled by user.",
+            )
+            return canceled_subagents or bool(canceled_notifications)
+        return await entry.session.cancel_all()
 
     async def invalidate_tool_bindings(self, container_id: int | None = None) -> None:
         entries = [
@@ -341,6 +415,49 @@ def _build_user_input(text: str) -> list[TResponseInputItem]:
     content: ResponseInputMessageContentListParam = [text_item]
     message: EasyInputMessageParam = {"type": "message", "role": "user", "content": content}
     return [message]
+
+
+def _notification_prompt(notification: AgentNotificationSnapshot) -> str:
+    if notification.kind == AgentNotificationKind.SUBAGENT_FINISHED:
+        payload = notification.payload
+        status = str(payload.get("status") or "")
+        agent_name = str(payload.get("agent_name") or payload.get("agent_code") or "subagent")
+        run_id = str(payload.get("run_id") or notification.run_id)
+        brief = str(payload.get("brief") or "")
+        result = str(payload.get("result") or "")
+        error = str(payload.get("error") or "")
+        body = result if status == "completed" else error
+        return (
+            "# Internal Subagent Completion Notification\n\n"
+            "A delegated subagent task has reached a terminal state. This is an internal runtime notification, "
+            "not a new user message. Do not mention implementation details about notifications.\n\n"
+            f"- run_id: {run_id}\n"
+            f"- subagent: {agent_name}\n"
+            f"- status: {status}\n"
+            f"- original brief: {brief}\n\n"
+            "## Subagent final output\n\n"
+            f"{body}\n\n"
+            "Integrate this result into the current task context and respond to the user only if there is "
+            "a useful coordination update, conclusion, or next action to report."
+        )
+    return (
+        "# Internal Agent Notification\n\n"
+        f"Notification kind: {notification.kind.value}\n"
+        f"Payload: {notification.payload}"
+    )
+
+
+def _context_for_notification(
+    base: AgentRuntimeContext,
+    notification: AgentNotificationSnapshot,
+) -> AgentRuntimeContext:
+    return AgentRuntimeContext(
+        session_id=base.session_id,
+        user=base.user,
+        sandbox_container_id=notification.sandbox_container_id,
+        sandbox_container_generation=notification.sandbox_container_generation,
+        sandbox_skill_metadata=notification.sandbox_skill_metadata,
+    )
 
 
 def _track_delta(buffers: dict[str, _DeltaBuffer], event: AgentEventSchema) -> None:

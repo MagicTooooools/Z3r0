@@ -2,32 +2,23 @@ import { Bot } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { AgentInfo } from "../../shared/api/types";
 
-type AgentMentionPickerProps = {
+type AgentPickerProps = {
   agents: AgentInfo[];
-  filter: string;
   highlightedIndex: number;
+  disabled?: boolean;
+  disabledReason?: string;
   onSelect: (agent: AgentInfo) => void;
   onHover: (index: number) => void;
 };
 
-// trims the candidate list to whatever the user has typed after `@`
-export function filterAgents(agents: AgentInfo[], filter: string): AgentInfo[] {
-  const needle = filter.trim().toLowerCase();
-  if (!needle) return agents;
-  return agents.filter(
-    (agent) =>
-      agent.code.toLowerCase().includes(needle) ||
-      agent.name.toLowerCase().includes(needle),
-  );
-}
-
-export function AgentMentionPicker({
+export function AgentPicker({
   agents,
-  filter,
   highlightedIndex,
+  disabled = false,
+  disabledReason = "",
   onSelect,
   onHover,
-}: AgentMentionPickerProps) {
+}: AgentPickerProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -38,7 +29,7 @@ export function AgentMentionPicker({
     return (
       <div className="agent-picker agent-picker-empty">
         <Bot size={14} />
-        <span>No agents match &quot;{filter}&quot;</span>
+        <span>No agents available</span>
       </div>
     );
   }
@@ -48,6 +39,7 @@ export function AgentMentionPicker({
       <div className="agent-picker-hint">Pick an agent · ↑↓ to navigate · Enter or Tab to confirm</div>
       {agents.map((agent, index) => {
         const active = index === highlightedIndex;
+        const description = disabled ? disabledReason : agent.description;
         return (
           <button
             key={agent.code}
@@ -55,19 +47,19 @@ export function AgentMentionPicker({
             type="button"
             role="option"
             aria-selected={active}
+            disabled={disabled}
+            title={description || agent.name}
             className={`agent-picker-row${active ? " agent-picker-row-active" : ""}`}
             onMouseDown={(event) => event.preventDefault()}
             onMouseEnter={() => onHover(index)}
-            onClick={() => onSelect(agent)}
+            onClick={() => !disabled && onSelect(agent)}
           >
             <span className="agent-picker-avatar"><Bot size={14} /></span>
             <span className="agent-picker-body">
               <span className="agent-picker-name">{agent.name}</span>
-              <span className="agent-picker-code">@{agent.code}</span>
+              <span className="agent-picker-code">{agent.code}</span>
             </span>
-            {agent.description ? (
-              <span className="agent-picker-desc">{agent.description}</span>
-            ) : null}
+            {description ? <span className="agent-picker-desc">{description}</span> : null}
           </button>
         );
       })}

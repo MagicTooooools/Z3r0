@@ -1,6 +1,7 @@
 import { Button, Tag } from "@douyinfe/semi-ui";
 import {
   AlertOctagon,
+  ArrowDown,
   AtSign,
   Bot,
   Brain,
@@ -12,7 +13,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { TouchEvent as ReactTouchEvent, WheelEvent as ReactWheelEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AgentInfo } from "../../shared/api/types";
@@ -29,6 +30,7 @@ import type {
   ToolExecutionItem,
 } from "./playgroundReducer";
 import { normalizeMarkdownForRender } from "./markdown";
+import { useAutoFollowScroll } from "./useAutoFollowScroll";
 import {
   findSubagentTarget,
   isSelectedSubagent,
@@ -60,71 +62,16 @@ export function ChatStream({
   onFollowLatestChange,
   onScrollToLatestReady,
 }: ChatStreamProps) {
-  const tailRef = useRef<HTMLDivElement | null>(null);
-  const touchStartYRef = useRef<number | null>(null);
-  const lastScrollTopRef = useRef(0);
   const agentNameByCode = useMemo(
     () => new Map(agents.map((a) => [a.code, a.name])),
     [agents],
   );
-
-  useEffect(() => {
-    const container = findScrollContainer(tailRef.current);
-    if (!container) {
-      onScrollToLatestReady(null);
-      return;
-    }
-
-    const syncFollowing = () => {
-      const scrollingUp = container.scrollTop < lastScrollTopRef.current - 2;
-      lastScrollTopRef.current = container.scrollTop;
-      if (scrollingUp) {
-        onFollowLatestChange(false);
-        return;
-      }
-      if (isNearScrollTail(container)) {
-        onFollowLatestChange(true);
-      }
-    };
-
-    const scrollToTail = () => {
-      onFollowLatestChange(true);
-      tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    };
-
-    syncFollowing();
-    onScrollToLatestReady(scrollToTail);
-    container.addEventListener("scroll", syncFollowing, { passive: true });
-    return () => {
-      container.removeEventListener("scroll", syncFollowing);
-      onScrollToLatestReady(null);
-    };
-  }, [nodes.length, onFollowLatestChange, onScrollToLatestReady]);
-
-  useEffect(() => {
-    if (!followLatest) return;
-    tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [followLatest, nodes, streaming]);
-
-  const pauseFollowLatest = () => {
-    if (followLatest) onFollowLatestChange(false);
-  };
-
-  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (event.deltaY < 0) pauseFollowLatest();
-  };
-
-  const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
-    touchStartYRef.current = event.touches[0]?.clientY ?? null;
-  };
-
-  const handleTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
-    const startY = touchStartYRef.current;
-    const currentY = event.touches[0]?.clientY;
-    if (startY != null && currentY != null && currentY > startY) {
-      pauseFollowLatest();
-    }
-  };
+  const { tailRef, scrollHandlers } = useAutoFollowScroll({
+    followLatest,
+    onFollowLatestChange,
+    onScrollToLatestReady,
+    watch: [nodes, streaming],
+  });
 
   if (nodes.length === 0) {
     return (
@@ -145,12 +92,7 @@ export function ChatStream({
   const lastIndex = nodes.length - 1;
   const lastNode = nodes[lastIndex];
   return (
-    <div
-      className="chat-stream"
-      onWheel={handleWheel}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-    >
+    <div className="chat-stream" {...scrollHandlers}>
       {nodes.map((node, index) => {
         if (node.kind === "user") {
           const targetName = agentNameByCode.get(node.targetAgentCode) ?? node.targetAgentCode;
@@ -186,6 +128,7 @@ export function SubagentSidePanel({
   nodes,
   streaming,
   tabs,
+  agents,
   selection,
   onSelect,
   onClose,
@@ -193,6 +136,7 @@ export function SubagentSidePanel({
   nodes: ChatNode[];
   streaming: boolean;
   tabs: SubagentTab[];
+  agents: AgentInfo[];
   selection: SubagentSelection | null;
   onSelect: (selection: SubagentSelection) => void;
   onClose: () => void;
@@ -202,9 +146,18 @@ export function SubagentSidePanel({
     [nodes, streaming, selection],
   );
   const open = Boolean(selection);
-  const title = target?.kind === "task"
-    ? target.item.agentCode || "subagent"
-    : target?.task?.agentCode || target?.transcript.agentName || "Subagent";
+  const agentNameByCode = useMemo(
+    () => new Map(agents.map((agent) => [agent.code, agent.name])),
+    [agents],
+  );
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const selectionKey = selection?.agentCode ?? "";
+  const { following: followLatest, tailRef, scrollHandlers, scrollToLatest } = useAutoFollowScroll({
+    enabled: open,
+    containerRef: bodyRef,
+    resetKey: selectionKey,
+    watch: [target, streaming],
+  });
 
   return (
     <aside className={`subagent-side-panel${open ? " subagent-side-panel-open" : ""}`} aria-hidden={!open}>
@@ -212,7 +165,7 @@ export function SubagentSidePanel({
         <div className="subagent-side-header">
           <div className="subagent-side-heading">
             <GitBranch size={15} />
-            <span>{tabs.length > 1 ? "Subagents" : title}</span>
+            <span>Subagents</span>
           </div>
           {tabs.length > 0 ? (
             <div className="subagent-side-tabs" role="tablist" aria-label="Subagent messages">
@@ -227,8 +180,9 @@ export function SubagentSidePanel({
                     aria-selected={active}
                     onClick={() => onSelect(tab.selection)}
                   >
-                    <span className="subagent-tab-name" title={tab.agentCode || "subagent"}>{tab.agentCode || "subagent"}</span>
-                    <SubagentStatusTag status={tab.status} />
+                    <span className="subagent-tab-name" title={tab.agentCode || "subagent"}>
+                      {agentNameByCode.get(tab.agentCode) || tab.agentCode || "Subagent"}
+                    </span>
                   </button>
                 );
               })}
@@ -236,28 +190,25 @@ export function SubagentSidePanel({
           ) : null}
           <Button icon={<X size={14} />} theme="borderless" type="tertiary" onClick={onClose} aria-label="Close subagent panel" />
         </div>
-        <div className="subagent-side-body">
-          {target ? <SubagentTargetView target={target} /> : <div className="transcript-empty">Subagent output is no longer available.</div>}
+        <div className="subagent-side-body-shell">
+          <div ref={bodyRef} className="subagent-side-body" {...scrollHandlers}>
+            {target ? <SubagentTargetView target={target} /> : <div className="transcript-empty">Subagent output is no longer available.</div>}
+            <div ref={tailRef} className="chat-tail" />
+          </div>
+          {open && !followLatest ? (
+            <Button
+              className="subagent-scroll-tail-floating"
+              icon={<ArrowDown size={16} />}
+              theme="solid"
+              type="tertiary"
+              onClick={scrollToLatest}
+              aria-label="Scroll subagent messages to latest"
+            />
+          ) : null}
         </div>
       </div>
     </aside>
   );
-}
-
-function isNearScrollTail(container: HTMLElement) {
-  return container.scrollHeight - container.scrollTop - container.clientHeight < 72;
-}
-
-function findScrollContainer(element: HTMLElement | null) {
-  let current = element?.parentElement ?? null;
-  while (current) {
-    const overflowY = window.getComputedStyle(current).overflowY;
-    if (overflowY === "auto" || overflowY === "scroll") {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return null;
 }
 
 function MessageTimestamp({ value }: { value: string }) {
@@ -596,24 +547,34 @@ function TranscriptView({ transcript, live, expanded = false }: { transcript: Ag
 }
 
 function SubagentTargetView({ target }: { target: SubagentTarget }) {
-  if (target.kind === "transcript") {
+  return (
+    <div className="subagent-transcript-view">
+      {target.runs.map((run) => (
+        <SubagentRunView key={run.task.runId} run={run} />
+      ))}
+    </div>
+  );
+}
+
+function SubagentRunView({ run }: { run: SubagentTarget["runs"][number] }) {
+  if (run.transcript) {
     return (
-      <div className="subagent-transcript-view">
-        {target.task ? <SubagentTaskMeta item={target.task} /> : null}
-        <TranscriptView transcript={target.transcript} live={target.live} expanded />
+      <div className="subagent-task-view">
+        <SubagentTaskMeta item={run.task} />
+        <TranscriptView transcript={run.transcript} live={run.live} expanded />
       </div>
     );
   }
 
-  const failed = target.item.status === "failed" || target.item.status === "canceled";
-  const label = target.item.status === "running" ? "Progress" : failed ? "Error" : "Result";
-  const body = target.item.status === "running"
-    ? target.item.progress || "Running"
-    : target.item.result || target.item.error || "(empty)";
+  const failed = run.task.status === "failed" || run.task.status === "canceled";
+  const label = run.task.status === "running" ? "Progress" : failed ? "Error" : "Result";
+  const body = run.task.status === "running"
+    ? run.task.progress || "Running"
+    : run.task.result || run.task.error || "(empty)";
 
   return (
     <div className="subagent-task-view">
-      <SubagentTaskMeta item={target.item} />
+      <SubagentTaskMeta item={run.task} />
       <ExecutionSection label={label} body={body} tone={failed ? "error" : undefined} expanded />
     </div>
   );

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AgentSubordinateStatus(StrEnum):
@@ -31,4 +31,5 @@ class AgentSubordinateTaskSnapshot(BaseModel):
 
 class AgentSubordinateTaskToolResponse(BaseModel):
     task: AgentSubordinateTaskSnapshot | None = None
+    tasks: list[AgentSubordinateTaskSnapshot] = Field(default_factory=list)
     message: str = ""

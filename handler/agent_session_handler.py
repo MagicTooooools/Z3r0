@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 from http import HTTPStatus
 import shlex
+from collections.abc import Callable
 
 from fastapi.websockets import WebSocketState
 import jwt
@@ -85,9 +86,34 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
 
     await websocket.accept()
     runner: asyncio.Task | None = None
+    notification_runner: asyncio.Task | None = None
     send_lock = asyncio.Lock()
     subscriber = await subscribe_session_events(session_id)
-    forwarder = asyncio.create_task(_forward_subagent_events(websocket, session_id, subscriber, send_lock))
+
+    def _set_notification_runner(task: asyncio.Task | None) -> None:
+        nonlocal notification_runner
+        notification_runner = task
+
+    forwarder = asyncio.create_task(_forward_subagent_events(
+        websocket,
+        session_id,
+        subscriber,
+        user,
+        send_lock,
+        lambda: runner,
+        lambda: notification_runner,
+        lambda task: _set_notification_runner(task),
+    ))
+
+    _schedule_notification_drain(
+        websocket,
+        session_id,
+        user,
+        send_lock,
+        lambda: runner,
+        lambda: notification_runner,
+        _set_notification_runner,
+    )
 
     try:
         while True:
@@ -99,8 +125,22 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
                 continue
 
             if command.action == AgentStreamActionSchema.INTERRUPT:
-                await _interrupt_turn(websocket, session_id, runner, user, send_lock)
+                had_runner = runner is not None and not runner.done()
+                if had_runner:
+                    await _interrupt_turn(websocket, session_id, runner, user, send_lock)
+                    runner = None
+                elif notification_runner is not None and not notification_runner.done():
+                    await _cancel_task(notification_runner)
+                    notification_runner = None
+                    await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+                else:
+                    await _interrupt_turn(websocket, session_id, runner, user, send_lock)
+                continue
+
+            if command.action == AgentStreamActionSchema.CANCEL_ALL:
+                await _cancel_all_tasks(websocket, session_id, runner, notification_runner, user, send_lock)
                 runner = None
+                notification_runner = None
                 continue
 
             text = command.text.strip()
@@ -109,6 +149,8 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
             if runner is not None and not runner.done():
                 await get_agent_pool().try_interrupt(session_id)
             await _cancel_task(runner)
+            await _cancel_task(notification_runner)
+            notification_runner = None
             runner = asyncio.create_task(_run_turn(
                 websocket=websocket,
                 session_id=session_id,
@@ -117,12 +159,23 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
                 sandbox_container_id=command.sandbox_container_id,
                 requested_agent_code=command.agent_code,
                 send_lock=send_lock,
+                on_finished=lambda: _schedule_notification_drain(
+                    websocket,
+                    session_id,
+                    user,
+                    send_lock,
+                    lambda: runner,
+                    lambda: notification_runner,
+                    _set_notification_runner,
+                ),
             ))
     except WebSocketDisconnect:
         await _cancel_task(runner)
+        await _cancel_task(notification_runner)
     except Exception:
         logger.exception("agent stream failed for session=%s", session_id)
         await _cancel_task(runner)
+        await _cancel_task(notification_runner)
         await _close_silently(websocket)
     finally:
         await unsubscribe_session_events(session_id, subscriber)
@@ -137,6 +190,7 @@ async def _run_turn(
     sandbox_container_id: int | None,
     requested_agent_code: str | None,
     send_lock: asyncio.Lock,
+    on_finished,
 ) -> None:
     # always emits a DoneEvent so the client exits streaming
     saw_done = False
@@ -165,6 +219,7 @@ async def _run_turn(
     finally:
         if not saw_done:
             await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+        asyncio.get_running_loop().call_soon(on_finished)
 
 
 async def _interrupt_turn(
@@ -184,6 +239,25 @@ async def _interrupt_turn(
     await _cancel_task(runner)
     if interrupted and not had_local_runner:
         await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+
+
+async def _cancel_all_tasks(
+    websocket: WebSocket,
+    session_id: str,
+    runner: asyncio.Task | None,
+    notification_runner: asyncio.Task | None,
+    user: AuthUser,
+    send_lock: asyncio.Lock,
+) -> None:
+    if not await agent_session_service.can_access_session(session_id, user.id, user.role):
+        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message="agent session not found", code="not_found"), send_lock)
+        await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+        return
+
+    await _cancel_task(runner)
+    await _cancel_task(notification_runner)
+    await get_agent_pool().cancel_all(session_id)
+    await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
 
 
 async def _send_event(
@@ -212,17 +286,105 @@ async def _forward_subagent_events(
     websocket: WebSocket,
     session_id: str,
     queue: asyncio.Queue[AgentEventSchema],
+    user: AuthUser,
     send_lock: asyncio.Lock,
+    get_runner: Callable[[], asyncio.Task | None],
+    get_notification_runner: Callable[[], asyncio.Task | None],
+    set_notification_runner: Callable[[asyncio.Task | None], None],
 ) -> None:
     try:
         while True:
             event = await queue.get()
             if not await _send_event(websocket, event, send_lock):
                 return
+            if _is_terminal_subagent_event(event):
+                _schedule_notification_drain(
+                    websocket,
+                    session_id,
+                    user,
+                    send_lock,
+                    get_runner,
+                    get_notification_runner,
+                    set_notification_runner,
+                )
     except asyncio.CancelledError:
         raise
     except Exception:
         logger.debug("subagent event forwarding stopped session=%s", session_id, exc_info=True)
+
+
+def _schedule_notification_drain(
+    websocket: WebSocket,
+    session_id: str,
+    user: AuthUser,
+    send_lock: asyncio.Lock,
+    get_runner: Callable[[], asyncio.Task | None],
+    get_notification_runner: Callable[[], asyncio.Task | None],
+    set_notification_runner: Callable[[asyncio.Task | None], None],
+) -> None:
+    local_runner = get_runner()
+    if local_runner is not None and not local_runner.done():
+        return
+    current = get_notification_runner()
+    if current is not None and not current.done():
+        return
+    task = asyncio.create_task(
+        _drain_notifications(
+            websocket=websocket,
+            session_id=session_id,
+            user=user,
+            send_lock=send_lock,
+            get_runner=get_runner,
+            set_notification_runner=set_notification_runner,
+        ),
+        name=f"agent-notifications-{session_id}",
+    )
+    set_notification_runner(task)
+
+
+async def _drain_notifications(
+    *,
+    websocket: WebSocket,
+    session_id: str,
+    user: AuthUser,
+    send_lock: asyncio.Lock,
+    get_runner: Callable[[], asyncio.Task | None],
+    set_notification_runner: Callable[[asyncio.Task | None], None],
+) -> None:
+    try:
+        if not await agent_session_service.can_access_session(session_id, user.id, user.role):
+            return
+        runtime = get_agent_pool().get_or_create(session_id)
+        while True:
+            local_runner = get_runner()
+            if local_runner is not None and not local_runner.done():
+                return
+            if not await runtime.has_pending_notification():
+                return
+            context = _build_base_runtime_context(session_id, user)
+            saw_done = False
+            async for event in runtime.stream_notification(context):
+                if isinstance(event, DoneEvent):
+                    saw_done = True
+                if not await _send_event(websocket, event, send_lock):
+                    return
+            if not saw_done:
+                await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("agent notification drain failed for session=%s", session_id)
+        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message="agent notification handling failed"), send_lock)
+        await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+    finally:
+        set_notification_runner(None)
+
+
+def _is_terminal_subagent_event(event: AgentEventSchema) -> bool:
+    return (
+        getattr(event, "type", "") == "subagent_task"
+        and getattr(event, "status", "") in {"completed", "failed", "canceled"}
+    )
 
 
 async def _cancel_task(task: asyncio.Task | None) -> None:
@@ -263,15 +425,23 @@ async def _build_runtime_context(
 
     return AgentRuntimeContext(
         session_id=session_id,
-        user=AgentUserContext(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            role=user.role,
-        ),
+        user=_agent_user_context(user),
         sandbox_container_id=selected_container_id,
         sandbox_container_generation=selected_container_generation,
         sandbox_skill_metadata=sandbox_skill_metadata,
+    )
+
+
+def _build_base_runtime_context(session_id: str, user: AuthUser) -> AgentRuntimeContext:
+    return AgentRuntimeContext(session_id=session_id, user=_agent_user_context(user))
+
+
+def _agent_user_context(user: AuthUser) -> AgentUserContext:
+    return AgentUserContext(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role,
     )
 
 

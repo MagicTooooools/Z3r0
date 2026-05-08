@@ -1,5 +1,5 @@
 import { Button, Spin } from "@douyinfe/semi-ui";
-import { Activity, Plus } from "lucide-react";
+import { Activity, ArrowDown, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
@@ -28,8 +28,8 @@ export function PlaygroundPage() {
   const {
     activeSessionId, selectSession,
     chatState, status, historyLoading,
-    agents, activeAgentCode, setActiveAgentCode,
-    send, interrupt,
+    agents, defaultAgentCode, activeAgentCode, setActiveAgentCode,
+    send, interrupt, cancelAll,
   } = useAgentSessionContext();
   const location = useLocation();
   const navigate = useNavigate();
@@ -39,6 +39,8 @@ export function PlaygroundPage() {
   const [followLatest, setFollowLatest] = useState(true);
   const scrollToLatestRef = useRef<(() => void) | null>(null);
   const { selectedSubagent, setSelectedSubagent, subagentTabs, closeSubagentPanel } = useSubagentPanel(chatState, activeSessionId);
+  const hasRunningSubagents = subagentTabs.some((tab) => tab.status === "running");
+  const agentSwitchDisabled = activeAgentCode === defaultAgentCode && hasRunningSubagents;
 
   const loadSandboxes = useCallback(async () => {
     setSandboxLoading(true);
@@ -104,42 +106,58 @@ export function PlaygroundPage() {
     <div className={`playground-shell${selectedSubagent ? " playground-shell-split" : ""}`}>
       <div className="playground-main">
         <div className="playground-conversation-frame">
-          <div className="playground-canvas">
-            <Spin spinning={historyLoading} wrapperClassName="playground-spin">
-              <ChatStream
-                nodes={chatState.nodes}
+          <div className="playground-main-column">
+            <div className="playground-canvas-shell">
+              <div className="playground-canvas">
+                <Spin spinning={historyLoading} wrapperClassName="playground-spin">
+                  <ChatStream
+                    nodes={chatState.nodes}
+                    streaming={chatState.streaming}
+                    agents={agents}
+                    followLatest={followLatest}
+                    selectedSubagent={selectedSubagent}
+                    onOpenSubagent={setSelectedSubagent}
+                    onFollowLatestChange={setFollowLatest}
+                    onScrollToLatestReady={(handler) => {
+                      scrollToLatestRef.current = handler;
+                    }}
+                  />
+                </Spin>
+              </div>
+              {!followLatest ? (
+                <Button
+                  className="chat-scroll-tail-floating"
+                  icon={<ArrowDown size={16} />}
+                  theme="solid"
+                  type="tertiary"
+                  onClick={() => scrollToLatestRef.current?.()}
+                  aria-label="Scroll to latest message"
+                />
+              ) : null}
+            </div>
+            <div className="playground-composer">
+              <Composer
                 streaming={chatState.streaming}
+                disabled={historyLoading}
                 agents={agents}
-                followLatest={followLatest}
-                selectedSubagent={selectedSubagent}
-                onOpenSubagent={setSelectedSubagent}
-                onFollowLatestChange={setFollowLatest}
-                onScrollToLatestReady={(handler) => {
-                  scrollToLatestRef.current = handler;
-                }}
+                activeAgentCode={activeAgentCode}
+                agentSwitchDisabled={agentSwitchDisabled}
+                canCancelAll={hasRunningSubagents}
+                onPickAgent={setActiveAgentCode}
+                onSend={(text) => void handleSend(text)}
+                onInterrupt={() => void interrupt()}
+                onCancelAll={() => void cancelAll()}
               />
-            </Spin>
+            </div>
           </div>
           <SubagentSidePanel
             nodes={chatState.nodes}
             streaming={chatState.streaming}
             tabs={subagentTabs}
+            agents={agents}
             selection={selectedSubagent}
             onSelect={setSelectedSubagent}
             onClose={closeSubagentPanel}
-          />
-        </div>
-        <div className="playground-composer">
-          <Composer
-            streaming={chatState.streaming}
-            disabled={historyLoading}
-            agents={agents}
-            activeAgentCode={activeAgentCode}
-            showScrollToLatest={!followLatest}
-            onPickAgent={setActiveAgentCode}
-            onScrollToLatest={() => scrollToLatestRef.current?.()}
-            onSend={(text) => void handleSend(text)}
-            onInterrupt={() => void interrupt()}
           />
         </div>
       </div>

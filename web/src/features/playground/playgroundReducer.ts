@@ -108,7 +108,7 @@ export function appendUserMessage(
 }
 
 export function finishChatTurn(state: ChatState): ChatState {
-  return { ...state, streaming: false, pendingNested: {} };
+  return { ...state, streaming: false, pendingNested: prunePendingNested(state) };
 }
 
 export function chatReduce(state: ChatState, event: AgentContentEvent): ChatState {
@@ -146,7 +146,7 @@ function routeToTopLevel(state: ChatState, event: AgentContentEvent): ChatState 
   }
 
   const finished = applyEventToTranscript(agent, event);
-  const nextState = finished ? finishChatTurn({ ...state, nodes }) : { ...state, nodes };
+  const nextState = finished ? finishChatTurn({ ...state, nodes }) : { ...state, nodes, streaming: true };
   if (event.type === "tool_call" || event.type === "tool_result") {
     return drainPendingNested(nextState, event.call_id);
   }
@@ -177,7 +177,8 @@ function routeToNestedNow(
     return routeSubagentTaskToToolNow(state, event, nestedCallId);
   }
 
-  // Nested events attach to the latest top-level tool whose call id matches the backend attribution.
+  // Nested events attach to the top-level tool whose call id matches the backend attribution.
+  // Search the full conversation because a subagent can keep running after the user starts a new main-agent turn.
   const nodes = state.nodes.slice();
   for (let i = nodes.length - 1; i >= 0; i -= 1) {
     const node = nodes[i];
@@ -246,6 +247,21 @@ function drainPendingNested(state: ChatState, callId: string): ChatState {
 
 function clearPendingNested(state: ChatState): ChatState {
   return Object.keys(state.pendingNested).length ? { ...state, pendingNested: {} } : state;
+}
+
+function prunePendingNested(state: ChatState): ChatState["pendingNested"] {
+  if (!Object.keys(state.pendingNested).length) return state.pendingNested;
+  const pendingNested: ChatState["pendingNested"] = {};
+  for (const [callId, events] of Object.entries(state.pendingNested)) {
+    if (!hasToolCall(state.nodes, callId)) {
+      pendingNested[callId] = events;
+    }
+  }
+  return pendingNested;
+}
+
+function hasToolCall(nodes: ChatNode[], callId: string): boolean {
+  return nodes.some((node) => node.kind === "agent" && findToolItemIndex(node.executionItems, callId) !== -1);
 }
 
 // ----------------------------------------------------------- primitives

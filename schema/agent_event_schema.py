@@ -23,6 +23,7 @@ class AgentEventTypeSchema(StrEnum):
 class AgentStreamActionSchema(StrEnum):
     SEND = "send"
     INTERRUPT = "interrupt"
+    CANCEL_ALL = "cancel_all"
 
 
 class _AgentScopedEvent(BaseModel):
@@ -151,8 +152,12 @@ class AgentStreamInterruptCommand(BaseModel):
     action: Literal[AgentStreamActionSchema.INTERRUPT] = AgentStreamActionSchema.INTERRUPT
 
 
+class AgentStreamCancelAllCommand(BaseModel):
+    action: Literal[AgentStreamActionSchema.CANCEL_ALL] = AgentStreamActionSchema.CANCEL_ALL
+
+
 AgentStreamCommandSchema = Annotated[
-    AgentStreamSendCommand | AgentStreamInterruptCommand,
+    AgentStreamSendCommand | AgentStreamInterruptCommand | AgentStreamCancelAllCommand,
     Field(discriminator="action"),
 ]
 
