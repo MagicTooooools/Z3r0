@@ -566,6 +566,8 @@
   border-radius: 16px 16px 4px 16px;
   font-size: 14px;
   line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   box-shadow: 0 16px 32px rgba(217, 45, 58, 0.22);
 }
 
@@ -639,6 +641,8 @@
 .agent-body {
   display: grid;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
   color: #1f2a44;
   font-size: 14px;
   line-height: 1.6;
@@ -647,16 +651,24 @@
 .agent-content-stack {
   display: grid;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .agent-text {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .agent-text p,
 .agent-text li,
 .agent-text blockquote {
   white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .agent-text > :first-child {
@@ -681,34 +693,47 @@
   border-radius: 6px;
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12.5px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .agent-text pre {
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 12px 14px;
-  overflow-x: auto;
+  overflow-x: hidden;
   background: #0f1626;
   border-radius: 12px;
   color: #e8eef9;
   font-size: 12.5px;
   line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .agent-text pre code {
   padding: 0;
   background: transparent;
   color: inherit;
+  white-space: inherit;
 }
 
 .agent-text table {
+  max-width: 100%;
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .agent-text th,
 .agent-text td {
   padding: 6px 10px;
   border: 1px solid #e7edf4;
+  overflow-wrap: anywhere;
   text-align: left;
+  word-break: break-word;
 }
 
 .agent-text th {
@@ -769,6 +794,7 @@
 .thinking-block {
   display: grid;
   gap: 6px;
+  min-width: 0;
   padding: 10px 12px;
   background: linear-gradient(135deg, rgba(80, 91, 110, 0.06), rgba(80, 91, 110, 0.02));
   border: 1px solid #e7edf4;
@@ -822,13 +848,17 @@
 
 .thinking-body {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
   max-height: 96px;
   overflow: hidden;
 }
 
 .thinking-text {
   margin: 0;
+  max-width: 100%;
   max-height: 96px;
+  box-sizing: border-box;
   padding: 6px 4px;
   overflow-y: auto;
   color: #2b3650;
@@ -836,6 +866,7 @@
   font-size: 12.5px;
   line-height: 1.55;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   scrollbar-width: none;
 }
@@ -865,6 +896,8 @@
 
 .execution-dock {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   background: linear-gradient(135deg, rgba(80, 91, 110, 0.06), rgba(80, 91, 110, 0.02));
   border: 1px solid #e7edf4;
@@ -920,8 +953,10 @@
 
 .execution-dock-body {
   display: block;
+  max-width: 100%;
   max-height: min(56vh, 520px);
   min-height: 0;
+  box-sizing: border-box;
   padding: 8px 8px 28px;
   overflow-x: hidden;
   overflow-y: scroll;
@@ -938,6 +973,8 @@
 .execution-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
+  min-width: 0;
+  max-width: 100%;
   min-height: max-content;
   margin-bottom: 6px;
   overflow: hidden;
@@ -971,6 +1008,7 @@
   grid-template-columns: max-content minmax(120px, max-content) max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 32px;
   padding: 5px 8px;
   background: transparent;
@@ -1034,7 +1072,10 @@
 .execution-row-detail {
   display: block;
   grid-column: 1 / -1;
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
+  box-sizing: border-box;
   padding: 8px 8px 14px;
   overflow: visible;
   border-top: 1px dashed #e7edf4;
@@ -1042,6 +1083,8 @@
 
 .execution-section {
   display: block;
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
   margin-bottom: 8px;
 }
@@ -1060,8 +1103,10 @@
 
 .execution-section-body {
   margin: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 8px 10px 12px;
-  overflow: visible;
+  overflow-x: hidden;
   background: #0f1626;
   border-radius: 8px;
   color: #e8eef9;
@@ -1069,6 +1114,7 @@
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
