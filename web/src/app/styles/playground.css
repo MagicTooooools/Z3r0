@@ -221,12 +221,12 @@
 }
 
 .sandbox-selector {
-  width: min(320px, 32vw);
-  min-width: 220px;
+  width: 188px;
+  min-width: 188px;
 }
 
 .sandbox-selector-topbar {
-  flex: 0 1 320px;
+  flex: 0 0 188px;
 }
 
 .sandbox-selector .semi-select {
@@ -246,6 +246,29 @@
 
 .sandbox-selector .semi-select-with-prefix .semi-select-selection {
   margin-left: 10px;
+}
+
+.sandbox-container-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.sandbox-action-tooltip {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+}
+
+.sandbox-action-button.semi-button {
+  width: 30px;
+  height: 30px;
+  padding-inline: 0;
 }
 
 .sandbox-selector-option {

@@ -1,11 +1,12 @@
-import { Button, Spin } from "@douyinfe/semi-ui";
-import { Activity, ArrowDown, Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button, Spin, Tooltip } from "@douyinfe/semi-ui";
+import { Activity, ArrowDown, FolderOpen, Monitor, Plus, SquareTerminal } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
 import { showApiError } from "../../shared/api/feedback";
-import { queryAvailableSandboxContainers } from "../../shared/api/sandboxContainers";
+import { canOpenContainerNoVNC, queryAvailableSandboxContainers } from "../../shared/api/sandboxContainers";
 import type { SandboxContainer } from "../../shared/api/types";
+import { useContainerShell } from "../container-shell/ContainerShellProvider";
 import { useAgentSessionContext } from "./AgentSessionProvider";
 import { ChatStream, SubagentSidePanel } from "./ChatStream";
 import { Composer } from "./Composer";
@@ -13,6 +14,14 @@ import { SandboxSelector } from "./SandboxSelector";
 import { useSubagentPanel } from "./useSubagentPanel";
 
 type PlaygroundLocationState = { sessionId?: string };
+
+type SandboxActionButtonProps = {
+  ariaLabel: string;
+  disabled: boolean;
+  icon: ReactNode;
+  tooltip: string;
+  onClick: () => void;
+};
 
 const STATUS_LABEL: Record<string, string> = {
   open: "Live",
@@ -38,9 +47,30 @@ export function PlaygroundPage() {
   const [sandboxContainerId, setSandboxContainerId] = useState<number | null>(null);
   const [followLatest, setFollowLatest] = useState(true);
   const scrollToLatestRef = useRef<(() => void) | null>(null);
+  const { openFileManager, openNoVNC, openShell } = useContainerShell();
   const { selectedSubagent, setSelectedSubagent, subagentTabs, closeSubagentPanel } = useSubagentPanel(chatState, activeSessionId);
   const hasRunningSubagents = subagentTabs.some((tab) => tab.status === "running");
   const agentSwitchDisabled = activeAgentCode === defaultAgentCode && hasRunningSubagents;
+
+  const selectedSandboxContainer = useMemo(
+    () => sandboxContainers.find((container) => container.id === sandboxContainerId) ?? null,
+    [sandboxContainerId, sandboxContainers],
+  );
+  const shellUnavailableReason = getSandboxActionUnavailableReason(selectedSandboxContainer, { requiresHash: true });
+  const screenUnavailableReason = getSandboxActionUnavailableReason(selectedSandboxContainer, { requiresNoVNC: true });
+  const selectedSandboxName = selectedSandboxContainer?.container_name ?? "selected sandbox";
+
+  const openSelectedFileManager = useCallback(() => {
+    if (selectedSandboxContainer) openFileManager(selectedSandboxContainer);
+  }, [openFileManager, selectedSandboxContainer]);
+
+  const openSelectedShell = useCallback(() => {
+    if (selectedSandboxContainer) openShell(selectedSandboxContainer);
+  }, [openShell, selectedSandboxContainer]);
+
+  const openSelectedNoVNC = useCallback(() => {
+    if (selectedSandboxContainer) openNoVNC(selectedSandboxContainer);
+  }, [openNoVNC, selectedSandboxContainer]);
 
   const loadSandboxes = useCallback(async () => {
     setSandboxLoading(true);
@@ -79,6 +109,29 @@ export function PlaygroundPage() {
         className="sandbox-selector-topbar"
         onChange={setSandboxContainerId}
       />
+      <div className="sandbox-container-actions" aria-label="Selected sandbox actions">
+        <SandboxActionButton
+          ariaLabel={`Open terminal for ${selectedSandboxName}`}
+          disabled={Boolean(shellUnavailableReason)}
+          icon={<SquareTerminal size={15} />}
+          tooltip={shellUnavailableReason ?? `Open terminal for ${selectedSandboxName}`}
+          onClick={openSelectedShell}
+        />
+        <SandboxActionButton
+          ariaLabel={`Open screen for ${selectedSandboxName}`}
+          disabled={Boolean(screenUnavailableReason)}
+          icon={<Monitor size={15} />}
+          tooltip={screenUnavailableReason ?? `Open screen for ${selectedSandboxName}`}
+          onClick={openSelectedNoVNC}
+        />
+        <SandboxActionButton
+          ariaLabel={`Browse files for ${selectedSandboxName}`}
+          disabled={Boolean(shellUnavailableReason)}
+          icon={<FolderOpen size={15} />}
+          tooltip={shellUnavailableReason ?? `Browse files for ${selectedSandboxName}`}
+          onClick={openSelectedFileManager}
+        />
+      </div>
       <Button icon={<Plus size={16} />} theme="solid" type="primary" onClick={() => selectSession(null)}>
         New chat
       </Button>
@@ -87,7 +140,7 @@ export function PlaygroundPage() {
         <span>{STATUS_LABEL[status] ?? "Idle"}</span>
       </span>
     </>
-  ), [sandboxContainerId, sandboxContainers, sandboxLoading, selectSession, status]);
+  ), [openSelectedFileManager, openSelectedNoVNC, openSelectedShell, sandboxContainerId, sandboxContainers, sandboxLoading, screenUnavailableReason, selectSession, selectedSandboxName, shellUnavailableReason, status]);
 
   useEffect(() => {
     setHeaderActions(headerNode);
@@ -163,4 +216,32 @@ export function PlaygroundPage() {
       </div>
     </div>
   );
+}
+
+function SandboxActionButton({ ariaLabel, disabled, icon, onClick, tooltip }: SandboxActionButtonProps) {
+  return (
+    <Tooltip content={tooltip}>
+      <span className="sandbox-action-tooltip">
+        <Button
+          aria-label={ariaLabel}
+          className="sandbox-action-button"
+          disabled={disabled}
+          icon={icon}
+          theme="borderless"
+          onClick={onClick}
+        />
+      </span>
+    </Tooltip>
+  );
+}
+
+function getSandboxActionUnavailableReason(
+  container: SandboxContainer | null,
+  options: { requiresHash?: boolean; requiresNoVNC?: boolean },
+) {
+  if (!container) return "Select a sandbox first";
+  if (container.status !== "running") return "Selected sandbox is not running";
+  if (options.requiresHash && !container.container_hash) return "Selected sandbox is not ready";
+  if (options.requiresNoVNC && !canOpenContainerNoVNC(container)) return "Selected sandbox has no noVNC screen";
+  return null;
 }

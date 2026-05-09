@@ -54,6 +54,8 @@ type NoVNCWindowState = FloatingWindowStateBase & {
 type FileManagerWindowState = FloatingWindowStateBase & {
   containerId: number;
   containerHash: string;
+  isMaximized: boolean;
+  restoreRect: ShellRect | null;
 };
 
 type ContainerShellContextValue = {
@@ -339,6 +341,27 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
     setFileManagerFlight(buildFileManagerFlight(fileManager, "restore"));
   }, [fileManager]);
 
+  const toggleMaximizeFileManager = useCallback(() => {
+    cancelFlightFrame(fileManagerFlightFrameRef);
+    fileManagerDragRef.current = null;
+    resizeRef.current = null;
+    setFileManagerFlight(null);
+    setFileManager((current) => {
+      if (!current) return current;
+      if (current.isMaximized) {
+        const restoreRect = current.restoreRect ?? getWindowRect(current);
+        return { ...current, ...restoreRect, isMaximized: false, restoreRect: null };
+      }
+
+      return {
+        ...current,
+        ...getMaximizedShellRect(),
+        isMaximized: true,
+        restoreRect: getWindowRect(current),
+      };
+    });
+  }, []);
+
   const openFileManager = useCallback((container: SandboxContainer) => {
     if (!container.container_hash) return;
 
@@ -354,6 +377,8 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
         containerHash: container.container_hash,
         containerName: container.container_name,
         dockState: "normal",
+        isMaximized: false,
+        restoreRect: null,
         ...getInitialFileManagerRect(),
       };
     });
@@ -490,7 +515,11 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
         x: clamp(current.x, 8, window.innerWidth - 80),
         y: clamp(current.y, 8, window.innerHeight - 80),
       } : current);
-      setFileManager((current) => current ? clampWindowToViewport(current) : current);
+      setFileManager((current) => {
+        if (!current) return current;
+        if (current.isMaximized) return { ...current, ...getMaximizedShellRect() };
+        return clampWindowToViewport(current);
+      });
       if (shell?.dockState === "normal") window.setTimeout(fitTerminal, 0);
     };
     window.addEventListener("resize", onWindowResize);
@@ -636,21 +665,25 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
             actions={(
               <>
                 <Button icon={<Minus size={14} />} theme="borderless" onClick={minimizeFileManager} aria-label="Minimize file manager" />
+                <Button icon={fileManager.isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />} theme="borderless" onClick={toggleMaximizeFileManager} aria-label={fileManager.isMaximized ? "Restore file manager size" : "Maximize file manager"} />
                 <Button icon={<X size={14} />} theme="borderless" type="danger" onClick={closeFileManager} aria-label="Close file manager" />
               </>
             )}
             dockState={fileManager.dockState}
             icon={<FolderOpen size={16} />}
+            isMaximized={fileManager.isMaximized}
             meta="files"
             rect={fileManager}
             title={fileManager.containerName}
             onHeaderPointerDown={(event) => {
+              if (fileManager.isMaximized) return;
               fileManagerDragRef.current = beginWindowDrag(fileManager, event, { capturePointer: true });
             }}
             resizeHandle={(
               <div
                 className="shell-resize-handle"
                 onPointerDown={(event) => {
+                  if (fileManager.isMaximized) return;
                   resizeRef.current = beginWindowResize("filemanager", fileManager, event);
                 }}
               />
