@@ -7,6 +7,7 @@ from agents import RunContextWrapper, function_tool
 from core.context import AgentRuntimeContext
 from schema.tool_result_schema import ToolResultSchema, ToolResultStatusSchema, ToolResultTypeSchema
 from service.sandbox_container_service import execute_sandbox_container_command
+from utils.markdown import markdown_body_without_front_matter
 
 
 _SKILL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -52,13 +53,13 @@ async def execute_command(ctx: RunContextWrapper[AgentRuntimeContext], command: 
 
 @function_tool
 async def load_skill(ctx: RunContextWrapper[AgentRuntimeContext], name: str) -> str:
-    """Load the full body of a named skill from the selected sandbox container.
+    """Load the body of a named skill from the selected sandbox container.
 
     Args:
         name: Skill directory name under /root/.agents/skills.
 
     Returns:
-        The skill detail markdown, including YAML Front Matter and body.
+        The skill detail markdown body without YAML Front Matter.
     """
     container_id = ctx.context.sandbox_container_id
     if container_id is None:
@@ -100,6 +101,6 @@ async def load_skill(ctx: RunContextWrapper[AgentRuntimeContext], name: str) -> 
     return ToolResultSchema(
         status=ToolResultStatusSchema.SUCCESS,
         type=ToolResultTypeSchema.SKILL_DETAIL,
-        output=result.output,
+        output=markdown_body_without_front_matter(result.output),
         exit_code=result.exit_code,
     ).model_dump_json()

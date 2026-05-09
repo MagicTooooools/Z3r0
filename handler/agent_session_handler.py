@@ -200,7 +200,7 @@ async def _run_turn(
             user_id=user.id,
             user_role=user.role,
         )
-        context = await _build_runtime_context(session_id, user, sandbox_container_id)
+        context = await _build_runtime_context(session_id, user, sandbox_container_id, agent_code)
         runtime = get_agent_pool().get_or_create(session_id)
         async for event in runtime.stream_turn(text, agent_code, context):
             if isinstance(event, DoneEvent):
@@ -406,6 +406,7 @@ async def _build_runtime_context(
     session_id: str,
     user: AuthUser,
     sandbox_container_id: int | None,
+    agent_code: str = "",
 ) -> AgentRuntimeContext:
     selected_container_id = None
     selected_container_generation = 0
@@ -424,14 +425,15 @@ async def _build_runtime_context(
     return AgentRuntimeContext(
         session_id=session_id,
         user=_agent_user_context(user),
+        agent_code=agent_code,
         sandbox_container_id=selected_container_id,
         sandbox_container_generation=selected_container_generation,
         sandbox_skill_metadata=sandbox_skill_metadata,
     )
 
 
-def _build_base_runtime_context(session_id: str, user: AuthUser) -> AgentRuntimeContext:
-    return AgentRuntimeContext(session_id=session_id, user=_agent_user_context(user))
+def _build_base_runtime_context(session_id: str, user: AuthUser, agent_code: str = "") -> AgentRuntimeContext:
+    return AgentRuntimeContext(session_id=session_id, user=_agent_user_context(user), agent_code=agent_code)
 
 
 def _agent_user_context(user: AuthUser) -> AgentUserContext:

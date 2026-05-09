@@ -172,6 +172,7 @@ class AgentSession:
         emit_user_message: bool = True,
     ) -> AsyncIterator[AgentEventSchema]:
         graph = self._ensure_agent_graph(agent_code, context)
+        context.agent_code = agent_code
         agent = graph.get(agent_code)
         if emit_user_message:
             yield UserMessageEvent(created_at=datetime.now(), text=text, target_agent_code=agent_code)
@@ -454,6 +455,7 @@ def _context_for_notification(
     return AgentRuntimeContext(
         session_id=base.session_id,
         user=base.user,
+        agent_code=notification.target_agent_code,
         sandbox_container_id=notification.sandbox_container_id,
         sandbox_container_generation=notification.sandbox_container_generation,
         sandbox_skill_metadata=notification.sandbox_skill_metadata,

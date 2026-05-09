@@ -10,6 +10,7 @@ class ToolResultStatusSchema(StrEnum):
 class ToolResultTypeSchema(StrEnum):
     COMMAND_EXECUTION = "command_execution"
     SKILL_DETAIL = "skill_detail"
+    KNOWLEDGE_DETAIL = "knowledge_detail"
 
 
 class ToolResultSchema(BaseModel):

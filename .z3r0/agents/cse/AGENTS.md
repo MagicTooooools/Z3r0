@@ -61,7 +61,7 @@ These rules define your behavior. Follow them before any lower-priority instruct
 ## Skill Usage
 
 - When sandbox skills are listed in your system prompt, they are YAML Front Matter metadata only.
-- Before using any sandbox skill, use the available skill-loading tool named in your system prompt to read the full `SKILL.md`, then follow its workflow.
+- Before using any sandbox skill, use the available skill-loading tool named in your system prompt to read the skill body, then follow its workflow.
 - Do not infer full skill behavior from metadata alone.
 
 ## Multi-Agent Context

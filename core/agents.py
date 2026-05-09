@@ -10,7 +10,8 @@ from agents.extensions.models.litellm_model import LitellmModel
 from config import AgentConfig, WORKSPACE, get_config
 from core import subordinates
 from core.context import AgentRuntimeContext
-from core.tools import execute_command, load_skill
+from core.tools.knowledge_tool import load_knowledge, load_knowledge_metadata
+from core.tools.sandbox_tool import load_skill, execute_command
 from logger import get_logger
 
 
@@ -55,6 +56,9 @@ DEFAULT_AGENT_CODE = "cso"
 _AGENT_SPECS: tuple[AgentSpec, ...] = (
     AgentSpec(
         code="cso",
+        tools=(
+            ToolMount(load_knowledge),
+        ),
         subagents=(
             SubagentMount(
                 code="csa",
@@ -69,6 +73,7 @@ _AGENT_SPECS: tuple[AgentSpec, ...] = (
         tools=(
             ToolMount(execute_command, requires_sandbox_container=True),
             ToolMount(load_skill, requires_sandbox_container=True),
+            ToolMount(load_knowledge),
         ),
     ),
     AgentSpec(
@@ -76,6 +81,7 @@ _AGENT_SPECS: tuple[AgentSpec, ...] = (
         tools=(
             ToolMount(execute_command, requires_sandbox_container=True),
             ToolMount(load_skill, requires_sandbox_container=True),
+            ToolMount(load_knowledge),
         ),
     ),
 )
@@ -118,8 +124,10 @@ class AgentRegistry:
         instructions = _build_instructions(
             soul,
             rules,
+            spec.code,
             graph.tool_snapshot,
             include_sandbox_skills=_has_tool(spec, load_skill),
+            include_agent_knowledges=_has_tool(spec, load_knowledge),
         )
 
         tools: list[Tool] = [
@@ -203,14 +211,35 @@ def _has_tool(spec: AgentSpec, tool: Tool) -> bool:
 def _build_instructions(
     soul: str,
     rules: str,
+    agent_code: str,
     tool_snapshot: AgentToolSnapshot,
     *,
     include_sandbox_skills: bool,
+    include_agent_knowledges: bool,
 ) -> str:
     parts = [soul, rules]
+    if include_agent_knowledges:
+        parts.append(_build_agent_knowledge_instructions(agent_code, load_knowledge_metadata(agent_code)))
     if include_sandbox_skills and tool_snapshot.sandbox_container_id is not None:
         parts.append(_build_sandbox_skill_instructions(tool_snapshot.sandbox_skill_metadata))
     return "\n\n".join(part for part in parts if part)
+
+
+def _build_agent_knowledge_instructions(agent_code: str, knowledge_metadata: tuple[str, ...]) -> str:
+    if not knowledge_metadata:
+        return (
+            "# Agent Knowledges\n\n"
+            f"No agent knowledges were discovered under `.z3r0/agents/{agent_code}/knowledges`."
+        )
+
+    return (
+        "# Agent Knowledges\n\n"
+        "This agent exposes these knowledge metadata blocks from "
+        f"`.z3r0/agents/{agent_code}/knowledges`. Only YAML Front Matter is shown here; use the "
+        "`load_knowledge` tool with the knowledge file name without the `.md` suffix to read the "
+        "knowledge body before applying a knowledge.\n\n"
+        + "\n\n".join(knowledge_metadata)
+    )
 
 
 def _build_sandbox_skill_instructions(skill_metadata: tuple[str, ...]) -> str:
@@ -224,6 +253,6 @@ def _build_sandbox_skill_instructions(skill_metadata: tuple[str, ...]) -> str:
         "# Sandbox Skills\n\n"
         "The selected sandbox container exposes these skill metadata blocks from "
         "`/root/.agents/skills`. Only YAML Front Matter is shown here; use the "
-        "`load_skill` tool to read the full `SKILL.md` before applying a skill.\n\n"
+        "`load_skill` tool to read the skill body before applying a skill.\n\n"
         + "\n\n".join(skill_metadata)
     )

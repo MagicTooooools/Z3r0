@@ -222,6 +222,7 @@ async def start_subagent_task_run(
         owner_id=context.user.id,
     )
     runtime_context = _clone_context_for_background(context)
+    _set_context_agent_code(runtime_context, agent_code)
     done = asyncio.Event()
     task = asyncio.create_task(
         _run_subagent_task(
@@ -513,11 +514,20 @@ def _clone_context_for_background(
     cloned = AgentRuntimeContext(
         session_id=context.session_id,
         user=context.user,
+        agent_code=context.agent_code,
         sandbox_container_id=context.sandbox_container_id,
         sandbox_container_generation=context.sandbox_container_generation,
         sandbox_skill_metadata=context.sandbox_skill_metadata,
     )
     return RunContextWrapper(context=cloned) if isinstance(context, RunContextWrapper) else cloned
+
+
+def _set_context_agent_code(
+    context: AgentRuntimeContext | RunContextWrapper[AgentRuntimeContext],
+    agent_code: str,
+) -> None:
+    target = context.context if isinstance(context, RunContextWrapper) else context
+    target.agent_code = agent_code
 
 
 def _track_delta(buffers: dict[str, _DeltaBuffer], event: AgentEventSchema) -> None:
