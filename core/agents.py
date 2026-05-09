@@ -57,8 +57,18 @@ _AGENT_SPECS: tuple[AgentSpec, ...] = (
         code="cso",
         subagents=(
             SubagentMount(
+                code="csa",
+            ),
+            SubagentMount(
                 code="cse",
             ),
+        ),
+    ),
+    AgentSpec(
+        code="csa",
+        tools=(
+            ToolMount(execute_command, requires_sandbox_container=True),
+            ToolMount(load_skill, requires_sandbox_container=True),
         ),
     ),
     AgentSpec(
