@@ -192,10 +192,17 @@ class AgentSession:
         async def _consume_main() -> None:
             try:
                 max_turns = get_config().agent_runtime.main_max_turns
+                user_input = _build_user_input(text)
+                agent_config = get_config().agents.get(agent_code)
+                if agent_config is not None:
+                    await memory_session.compact_if_needed(
+                        agent_config=agent_config,
+                        incoming_items=user_input,
+                    )
                 stream = Runner.run_streamed(
                     starting_agent=agent,
                     session=memory_session,
-                    input=_build_user_input(text),
+                    input=user_input,
                     context=context,
                     max_turns=max_turns,
                 )

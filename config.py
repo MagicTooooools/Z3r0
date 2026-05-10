@@ -52,6 +52,7 @@ class AgentConfig(StrictConfigModel):
     base_url: str = Field(default="")
     api_key: str = Field(default="")
     model: str = Field(default="")
+    context_window: int = Field(default=1000000, ge=0)
 
 
 # per-process agent runtime pool tuning
@@ -65,6 +66,14 @@ class AgentPoolConfig(StrictConfigModel):
 class AgentRuntimeConfig(StrictConfigModel):
     main_max_turns: int = Field(default=1000, ge=1)
     subordinate_max_turns: int = Field(default=1000, ge=1)
+    context_compression_enabled: bool = True
+    context_compression_trigger_ratio: float = Field(default=0.95, gt=0, lt=1)
+    context_compression_hard_stop_ratio: float = Field(default=0.98, gt=0, lt=1)
+    context_compression_target_ratio: float = Field(default=0.20, gt=0, lt=1)
+    context_compression_preserve_recent_ratio: float = Field(default=0.25, gt=0, lt=1)
+    context_compression_preserve_recent_items: int = Field(default=20, ge=1)
+    context_compression_min_items: int = Field(default=12, ge=1)
+    context_compression_summary_max_tokens: int = Field(default=8000, ge=512)
 
 
 # global config

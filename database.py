@@ -8,6 +8,7 @@ from logger import get_logger
 from model.agent_notification_model import AgentNotification
 from model.agent_subordinate_model import AgentSubordinateTask
 from model.agent_message_meta_model import AgentMessageMeta
+from model.agent_context_compaction_model import AgentContextCompaction
 from model.agent_session_meta_model import AgentSessionMeta
 from model.sandbox_container_model import SandboxContainer
 from model.sandbox_image_model import SandboxImage
@@ -21,7 +22,8 @@ logger = get_logger(__name__)
 # registered so SQLModel.metadata picks every table up at create_all time
 _registered_models = [
     SystemUser, SandboxImage, SandboxContainer, WorkProject,
-    AgentSessionMeta, AgentMessageMeta, AgentSubordinateTask, AgentNotification,
+    AgentSessionMeta, AgentMessageMeta, AgentContextCompaction,
+    AgentSubordinateTask, AgentNotification,
 ]
 
 _engine: AsyncEngine | None = None

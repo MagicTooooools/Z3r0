@@ -398,6 +398,12 @@ async def _run_subagent_task(
     buffers: dict[str, _DeltaBuffer] = {}
     try:
         max_turns = get_config().agent_runtime.subordinate_max_turns
+        agent_config = get_config().agents.get(snapshot.agent_code)
+        if agent_config is not None:
+            await memory_session.compact_if_needed(
+                agent_config=agent_config,
+                incoming_items=[{"type": "message", "role": "user", "content": snapshot.brief}],
+            )
         stream = Runner.run_streamed(
             starting_agent=child_agent,
             input=snapshot.brief,

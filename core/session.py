@@ -2,7 +2,6 @@
 nested-call attribution in `agent_message_meta` (1:1 FK to agent_messages.id)."""
 
 import json
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -13,13 +12,16 @@ from sqlalchemy import insert, select, text as sql_text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from config import AgentConfig
+from core.compaction import (
+    CompactionScope,
+    ContextProjection,
+    compact_if_needed as compact_session_context_if_needed,
+    get_latest_compaction,
+)
+from core.projection import project_context
 from model.agent_message_meta_model import AgentMessageMeta
 from utils.sdk_tables import agent_messages
-
-
-_OWNER_PRIVATE_TYPES = frozenset({"reasoning", "function_call", "function_call_output"})
-_TEXT_CONTENT_TYPES = frozenset({"input_text", "output_text", "text"})
-_FOREIGN_PREFIX = "[other agent: {name}]\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,10 +98,40 @@ class Z3r0Session(SQLAlchemySession):
 
     async def get_items(self, limit: int | None = None) -> list[TResponseInputItem]:
         await self._ensure_tables()
+        projected = await self._projected_items()
+        return projected if limit is None else projected[-limit:]
+
+    async def compact_if_needed(
+        self,
+        *,
+        agent_config: AgentConfig,
+        incoming_items: list[TResponseInputItem],
+    ) -> None:
+        await self._ensure_tables()
+        projection = await self._context_projection()
+        await compact_session_context_if_needed(
+            session_factory=self._session_factory,
+            scope=self._compaction_scope(),
+            agent_config=agent_config,
+            projection=projection,
+            incoming_items=incoming_items,
+        )
+
+    async def _projected_items(self) -> list[TResponseInputItem]:
+        return (await self._context_projection()).items
+
+    async def _context_projection(self) -> ContextProjection:
         async with self._session_factory() as sess:
             stored = await fetch_stored_items(sess, self.session_id)
-        projected = list(self._project(stored))
-        return projected if limit is None else projected[-limit:]
+            compaction = await get_latest_compaction(sess, self._compaction_scope())
+        return project_context(
+            stored,
+            viewing_agent_code=self._viewing_agent_code,
+            agent_code_to_name=self._agent_code_to_name,
+            nested_for=self._nested_for,
+            nested_call_id=self._nested_call_id,
+            compaction=compaction,
+        )
 
     async def _ensure_session_row(self, sess: AsyncSession) -> None:
         existing = await sess.execute(
@@ -114,80 +146,13 @@ class Z3r0Session(SQLAlchemySession):
             # raced with another writer that created the parent row first
             pass
 
-    def _project(self, stored_items: Iterable[StoredItem]) -> Iterable[TResponseInputItem]:
-        # Projection rules (viewer = agent about to receive input):
-        #   1. nested-call runs are isolated to their own call id
-        #   2. user-role items: every viewer sees verbatim
-        #   3. items owned by viewer: verbatim
-        #   4. other agents' assistant messages: merged into one "[other agent: <name>]" block
-        #   5. other agents' reasoning / function_call / function_call_output: dropped
-        viewer = self._viewing_agent_code
-        pending_owner: str = ""
-        pending_texts: list[str] = []
-        pending_ids: list[int] = []
-
-        if self._nested_for:
-            for stored in stored_items:
-                if (
-                    stored.owner_code == viewer
-                    and stored.nested_for == self._nested_for
-                    and stored.nested_call_id == self._nested_call_id
-                ):
-                    yield stored.item
-            return
-
-        def flush() -> TResponseInputItem | None:
-            nonlocal pending_owner, pending_texts, pending_ids
-            if not pending_texts:
-                return None
-            merged = _build_foreign_block(
-                source_code=pending_owner,
-                source_name=self._agent_code_to_name.get(pending_owner, pending_owner),
-                message_ids=pending_ids,
-                texts=pending_texts,
-            )
-            pending_owner = ""
-            pending_texts = []
-            pending_ids = []
-            return merged
-
-        for stored in stored_items:
-            owner, item, nested_for = stored.owner_code, stored.item, stored.nested_for
-            role = item.get("role")
-            item_type = item.get("type")
-
-            if nested_for:
-                continue
-
-            if role == "user":
-                if (m := flush()) is not None:
-                    yield m
-                yield item
-                continue
-
-            if owner == viewer:
-                if (m := flush()) is not None:
-                    yield m
-                yield item
-                continue
-
-            if item_type in _OWNER_PRIVATE_TYPES:
-                continue
-            if role != "assistant" or item_type != "message":
-                continue
-            text = _extract_message_text(item.get("content"))
-            if not text:
-                continue
-            if pending_owner and pending_owner != owner:
-                if (m := flush()) is not None:
-                    yield m
-            pending_owner = owner
-            pending_ids.append(stored.message_id)
-            pending_texts.append(text)
-
-        if (m := flush()) is not None:
-            yield m
-
+    def _compaction_scope(self) -> CompactionScope:
+        return CompactionScope(
+            session_id=self.session_id,
+            viewer_agent_code=self._viewing_agent_code,
+            nested_for=self._nested_for,
+            nested_call_id=self._nested_call_id,
+        )
 
 async def fetch_stored_items(sess: AsyncSession, session_id: str) -> list[StoredItem]:
     """Load all messages + their owner attribution for one conversation, in order."""
@@ -226,36 +191,3 @@ async def fetch_stored_items(sess: AsyncSession, session_id: str) -> list[Stored
             nested_call_id=row.nested_call_id or "",
         ))
     return items
-
-
-def _build_foreign_block(*, source_code: str, source_name: str, message_ids: list[int], texts: list[str]) -> dict[str, Any]:
-    body = "\n\n".join(texts)
-    first_id = message_ids[0] if message_ids else ""
-    last_id = message_ids[-1] if message_ids else ""
-    return {
-        "id": f"foreign_{source_code}_{first_id}_{last_id}",
-        "type": "message",
-        "role": "assistant",
-        "content": [{
-            "type": "output_text",
-            "text": _FOREIGN_PREFIX.format(name=source_name) + body,
-            "annotations": [],
-        }],
-        "status": "completed",
-    }
-
-
-def _extract_message_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
-    for piece in content:
-        if not isinstance(piece, dict):
-            continue
-        if piece.get("type") in _TEXT_CONTENT_TYPES:
-            text = piece.get("text")
-            if isinstance(text, str):
-                parts.append(text)
-    return "".join(parts)

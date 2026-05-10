@@ -19,7 +19,20 @@
     },
     "agent_runtime": {
         "main_max_turns": 1000,
-        "subordinate_max_turns": 1000
+        "subordinate_max_turns": 1000,
+        "context_compression_enabled": true,
+        "context_compression_trigger_ratio": 0.95,
+        "context_compression_hard_stop_ratio": 0.98,
+        "context_compression_target_ratio": 0.20,
+        "context_compression_preserve_recent_ratio": 0.25,
+        "context_compression_preserve_recent_items": 20,
+        "context_compression_min_items": 12,
+        "context_compression_summary_max_tokens": 8000
+    },
+    "agent_pool": {
+        "max_size": 256,
+        "ttl_seconds": 1800,
+        "sweep_interval_seconds": 60
     },
     "agents": {
         "cso": {
@@ -28,23 +41,26 @@
             "description": "Chief Security Officer",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-3844...",
-            "model": "openai/gpt-5.5"
+            "model": "openai/gpt-5.5",
+            "context_window": 1000000
         },
         "csa": {
-           "code": "csa",
+            "code": "csa",
             "name": "L1ly",
             "description": "Chief Security Analyst",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-3844...",
-            "model": "openai/gpt-5.5"
-        }
+            "model": "openai/gpt-5.5",
+            "context_window": 1000000
+        },
         "cse": {
             "code": "cse",
             "name": "Fr4nk",
             "description": "Chief Security Engineer",
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-3844...",
-            "model": "openai/gpt-5.5"
+            "model": "openai/gpt-5.5",
+            "context_window": 1000000
         }
     }
 }
