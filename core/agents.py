@@ -72,6 +72,7 @@ _AGENT_SPECS: tuple[AgentSpec, ...] = (
         subagents=(
             SubagentMount(code="cie"),
             SubagentMount(code="cpe"),
+            SubagentMount(code="cre"),
         ),
     ),
     AgentSpec(
@@ -87,6 +88,17 @@ _AGENT_SPECS: tuple[AgentSpec, ...] = (
     ),
     AgentSpec(
         code="cpe",
+        tools=(
+            ToolMount(execute_sync_command, requires_sandbox_container=True),
+            ToolMount(execute_async_command, requires_sandbox_container=True),
+            ToolMount(wait_sandbox_async_job, requires_sandbox_container=True),
+            ToolMount(cancel_sandbox_async_job, requires_sandbox_container=True),
+            ToolMount(load_skill, requires_sandbox_container=True),
+            *KNOWLEDGE_TOOLS,
+        ),
+    ),
+    AgentSpec(
+        code="cre",
         tools=(
             ToolMount(execute_sync_command, requires_sandbox_container=True),
             ToolMount(execute_async_command, requires_sandbox_container=True),
