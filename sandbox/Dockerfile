@@ -48,6 +48,31 @@ RUN set -eux; \
     find /opt/ghidra -type f -name '*.so' -exec strip --strip-unneeded '{}' + 2>/dev/null || true; \
     rm -rf /tmp/* /var/tmp/* /var/lib/apt/lists/* /var/cache/apt/*
 
+FROM debian:trixie-slim AS jadx-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG JADX_VERSION=1.5.5
+ARG JADX_URL=https://github.com/skylot/jadx/releases/download/v${JADX_VERSION}/jadx-${JADX_VERSION}.zip
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl unzip; \
+    mkdir -p /opt/jadx; \
+    curl -fsSL "$JADX_URL" -o /tmp/jadx.zip; \
+    unzip -q /tmp/jadx.zip -d /opt/jadx; \
+    find /opt/jadx -type d \( \
+      -name '.github' -o \
+      -name 'docs' -o \
+      -name 'samples' \
+    \) -prune -exec rm -rf '{}' +; \
+    find /opt/jadx -type f \( \
+      -name '*.bat' -o \
+      -name '*.md' -o \
+      -name '*.map' \
+    \) -delete; \
+    chmod 755 /opt/jadx/bin/jadx; \
+    rm -rf /tmp/* /var/tmp/* /var/lib/apt/lists/* /var/cache/apt/*
+
 FROM debian:trixie-slim
 
 ENV HOME=/root \
@@ -56,7 +81,8 @@ ENV HOME=/root \
     DISPLAY=:0 \
     JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
     GHIDRA_HOME=/opt/ghidra \
-    PATH=/opt/ghidra:/opt/ghidra/support:/usr/lib/jvm/java-21-openjdk-amd64/bin:$PATH
+    JADX_HOME=/opt/jadx \
+    PATH=/opt/jadx/bin:/opt/ghidra:/opt/ghidra/support:/usr/lib/jvm/java-21-openjdk-amd64/bin:$PATH
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -122,6 +148,7 @@ COPY --from=browser-builder /root/.cache /root/.cache
 COPY --from=browser-builder /usr/local/bin/dev-browser /usr/local/bin/dev-browser
 COPY --from=browser-builder /usr/local/lib/node_modules/dev-browser /usr/local/lib/node_modules/dev-browser
 COPY --from=ghidra-builder /opt/ghidra /opt/ghidra
+COPY --from=jadx-builder /opt/jadx /opt/jadx
 RUN set -eux; \
     chromium_binary="$(find /root/.cache /root/.dev-browser -type f \( -path '*/chrome-linux/chrome' -o -path '*/chrome-linux64/chrome' -o -name chromium -o -name chrome \) -perm /111 | sort | head -n 1)"; \
     if [ -z "$chromium_binary" ]; then \
@@ -133,9 +160,12 @@ RUN set -eux; \
     ln -sf "$chromium_binary" /usr/local/bin/dev-browser-chromium; \
     ln -sf /opt/ghidra/ghidraRun /usr/local/bin/ghidra; \
     ln -sf /opt/ghidra/support/analyzeHeadless /usr/local/bin/analyzeHeadless; \
+    ln -sf /opt/jadx/bin/jadx /usr/local/bin/jadx; \
     java -version; \
+    jadx --version; \
     test -x /opt/ghidra/ghidraRun; \
-    test -x /opt/ghidra/support/analyzeHeadless
+    test -x /opt/ghidra/support/analyzeHeadless; \
+    test -x /opt/jadx/bin/jadx
 
 COPY --from=proxy-builder --chmod=755 /sandbox-proxy /usr/local/bin/sandbox-proxy
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
