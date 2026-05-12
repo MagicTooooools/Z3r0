@@ -14,7 +14,7 @@ def notification_prompt(notification: AgentNotificationSnapshot) -> str:
         error = str(payload.get("error") or "")
         body = result if status == "completed" else error
         return (
-            "# Internal Subagent Completion Notification\n\n"
+            "\n\n# Internal Subagent Completion Notification\n\n"
             "A delegated subagent task has reached a terminal state. This is an internal runtime notification, "
             "not a new user message. Do not mention implementation details about notifications.\n\n"
             f"- run_id: {run_id}\n"
@@ -35,7 +35,7 @@ def notification_prompt(notification: AgentNotificationSnapshot) -> str:
         output_bytes = str(payload.get("bytes") if payload.get("bytes") is not None else "")
         output_lines = str(payload.get("lines") if payload.get("lines") is not None else "")
         return (
-            "# Internal Async Command Completion Notification\n\n"
+            "\n\n# Internal Async Command Completion Notification\n\n"
             "A sandbox command started by this exact agent instance has finished. This is an internal runtime notification, "
             "not a new user message. Do not mention implementation details about notifications.\n\n"
             f"- run_id: {run_id}\n"
@@ -49,7 +49,7 @@ def notification_prompt(notification: AgentNotificationSnapshot) -> str:
             f"`sed -n '1,200p' {output_file}`. Continue the original task from this result."
         )
     return (
-        "# Internal Agent Notification\n\n"
+        "\n\n# Internal Agent Notification\n\n"
         f"Notification kind: {notification.kind.value}\n"
         f"Payload: {notification.payload}"
     )
