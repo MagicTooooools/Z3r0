@@ -97,6 +97,7 @@ RUN set -eux; \
       > /etc/dpkg/dpkg.cfg.d/01_nodoc; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+      7zip \
       ca-certificates \
       binutils \
       curl \

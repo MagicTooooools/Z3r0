@@ -78,6 +78,7 @@ Report only meaningful results: changed files, commands run, outputs that matter
 
 ## Available Tools
 
+- `7z`: inspect and extract archives, including `.zip` and `.7z`; use `7z x <archive> -o<dir>` when preserving paths matters.
 - `python3`: run Python scripts, one-off Python commands, automation, parsing, data processing, and local program execution.
 - `pip3`: install and manage Python packages needed for the task.
 - `node`: run JavaScript programs, one-off Node.js commands, tooling scripts, and local program execution.
