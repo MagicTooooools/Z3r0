@@ -6,6 +6,8 @@ WORKDIR /src/proxy
 COPY proxy/go.mod proxy/main.go ./
 RUN go build -trimpath -ldflags='-s -w' -o /sandbox-proxy .
 
+FROM ghcr.io/astral-sh/uv:latest AS uv-bin
+
 FROM debian:trixie-slim AS browser-builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -82,6 +84,8 @@ ENV HOME=/root \
     JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
     GHIDRA_HOME=/opt/ghidra \
     JADX_HOME=/opt/jadx \
+    UV_TOOL_DIR=/opt/uv/tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
     PATH=/opt/jadx/bin:/opt/ghidra:/opt/ghidra/support:/usr/lib/jvm/java-21-openjdk-amd64/bin:$PATH
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -147,6 +151,8 @@ RUN set -eux; \
     mkdir -p /data; \
     rm -rf /root/.npm /var/lib/apt/lists/* /var/cache/apt/* /tmp/* /var/tmp/*
 
+COPY --from=uv-bin /uv /usr/local/bin/uv
+COPY --from=uv-bin /uvx /usr/local/bin/uvx
 COPY --from=browser-builder /root/.dev-browser /root/.dev-browser
 COPY --from=browser-builder /root/.cache /root/.cache
 COPY --from=browser-builder /usr/local/bin/dev-browser /usr/local/bin/dev-browser
@@ -165,9 +171,12 @@ RUN set -eux; \
     ln -sf /opt/ghidra/ghidraRun /usr/local/bin/ghidra; \
     ln -sf /opt/ghidra/support/analyzeHeadless /usr/local/bin/analyzeHeadless; \
     ln -sf /opt/jadx/bin/jadx /usr/local/bin/jadx; \
+    uv tool install --python /usr/bin/python3 sqlmap; \
+    uv cache clean; \
     java -version; \
     jadx --version; \
     nmap --version; \
+    sqlmap --version; \
     unzip -v >/dev/null; \
     command -v nc; \
     test -x /opt/ghidra/ghidraRun; \
