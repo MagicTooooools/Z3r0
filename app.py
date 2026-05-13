@@ -48,11 +48,11 @@ API_PREFIX = "/api"
 async def _bootstrap_admin_user() -> None:
     bootstrap = get_config().system.bootstrap_admin
     if not bootstrap.enabled:
-        logger.info("bootstrap admin user skipped")
+        logger.debug("bootstrap admin user skipped")
         return
 
     if await query_system_user_by_username(bootstrap.username) is not None:
-        logger.info("bootstrap admin user already exists: %s", bootstrap.username)
+        logger.debug("bootstrap admin user already exists: %s", bootstrap.username)
         return
 
     await create_system_user(
@@ -68,7 +68,7 @@ def _mount_frontend(app: FastAPI) -> None:
     """serve built frontend assets when web/dist exists"""
     index_path = WEB_DIST_PATH / "index.html"
     if not index_path.is_file():
-        logger.info("frontend static route skipped: %s not found", index_path)
+        logger.debug("frontend static route skipped: %s not found", index_path)
         return
 
     assets_path = WEB_DIST_PATH / "assets"
@@ -114,11 +114,11 @@ def create_app() -> FastAPI:
 
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
-    logger.info("exception handlers added")
+    logger.debug("exception handlers added")
 
     app.add_middleware(CommonResponseStatusMiddleware)
     app.add_middleware(JwtAuthMiddleware)
-    logger.info("middleware added")
+    logger.debug("middleware added")
 
     app.include_router(system_user_router, prefix=API_PREFIX)
     app.include_router(sandbox_image_router, prefix=API_PREFIX)
@@ -127,7 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(agent_router, prefix=API_PREFIX)
     app.include_router(agent_session_router, prefix=API_PREFIX)
     app.include_router(api_not_found_router, prefix=API_PREFIX)
-    logger.info("api router added")
+    logger.debug("api router added")
 
     _mount_frontend(app)
     return app

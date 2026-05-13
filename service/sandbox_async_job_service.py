@@ -59,7 +59,7 @@ async def create_async_job(
         session.add(job)
         await session.commit()
         await session.refresh(job)
-    logger.info("sandbox async job created: %s", job.run_id)
+    logger.debug("sandbox async job created: %s", job.run_id)
     return snapshot_from_job(job)
 
 

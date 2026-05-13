@@ -298,7 +298,7 @@ def _remove_container_sync(container_hash: str) -> None:
         container = client.containers.get(container_hash)
         container.remove(force=True)
     except docker.errors.NotFound:
-        logger.info("sandbox container instance already absent: %s", container_hash)
+        logger.debug("sandbox container instance already absent: %s", container_hash)
     finally:
         client.close()
 
@@ -366,7 +366,7 @@ async def _terminate_container_command(container_hash: str, marker_path: str) ->
         logger.warning("sandbox container command termination timed out: %s", container_hash)
         _consume_background_task(terminate_task)
     except docker.errors.NotFound:
-        logger.info("sandbox container absent while cancelling command: %s", container_hash)
+        logger.debug("sandbox container absent while cancelling command: %s", container_hash)
     except asyncio.CancelledError:
         _consume_background_task(terminate_task)
         raise
@@ -746,7 +746,7 @@ async def _sync_container_status(snapshot: _ContainerStatusSnapshot) -> None:
         return
 
     await _save_sandbox_container_status(snapshot.id, next_status)
-    logger.info(
+    logger.debug(
         "sandbox container status synced: %s %s -> %s",
         snapshot.id,
         snapshot.status,
@@ -981,7 +981,7 @@ async def start_sandbox_container(id: int) -> SandboxContainerMutationResult:
             status=record.container.status,
         ))
     except docker.errors.NotFound:
-        logger.info("sandbox container instance not found while starting: %s", id)
+        logger.debug("sandbox container instance not found while starting: %s", id)
         return SandboxContainerMutationResult(
             record=await _save_sandbox_container_status(id, SandboxContainerStatus.ERROR),
             changed=False,
@@ -1031,7 +1031,7 @@ async def stop_sandbox_container(id: int) -> SandboxContainerMutationResult:
     try:
         await asyncio.to_thread(_stop_container_sync, record.container.container_hash)
     except docker.errors.NotFound:
-        logger.info("sandbox container instance not found while stopping: %s", id)
+        logger.debug("sandbox container instance not found while stopping: %s", id)
         return SandboxContainerMutationResult(
             record=await _save_sandbox_container_status(id, SandboxContainerStatus.ERROR),
             changed=False,
@@ -1383,7 +1383,7 @@ async def execute_sandbox_container_command(id: int, command: str) -> SandboxCon
     except asyncio.CancelledError:
         raise
     except docker.errors.NotFound:
-        logger.info("sandbox container instance not found while executing command: %s", id)
+        logger.debug("sandbox container instance not found while executing command: %s", id)
         await _save_sandbox_container_status(id, SandboxContainerStatus.ERROR)
         raise RuntimeError("sandbox container instance not found")
     except Exception:

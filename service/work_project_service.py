@@ -85,7 +85,7 @@ async def retry_work_project(id: int) -> tuple[WorkProject | None, bool]:
         await session.commit()
         await session.refresh(work_project)
 
-    logger.info("work project retried: %s", work_project.id)
+    logger.debug("work project retried: %s", work_project.id)
     return work_project, True
 
 

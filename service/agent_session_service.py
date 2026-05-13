@@ -281,7 +281,7 @@ async def _delete_paired_project_in_tx(session: AsyncSession, session_id: str) -
     if project is None:
         return False
     await session.delete(project)
-    logger.info("paired work project deleted by session: %s", project.id)
+    logger.debug("paired work project deleted by session: %s", project.id)
     return True
 
 

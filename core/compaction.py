@@ -169,7 +169,7 @@ async def compact_if_needed(
         return CompactionDecision(False, projected_tokens, context_window, trigger_tokens, target_tokens)
 
     candidate_tokens = sum(item.token_estimate for item in candidate_items)
-    logger.info(
+    logger.debug(
         "agent context compaction starting session=%s viewer=%s nested_for=%s nested_call=%s model=%s items=%d candidate_items=%d tokens=%d trigger=%d target=%d window=%d end_message_id=%s",
         scope.session_id,
         scope.viewer_agent_code,
@@ -187,7 +187,7 @@ async def compact_if_needed(
 
     async with session_factory() as sess:
         if not await _try_lock_compaction(sess, scope):
-            logger.info(
+            logger.debug(
                 "agent context compaction skipped: lock busy session=%s viewer=%s nested_for=%s nested_call=%s",
                 scope.session_id,
                 scope.viewer_agent_code,
@@ -196,7 +196,7 @@ async def compact_if_needed(
             )
             return CompactionDecision(False, projected_tokens, context_window, trigger_tokens, target_tokens)
         try:
-            logger.info(
+            logger.debug(
                 "agent context compaction summarizing session=%s viewer=%s candidate_items=%d candidate_tokens=%d",
                 scope.session_id,
                 scope.viewer_agent_code,

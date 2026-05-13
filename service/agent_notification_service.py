@@ -106,7 +106,7 @@ async def enqueue_subagent_finished_notification(
             )).first()
             return snapshot_from_notification(existing) if existing is not None else None
 
-    logger.info(
+    logger.debug(
         "agent notification queued: %s session=%s run=%s target=%s",
         notification.id,
         notification.session_id,

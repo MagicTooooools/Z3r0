@@ -52,7 +52,7 @@ async def _save_pull_result(
     async with get_async_session() as session:
         sandbox_image = await session.get(SandboxImage, id)
         if sandbox_image is None:
-            logger.info("sandbox image pull result ignored: %s", id)
+            logger.debug("sandbox image pull result ignored: %s", id)
             return
 
         sandbox_image.status = status
@@ -70,7 +70,7 @@ def _pull_image_sync(id: int, image_name: str) -> tuple[str, int]:
     try:
         try:
             attrs = client.api.inspect_image(image_name)
-            logger.info("sandbox image found locally: %s", image_name)
+            logger.debug("sandbox image found locally: %s", image_name)
             return _image_metadata(attrs)
         except docker.errors.ImageNotFound:
             pass
@@ -100,7 +100,7 @@ def _remove_image_sync(image_hash: str) -> None:
     try:
         client.images.remove(image=f"sha256:{image_hash}", force=True, noprune=False)
     except docker.errors.ImageNotFound:
-        logger.info("sandbox image file already absent: %s", image_hash)
+        logger.debug("sandbox image file already absent: %s", image_hash)
     finally:
         client.close()
 
@@ -176,7 +176,7 @@ async def cancel_sandbox_image_pull(id: int) -> tuple[SandboxImage | None, bool]
     if job is not None:
         _cancel_pull_job(job)
 
-    logger.info("sandbox image pull cancel requested: %s", id)
+    logger.debug("sandbox image pull cancel requested: %s", id)
     return sandbox_image, True
 
 
@@ -225,7 +225,7 @@ async def retry_sandbox_image(id: int) -> tuple[SandboxImage | None, bool]:
         await session.refresh(sandbox_image)
 
     _schedule_pull(id, sandbox_image.image_name)
-    logger.info("sandbox image pull retried: %s", sandbox_image.id)
+    logger.debug("sandbox image pull retried: %s", sandbox_image.id)
     return sandbox_image, True
 
 

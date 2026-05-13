@@ -131,7 +131,7 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
             try:
                 command = agent_stream_command_adapter.validate_python(payload)
             except ValidationError:
-                logger.info("agent stream ignored invalid payload: %r", payload)
+                logger.debug("agent stream ignored invalid payload: %r", payload)
                 continue
 
             if command.action == AgentStreamActionSchema.INTERRUPT:

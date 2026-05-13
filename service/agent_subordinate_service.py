@@ -52,7 +52,7 @@ async def create_subagent_task(
         session.add(task)
         await session.commit()
         await session.refresh(task)
-    logger.info("subagent task created: %s", task.run_id)
+    logger.debug("subagent task created: %s", task.run_id)
     return snapshot_from_task(task)
 
 
