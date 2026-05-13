@@ -9,8 +9,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response as StarletteResponse
 
 from config import get_config
-from schema.response_schema import CommonResponse
-from schema.system_user_schema import SystemUserRole
+from schema.common.responses import CommonResponse
+from schema.system_user.users import SystemUserRole
 
 
 _AUTH_HEADER_PREFIX = "Bearer "

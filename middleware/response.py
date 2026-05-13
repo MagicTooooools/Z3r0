@@ -6,7 +6,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from schema.response_schema import CommonResponse
+from schema.common.responses import CommonResponse
 
 
 class CommonResponseStatusMiddleware:

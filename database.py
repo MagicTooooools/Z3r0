@@ -5,16 +5,16 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from config import get_config
 from logger import get_logger
-from model.agent_async_job_model import SandboxAsyncJob
-from model.agent_notification_model import AgentNotification
-from model.agent_subordinate_model import AgentSubordinateTask
-from model.agent_message_meta_model import AgentMessageMeta
-from model.agent_context_compaction_model import AgentContextCompaction
-from model.agent_session_meta_model import AgentSessionMeta
-from model.sandbox_container_model import SandboxContainer
-from model.sandbox_image_model import SandboxImage
-from model.system_user_model import SystemUser
-from model.work_project_model import WorkProject
+from model.sandbox.async_jobs import SandboxAsyncJob
+from model.agent.notifications import AgentNotification
+from model.agent.subordinates import AgentSubordinateTask
+from model.agent.message_meta import AgentMessageMeta
+from model.agent.context_compactions import AgentContextCompaction
+from model.agent.sessions import AgentSessionMeta
+from model.sandbox.containers import SandboxContainer
+from model.sandbox.images import SandboxImage
+from model.system_user.users import SystemUser
+from model.work_project.projects import WorkProject
 from utils.sdk_tables import BOOTSTRAP_SESSION_ID
 
 

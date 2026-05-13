@@ -98,7 +98,7 @@ def load_config():
     config_file = WORKSPACE / "config.json"
     with open(config_file, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     next_cfg = GlobalConfig.model_validate(data)
     for field_name in type(_cfg).model_fields:
         setattr(_cfg, field_name, getattr(next_cfg, field_name))

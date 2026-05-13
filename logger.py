@@ -4,7 +4,7 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import TextIO
 
-from config import ROOT_PATH, WORKSPACE
+from config import WORKSPACE
 
 
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"

@@ -19,7 +19,6 @@ import {
 import { showApiError, showApiSuccess } from "../../shared/api/feedback";
 import { getStoredAccessToken } from "../../shared/auth/session";
 import type {
-  AgentContentEvent,
   AgentInfo,
   AgentSessionSummary,
   AgentStreamCommand,
@@ -270,7 +269,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
 
     listAgentEvents(sessionId)
       .then((response) => {
-        const events = (response.data?.items ?? []) as AgentContentEvent[];
+        const events = response.data?.items ?? [];
         updateRuntime(sessionId, (r) => ({
           ...r,
           state: chatReplay(events),

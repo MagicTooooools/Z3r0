@@ -1,7 +1,3 @@
-from utils.litellm_config import configure_litellm_environment
-
-configure_litellm_environment()
-
 import uvicorn
 
 from app import create_app

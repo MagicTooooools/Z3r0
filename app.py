@@ -13,9 +13,9 @@ from utils.litellm_config import configure_litellm_environment
 
 configure_litellm_environment()
 
-from core.subordinates import start_subagent_runtime, stop_subagent_runtime
-from core.runtime import get_agent_pool
-from core.jobs import start_async_sandbox_runtime, stop_async_sandbox_commands
+from core.delegation.subagents import start_subagent_runtime, stop_subagent_runtime
+from core.runtime.session import get_agent_pool
+from core.sandbox.command_jobs import start_async_sandbox_runtime, stop_async_sandbox_commands
 from database import close_engine, create_all_tables, init_engine
 from logger import get_logger
 from middleware.auth import JwtAuthMiddleware
@@ -24,20 +24,20 @@ from middleware.response import (
     http_exception_handler,
     request_validation_exception_handler,
 )
-from router.agent_router import router as agent_router
-from router.agent_session_router import router as agent_session_router
-from router.fallback_router import api_not_found_router
-from router.sandbox_container_router import router as sandbox_container_router
-from router.sandbox_image_router import router as sandbox_image_router
-from router.system_user_router import router as system_user_router
-from router.work_project_router import router as work_project_router
-from schema.system_user_schema import SystemUserRole
-from service.sandbox_container_service import (
+from router.agent.agents import router as agent_router
+from router.agent.sessions import router as agent_session_router
+from router.common.fallback import api_not_found_router
+from router.sandbox.containers import router as sandbox_container_router
+from router.sandbox.images import router as sandbox_image_router
+from router.system_user.users import router as system_user_router
+from router.work_project.projects import router as work_project_router
+from schema.system_user.users import SystemUserRole
+from service.sandbox.status import (
     invalidate_all_agent_tool_bindings,
     start_sandbox_container_status_monitor,
     stop_sandbox_container_status_monitor,
 )
-from service.system_user_service import create_system_user, query_system_user_by_username
+from service.system_user.users import create_system_user, query_system_user_by_username
 from utils.urllib3_compat import install_urllib3_closed_file_close_patch
 
 
