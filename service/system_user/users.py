@@ -144,6 +144,11 @@ async def query_system_user_by_username(username: str) -> SystemUser | None:
         return result.first()
 
 
+async def query_system_user_by_id(user_id: int) -> SystemUser | None:
+    async with get_async_session() as session:
+        return await session.get(SystemUser, user_id)
+
+
 async def query_system_users(page: int = 1, size: int = 100, keyword: str = "") -> list[SystemUser]:
     offset = (page - 1) * size
     statement = select(SystemUser).order_by(SystemUser.id).offset(offset).limit(size)

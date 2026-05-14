@@ -88,6 +88,19 @@ async def list_subagent_tasks(
         return [snapshot_from_task(task) for task in rows if _can_access_task(task, session_id, user_id, user_role)]
 
 
+async def has_running_subagent_tasks(*, session_id: str) -> bool:
+    async with get_async_session() as session:
+        run_id = (await session.exec(
+            select(AgentSubordinateTask.run_id)
+            .where(
+                AgentSubordinateTask.session_id == session_id,
+                AgentSubordinateTask.status == AgentSubordinateStatus.RUNNING.value,
+            )
+            .limit(1)
+        )).first()
+        return run_id is not None
+
+
 async def get_subagent_task_internal(run_id: str) -> AgentSubordinateTaskSnapshot | None:
     async with get_async_session() as session:
         task = await session.get(AgentSubordinateTask, run_id)

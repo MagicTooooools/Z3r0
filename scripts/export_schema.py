@@ -163,7 +163,9 @@ def _register_extra_schemas(schema: dict[str, Any]) -> None:
         AgentStreamCommandSchema,
         AgentStreamInterruptCommand,
         AgentStreamSendCommand,
+        AgentEventSchema,
         DoneEvent,
+        RunStateEvent,
     )
 
     components = schema.setdefault("components", {})
@@ -171,6 +173,8 @@ def _register_extra_schemas(schema: dict[str, Any]) -> None:
 
     extras = {
         "DoneEvent": DoneEvent,
+        "RunStateEvent": RunStateEvent,
+        "AgentEventSchema": AgentEventSchema,
         "AgentStreamSendCommand": AgentStreamSendCommand,
         "AgentStreamInterruptCommand": AgentStreamInterruptCommand,
         "AgentStreamCancelAllCommand": AgentStreamCancelAllCommand,

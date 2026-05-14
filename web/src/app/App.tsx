@@ -22,7 +22,7 @@ function ProtectedRoute() {
 function PublicOnlyRoute() {
   const { isAuthenticated } = useAuth();
   if (isAuthenticated) {
-    return <Navigate to="/system-users" replace />;
+    return <Navigate to="/playground" replace />;
   }
   return <Outlet />;
 }
@@ -37,7 +37,7 @@ export function App() {
           </Route>
           <Route element={<ProtectedRoute />}>
             <Route element={<AgentSessionProvider><ContainerShellProvider><AdminLayout /></ContainerShellProvider></AgentSessionProvider>}>
-              <Route index element={<Navigate to="/system-users" replace />} />
+              <Route index element={<Navigate to="/playground" replace />} />
               <Route path="/playground" element={<PlaygroundPage />} />
               <Route path="/sandbox-images" element={<SandboxImagesPage />} />
               <Route path="/sandbox-containers" element={<SandboxContainersPage />} />
@@ -45,7 +45,7 @@ export function App() {
               <Route path="/work-projects" element={<WorkProjectsPage />} />
             </Route>
           </Route>
-          <Route path="*" element={<Navigate to="/system-users" replace />} />
+          <Route path="*" element={<Navigate to="/playground" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

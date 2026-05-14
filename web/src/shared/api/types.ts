@@ -145,8 +145,9 @@ export type SubagentTaskEvent = components["schemas"]["SubagentTaskEvent"];
 export type AgentSubordinateStatus = components["schemas"]["AgentSubordinateStatus"];
 export type ErrorEvent = components["schemas"]["ErrorEvent"];
 export type DoneEvent = components["schemas"]["DoneEvent"];
+export type RunStateEvent = components["schemas"]["RunStateEvent"];
 
 export type AgentContentEvent = ListAgentEventsData["items"][number];
-export type AgentStreamEvent = AgentContentEvent | DoneEvent;
+export type AgentStreamEvent = components["schemas"]["AgentEventSchema"];
 
 export type AgentStreamCommand = components["schemas"]["AgentStreamCommandSchema"];

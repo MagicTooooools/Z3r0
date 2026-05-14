@@ -524,6 +524,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AgentEventSchema: components["schemas"]["UserMessageEvent"] | components["schemas"]["TurnBoundaryEvent"] | components["schemas"]["RunStateEvent"] | components["schemas"]["TextDeltaEvent"] | components["schemas"]["TextCompleteEvent"] | components["schemas"]["ThinkingDeltaEvent"] | components["schemas"]["ThinkingCompleteEvent"] | components["schemas"]["ToolCallEvent"] | components["schemas"]["ToolResultEvent"] | components["schemas"]["SubagentTaskEvent"] | components["schemas"]["DoneEvent"] | components["schemas"]["ErrorEvent"];
         /** AgentInfoSchema */
         AgentInfoSchema: {
             /** Code */
@@ -549,6 +550,11 @@ export interface components {
              */
             created_at: string;
             /**
+             * Is Running
+             * @default false
+             */
+            is_running: boolean;
+            /**
              * Message Count
              * @default 0
              */
@@ -558,6 +564,27 @@ export interface components {
              * @default 0
              */
             owner_id: number;
+            /**
+             * Run Error
+             * @default
+             */
+            run_error: string;
+            /** Run Finished At */
+            run_finished_at?: string | null;
+            /** Run Started At */
+            run_started_at?: string | null;
+            /**
+             * Runtime Agent Code
+             * @default
+             */
+            runtime_agent_code: string;
+            /**
+             * Runtime Sandbox Container Generation
+             * @default 0
+             */
+            runtime_sandbox_container_generation: number;
+            /** Runtime Sandbox Container Id */
+            runtime_sandbox_container_id?: number | null;
             /** Session Id */
             session_id: string;
             /** @default chat */
@@ -1135,9 +1162,8 @@ export interface components {
              */
             nested_for: string;
             /**
-             * Type
-             * @default done
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             type: "done";
         };
@@ -1237,6 +1263,21 @@ export interface components {
             page: number;
             /** Size */
             size: number;
+        };
+        /** RunStateEvent */
+        RunStateEvent: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Running */
+            running: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "run_state";
         };
         /** SandboxContainerDefaultPortMappingsResponse */
         SandboxContainerDefaultPortMappingsResponse: {

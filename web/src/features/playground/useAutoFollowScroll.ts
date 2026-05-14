@@ -5,7 +5,7 @@ type UseAutoFollowScrollOptions<T extends HTMLElement> = {
   followLatest?: boolean;
   onFollowLatestChange?: (following: boolean) => void;
   onScrollToLatestReady?: (handler: (() => void) | null) => void;
-  containerRef?: RefObject<T | null>;
+  containerRef: RefObject<T | null>;
   resetKey?: string | number | null;
   watch?: readonly unknown[];
 };
@@ -22,36 +22,37 @@ export function useAutoFollowScroll<T extends HTMLElement = HTMLDivElement>({
   const tailRef = useRef<HTMLDivElement | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
+  const followingRef = useRef(true);
+  const userPausedRef = useRef(false);
   const [internalFollowLatest, setInternalFollowLatest] = useState(true);
   const following = followLatest ?? internalFollowLatest;
 
-  const setFollowing = useCallback((next: boolean) => {
+  const setFollowing = useCallback((next: boolean, userPaused = !next) => {
+    followingRef.current = next;
+    userPausedRef.current = userPaused;
     if (followLatest === undefined) setInternalFollowLatest(next);
     onFollowLatestChange?.(next);
   }, [followLatest, onFollowLatestChange]);
 
   const getContainer = useCallback(() => {
-    return containerRef?.current ?? findScrollContainer(tailRef.current);
+    return containerRef.current;
   }, [containerRef]);
 
   const scrollTail = useCallback((behavior: ScrollBehavior) => {
     const container = getContainer();
-    if (container) {
-      container.scrollTo({ top: container.scrollHeight, behavior });
-      if (behavior === "auto") lastScrollTopRef.current = container.scrollTop;
-      return;
-    }
-    tailRef.current?.scrollIntoView({ behavior, block: "end" });
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+    if (behavior === "auto") lastScrollTopRef.current = container.scrollTop;
   }, [getContainer]);
 
   const scrollToLatest = useCallback(() => {
-    setFollowing(true);
+    setFollowing(true, false);
     scrollTail("smooth");
   }, [scrollTail, setFollowing]);
 
   useEffect(() => {
     if (resetKey == null) return;
-    setFollowing(true);
+    setFollowing(true, false);
     lastScrollTopRef.current = 0;
     touchStartYRef.current = null;
   }, [resetKey, setFollowing]);
@@ -70,10 +71,9 @@ export function useAutoFollowScroll<T extends HTMLElement = HTMLDivElement>({
         setFollowing(false);
         return;
       }
-      if (isNearScrollTail(container)) setFollowing(true);
+      if (isNearScrollTail(container)) setFollowing(true, false);
     };
 
-    syncFollowing();
     onScrollToLatestReady?.(scrollToLatest);
     container.addEventListener("scroll", syncFollowing, { passive: true });
     return () => {
@@ -83,18 +83,18 @@ export function useAutoFollowScroll<T extends HTMLElement = HTMLDivElement>({
   }, [enabled, getContainer, onScrollToLatestReady, resetKey, scrollToLatest, setFollowing, ...watch]);
 
   useLayoutEffect(() => {
-    if (!enabled || !following) return;
+    if (!enabled || !followingRef.current) return;
     scrollTail("auto");
     const frame = window.requestAnimationFrame(() => scrollTail("auto"));
     return () => window.cancelAnimationFrame(frame);
   }, [enabled, following, scrollTail, ...watch]);
 
   const pauseFollowing = useCallback(() => {
-    if (following) setFollowing(false);
-  }, [following, setFollowing]);
+    if (followingRef.current || !userPausedRef.current) setFollowing(false, true);
+  }, [setFollowing]);
 
   const handleWheel = useCallback((event: WheelEvent<T>) => {
-    if (event.deltaY < 0) pauseFollowing();
+    if (event.deltaX !== 0 || event.deltaY !== 0) pauseFollowing();
   }, [pauseFollowing]);
 
   const handleTouchStart = useCallback((event: TouchEvent<T>) => {
@@ -104,7 +104,7 @@ export function useAutoFollowScroll<T extends HTMLElement = HTMLDivElement>({
   const handleTouchMove = useCallback((event: TouchEvent<T>) => {
     const startY = touchStartYRef.current;
     const currentY = event.touches[0]?.clientY;
-    if (startY != null && currentY != null && currentY > startY) pauseFollowing();
+    if (startY != null && currentY != null && Math.abs(currentY - startY) > 2) pauseFollowing();
   }, [pauseFollowing]);
 
   return {
@@ -120,15 +120,5 @@ export function useAutoFollowScroll<T extends HTMLElement = HTMLDivElement>({
 }
 
 function isNearScrollTail(container: HTMLElement) {
-  return container.scrollHeight - container.scrollTop - container.clientHeight < 72;
-}
-
-function findScrollContainer(element: HTMLElement | null) {
-  let current = element?.parentElement ?? null;
-  while (current) {
-    const overflowY = window.getComputedStyle(current).overflowY;
-    if (overflowY === "auto" || overflowY === "scroll") return current;
-    current = current.parentElement;
-  }
-  return null;
+  return container.scrollHeight - container.scrollTop - container.clientHeight < 8;
 }

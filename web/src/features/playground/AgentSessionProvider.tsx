@@ -25,10 +25,11 @@ import type {
   AgentStreamEvent,
 } from "../../shared/api/types";
 import {
-  chatReduce,
   chatReplay,
+  disconnectChatTurn,
   finishChatTurn,
   initialChatState,
+  streamReduce,
   type ChatState,
 } from "./playgroundReducer";
 
@@ -51,6 +52,7 @@ const DEFAULT_RUNTIME: SessionRuntime = {
 
 const IDLE_CLOSE_MS = 5 * 60 * 1000;
 const CONNECT_TIMEOUT_MS = 15 * 1000;
+const MAX_BUFFERED_LIVE_EVENTS = 1000;
 
 type AgentSessionContextValue = {
   sessions: AgentSessionSummary[];
@@ -93,12 +95,14 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   const [defaultAgentCode, setDefaultAgentCode] = useState("");
   // pending pick for the next brand-new chat (when activeSessionId is still null)
   const [pendingAgentCode, setPendingAgentCode] = useState("");
-
   // sockets + timers live outside react state because their identity does not
   // drive rendering; one ws per session is kept alive across session switches
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
   const idleTimersRef = useRef<Map<string, number>>(new Map());
   const ensuredRef = useRef<Set<string>>(new Set());
+  const historyReadyRef = useRef<Set<string>>(new Set());
+  const loadingHistoryRef = useRef<Set<string>>(new Set());
+  const pendingLiveEventsRef = useRef<Map<string, AgentStreamEvent[]>>(new Map());
   const pendingSendRef = useRef<{
     sessionId: string;
     text: string;
@@ -134,6 +138,9 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       return next;
     });
     ensuredRef.current.delete(sessionId);
+    historyReadyRef.current.delete(sessionId);
+    loadingHistoryRef.current.delete(sessionId);
+    pendingLiveEventsRef.current.delete(sessionId);
   }, []);
 
   // ------------------------------------------------------------- agents
@@ -151,13 +158,17 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     if (!silent) setSessionsLoading(true);
     try {
       const response = await listAgentSessions();
-      setSessions(response.data?.items ?? []);
+      const items = response.data?.items ?? [];
+      setSessions(items);
+      for (const session of items) {
+        if (session.is_running) initRuntime(session.session_id);
+      }
     } catch (error) {
       if (!silent) showApiError(error);
     } finally {
       if (!silent) setSessionsLoading(false);
     }
-  }, []);
+  }, [initRuntime]);
 
   const refreshSessionsRef = useRef(refreshSessions);
   refreshSessionsRef.current = refreshSessions;
@@ -184,7 +195,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     updateRuntime(sessionId, (r) => ({
       ...r,
       status: "closed",
-      state: r.state.streaming ? finishChatTurn(r.state) : r.state,
+      state: disconnectChatTurn(r.state),
     }));
   }, [clearIdleTimer, updateRuntime]);
 
@@ -194,6 +205,27 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => closeSocket(sessionId), IDLE_CLOSE_MS);
     idleTimersRef.current.set(sessionId, timer);
   }, [clearIdleTimer, closeSocket]);
+
+  const applyStreamEvent = useCallback((sessionId: string, parsed: AgentStreamEvent) => {
+    if (parsed.type === "done") {
+      updateRuntime(sessionId, (r) => ({
+        ...r,
+        state: finishChatTurn(r.state),
+      }));
+      pendingLiveEventsRef.current.delete(sessionId);
+      reloadHistoryRef.current(sessionId, true);
+      void refreshSessionsRef.current(true);
+      return;
+    }
+    // user_message echo signals the backend has materialized the session
+    if (parsed.type === "user_message") {
+      void refreshSessionsRef.current(true);
+    }
+    updateRuntime(sessionId, (r) => ({
+      ...r,
+      state: streamReduce(r.state, parsed),
+    }));
+  }, [updateRuntime]);
 
   const connectFor = useCallback((sessionId: string): WebSocket => {
     const existing = socketsRef.current.get(sessionId);
@@ -213,6 +245,9 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       if (socketsRef.current.get(sessionId) !== socket) return;
       updateRuntime(sessionId, (r) => ({ ...r, status: "open" }));
       markActivity(sessionId);
+      if (!ensuredRef.current.has(sessionId) && !loadingHistoryRef.current.has(sessionId)) {
+        reloadHistoryRef.current(sessionId);
+      }
     });
 
     const onTerminate = () => {
@@ -222,7 +257,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       updateRuntime(sessionId, (r) => ({
         ...r,
         status: "closed",
-        state: r.state.streaming ? finishChatTurn(r.state) : r.state,
+        state: disconnectChatTurn(r.state),
       }));
     };
     socket.addEventListener("close", onTerminate);
@@ -233,22 +268,17 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       markActivity(sessionId);
       try {
         const parsed = JSON.parse(event.data) as AgentStreamEvent;
-        if (parsed.type === "done") {
-          updateRuntime(sessionId, (r) => ({ ...r, state: finishChatTurn(r.state) }));
-          void refreshSessionsRef.current(true);
+        if (!historyReadyRef.current.has(sessionId) || loadingHistoryRef.current.has(sessionId)) {
+          bufferLiveEvent(sessionId, parsed, pendingLiveEventsRef.current);
           return;
         }
-        // user_message echo signals the backend has materialized the session
-        if (parsed.type === "user_message") {
-          void refreshSessionsRef.current(true);
-        }
-        updateRuntime(sessionId, (r) => ({ ...r, state: chatReduce(r.state, parsed) }));
+        applyStreamEvent(sessionId, parsed);
       } catch {
         // backend only emits json frames; swallow malformed payloads defensively
       }
     });
     return socket;
-  }, [clearIdleTimer, initRuntime, markActivity, updateRuntime]);
+  }, [applyStreamEvent, clearIdleTimer, initRuntime, markActivity, updateRuntime]);
 
   const sendCommand = useCallback(async (sessionId: string, command: AgentStreamCommand) => {
     const socket = connectFor(sessionId);
@@ -260,28 +290,63 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   }, [connectFor, markActivity]);
 
   // ---------------------------------------------------------- history load
-  const ensureHistoryLoaded = useCallback((sessionId: string) => {
-    if (ensuredRef.current.has(sessionId)) return;
-    ensuredRef.current.add(sessionId);
-
+  const loadHistory = useCallback((sessionId: string, markEnsured: boolean, forceReplace = false) => {
+    if (!forceReplace && loadingHistoryRef.current.has(sessionId)) {
+      return;
+    }
     initRuntime(sessionId);
+    loadingHistoryRef.current.add(sessionId);
+    if (forceReplace) {
+      historyReadyRef.current.delete(sessionId);
+      pendingLiveEventsRef.current.delete(sessionId);
+    }
     updateRuntime(sessionId, (r) => ({ ...r, historyLoading: true }));
 
     listAgentEvents(sessionId)
       .then((response) => {
         const events = response.data?.items ?? [];
+        const buffered = pendingLiveEventsRef.current.get(sessionId) ?? [];
+        const bufferedDone = buffered.some((event) => event.type === "done");
+        pendingLiveEventsRef.current.delete(sessionId);
+        if (markEnsured) ensuredRef.current.add(sessionId);
+        historyReadyRef.current.add(sessionId);
+        loadingHistoryRef.current.delete(sessionId);
         updateRuntime(sessionId, (r) => ({
           ...r,
-          state: chatReplay(events),
+          state: buffered.reduce(streamReduce, chatReplay(events)),
           historyLoading: false,
         }));
+        connectForRef.current(sessionId);
+        if (bufferedDone && !forceReplace) {
+          reloadHistoryRef.current(sessionId, true);
+          void refreshSessionsRef.current(true);
+        }
       })
       .catch((error) => {
         ensuredRef.current.delete(sessionId);
+        historyReadyRef.current.delete(sessionId);
+        loadingHistoryRef.current.delete(sessionId);
+        pendingLiveEventsRef.current.delete(sessionId);
         showApiError(error);
         updateRuntime(sessionId, (r) => ({ ...r, historyLoading: false }));
       });
   }, [initRuntime, updateRuntime]);
+
+  const ensureHistoryLoaded = useCallback((sessionId: string) => {
+    if (ensuredRef.current.has(sessionId)) return;
+    loadHistory(sessionId, true);
+  }, [loadHistory]);
+
+  const reloadHistory = useCallback((sessionId: string, forceReplace = false) => {
+    loadHistory(sessionId, false, forceReplace);
+  }, [loadHistory]);
+
+  const reloadHistoryRef = useRef(reloadHistory);
+  reloadHistoryRef.current = reloadHistory;
+  const connectForRef = useRef<(sessionId: string) => WebSocket>(() => {
+    throw new Error("agent stream connector is not ready");
+  });
+  connectForRef.current = connectFor;
 
   // ----------------------------------------------------------- selection
   const selectSession = useCallback((sessionId: string | null) => {
@@ -293,8 +358,30 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!activeSessionId) return;
+    if (ensuredRef.current.has(activeSessionId)) {
+      connectFor(activeSessionId);
+      return;
+    }
     ensureHistoryLoaded(activeSessionId);
-  }, [activeSessionId, ensureHistoryLoaded]);
+  }, [activeSessionId, connectFor, ensureHistoryLoaded]);
+
+  useEffect(() => {
+    const runningSessions = sessions.filter((session) => session.is_running);
+    if (!runningSessions.length) return;
+
+    if (!activeSessionId) {
+      const [first] = runningSessions;
+      if (first) setActiveSessionId(first.session_id);
+    }
+
+    for (const session of runningSessions) {
+      if (ensuredRef.current.has(session.session_id)) {
+        connectFor(session.session_id);
+        continue;
+      }
+      ensureHistoryLoaded(session.session_id);
+    }
+  }, [activeSessionId, connectFor, ensureHistoryLoaded, sessions]);
 
   // ------------------------------------------------------------- agentCode
   const sessionAgentCode = useCallback(
@@ -403,6 +490,9 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       socketsRef.current.clear();
       idleTimersRef.current.clear();
       ensuredRef.current.clear();
+      historyReadyRef.current.clear();
+      loadingHistoryRef.current.clear();
+      pendingLiveEventsRef.current.clear();
     };
   }, []);
 
@@ -426,6 +516,22 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   ]);
 
   return <AgentSessionContext.Provider value={value}>{children}</AgentSessionContext.Provider>;
+}
+
+function bufferLiveEvent(
+  sessionId: string,
+  event: AgentStreamEvent,
+  target: Map<string, AgentStreamEvent[]>,
+) {
+  const events = target.get(sessionId);
+  if (events) {
+    events.push(event);
+    if (events.length > MAX_BUFFERED_LIVE_EVENTS) {
+      events.splice(0, events.length - MAX_BUFFERED_LIVE_EVENTS);
+    }
+    return;
+  }
+  target.set(sessionId, [event]);
 }
 
 function waitOpen(socket: WebSocket): Promise<void> {

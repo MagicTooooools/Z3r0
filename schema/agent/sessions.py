@@ -19,6 +19,13 @@ class AgentSessionSummarySchema(BaseModel):
     title: str = ""
     agent_code: str = ""
     owner_id: int = 0
+    is_running: bool = False
+    runtime_agent_code: str = ""
+    runtime_sandbox_container_id: int | None = None
+    runtime_sandbox_container_generation: int = 0
+    run_started_at: datetime | None = None
+    run_finished_at: datetime | None = None
+    run_error: str = ""
     message_count: int = 0
     created_at: datetime
     updated_at: datetime

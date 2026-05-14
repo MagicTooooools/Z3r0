@@ -1,8 +1,8 @@
 import asyncio
+import re
 import secrets
 import socket as py_socket
 from datetime import datetime
-from uuid import uuid4
 
 import docker
 from sqlmodel import select
@@ -47,8 +47,10 @@ _RANDOM_HOST_PORT_MAX = 65535
 _RANDOM_HOST_PORT_ATTEMPTS = 128
 
 
-def _generate_container_name(image_id: int) -> str:
-    return f"sandbox-{image_id}-{uuid4().hex[:12]}"
+def _container_name_prefix(image_name: str) -> str:
+    short_name = image_name.rsplit("/", 1)[-1].split("@", 1)[0].split(":", 1)[0]
+    normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "-", short_name).strip("-.")
+    return normalized or "sandbox"
 
 def _serialize_port_mappings(port_mappings: list[SandboxContainerPortMapping]) -> list[dict]:
     return [mapping.model_dump() for mapping in port_mappings]
@@ -132,13 +134,13 @@ async def create_sandbox_container(
             )
 
         image_ref = docker_image_ref(sandbox_image)
+        container_name_prefix = _container_name_prefix(sandbox_image.image_name)
 
-    container_name = _generate_container_name(image_id)
     try:
-        container_hash = await asyncio.to_thread(
+        container_hash, container_name = await asyncio.to_thread(
             create_container_sync,
             image_ref,
-            container_name,
+            container_name_prefix,
             container_command,
             port_mappings,
         )

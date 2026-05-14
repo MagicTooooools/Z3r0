@@ -176,6 +176,11 @@
   scroll-behavior: smooth;
   display: flex;
   flex-direction: column;
+  scrollbar-width: none;
+}
+
+.playground-canvas::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-scroll-tail-floating,
@@ -1261,6 +1266,11 @@
   padding: 16px 16px 28px;
   overflow-y: auto;
   scroll-padding-bottom: 28px;
+  scrollbar-width: none;
+}
+
+.subagent-side-body::-webkit-scrollbar {
+  display: none;
 }
 
 .subagent-scroll-tail-floating {

@@ -1,24 +1,18 @@
 import asyncio
 from datetime import datetime
-import shlex
 from http import HTTPStatus
-from collections.abc import Callable
 
 from fastapi.websockets import WebSocketState
 from fastapi import WebSocket, WebSocketDisconnect, status as ws_status
 from pydantic import ValidationError
 
 from core.delegation.subagents import subscribe_session_events, unsubscribe_session_events
-from core.runtime.context import AgentRuntimeContext, AgentUserContext, main_agent_instance_id
 from core.runtime.session import get_agent_pool
-from core.tools.knowledge import current_knowledge_generation
-from core.tools.sandbox import SANDBOX_SKILLS_DIR
 from logger import get_logger
 from middleware.auth import AuthUser, decode_access_token
 from schema.agent.events import (
     AgentEventSchema,
     AgentStreamActionSchema,
-    DoneEvent,
     ErrorEvent,
     agent_stream_command_adapter,
 )
@@ -28,15 +22,11 @@ from schema.agent.sessions import (
     ListAgentSessionsResponse,
 )
 from schema.common.responses import CommonResponse
-from service.agent import notifications as agent_notifications
+from service.agent import runtime as agent_runtime
 from service.agent import sessions as agent_sessions
-from service.sandbox.commands import execute_sandbox_container_command
-from service.sandbox.status import resolve_sandbox_container_tool_binding
 
 
 logger = get_logger(__name__)
-
-_MAX_SANDBOX_SKILLS = 32
 
 
 async def create_agent_session_handler(user: AuthUser) -> CommonResponse:
@@ -85,46 +75,12 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
         return
 
     await websocket.accept()
-    runner: asyncio.Task | None = None
-    notification_runner: asyncio.Task | None = None
     send_lock = asyncio.Lock()
+    runtime, runtime_events = await get_agent_pool().subscribe(session_id)
     subscriber = await subscribe_session_events(session_id)
-    notification_wakeups = await agent_notifications.subscribe_session_notification_wakeups(session_id)
 
-    def _set_notification_runner(task: asyncio.Task | None) -> None:
-        nonlocal notification_runner
-        notification_runner = task
-
-    forwarder = asyncio.create_task(_forward_subagent_events(
-        websocket,
-        session_id,
-        subscriber,
-        user,
-        send_lock,
-        lambda: runner,
-        lambda: notification_runner,
-        lambda task: _set_notification_runner(task),
-    ))
-    notification_wakeup_forwarder = asyncio.create_task(_forward_notification_wakeups(
-        websocket,
-        session_id,
-        notification_wakeups,
-        user,
-        send_lock,
-        lambda: runner,
-        lambda: notification_runner,
-        lambda task: _set_notification_runner(task),
-    ))
-
-    _schedule_notification_drain(
-        websocket,
-        session_id,
-        user,
-        send_lock,
-        lambda: runner,
-        lambda: notification_runner,
-        _set_notification_runner,
-    )
+    runtime_forwarder = asyncio.create_task(_forward_events(websocket, runtime_events, send_lock))
+    subagent_forwarder = asyncio.create_task(_forward_events(websocket, subscriber, send_lock))
 
     try:
         while True:
@@ -136,33 +92,17 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
                 continue
 
             if command.action == AgentStreamActionSchema.INTERRUPT:
-                had_runner = runner is not None and not runner.done()
-                if had_runner:
-                    await _interrupt_turn(websocket, session_id, runner, user, send_lock)
-                    runner = None
-                elif notification_runner is not None and not notification_runner.done():
-                    await _cancel_task(notification_runner)
-                    notification_runner = None
-                    await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
-                else:
-                    await _interrupt_turn(websocket, session_id, runner, user, send_lock)
+                await _interrupt_turn(websocket, session_id, user, send_lock)
                 continue
 
             if command.action == AgentStreamActionSchema.CANCEL_ALL:
-                await _cancel_all_tasks(websocket, session_id, runner, notification_runner, user, send_lock)
-                runner = None
-                notification_runner = None
+                await _cancel_all_tasks(websocket, session_id, user, send_lock)
                 continue
 
             text = command.text.strip()
             if not text:
                 continue
-            if runner is not None and not runner.done():
-                await get_agent_pool().try_interrupt(session_id)
-            await _cancel_task(runner)
-            await _cancel_task(notification_runner)
-            notification_runner = None
-            runner = asyncio.create_task(_run_turn(
+            await _start_turn(
                 websocket=websocket,
                 session_id=session_id,
                 text=text,
@@ -170,32 +110,20 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
                 sandbox_container_id=command.sandbox_container_id,
                 requested_agent_code=command.agent_code,
                 send_lock=send_lock,
-                on_finished=lambda: _schedule_notification_drain(
-                    websocket,
-                    session_id,
-                    user,
-                    send_lock,
-                    lambda: runner,
-                    lambda: notification_runner,
-                    _set_notification_runner,
-                ),
-            ))
+            )
     except WebSocketDisconnect:
-        await _cancel_task(runner)
-        await _cancel_task(notification_runner)
+        pass
     except Exception:
         logger.exception("agent stream failed for session=%s", session_id)
-        await _cancel_task(runner)
-        await _cancel_task(notification_runner)
         await _close_silently(websocket)
     finally:
+        runtime.unsubscribe(runtime_events)
         await unsubscribe_session_events(session_id, subscriber)
-        await agent_notifications.unsubscribe_session_notification_wakeups(session_id, notification_wakeups)
-        await _cancel_task(forwarder)
-        await _cancel_task(notification_wakeup_forwarder)
+        await _cancel_task(runtime_forwarder)
+        await _cancel_task(subagent_forwarder)
 
 
-async def _run_turn(
+async def _start_turn(
     websocket: WebSocket,
     session_id: str,
     text: str,
@@ -203,74 +131,51 @@ async def _run_turn(
     sandbox_container_id: int | None,
     requested_agent_code: str | None,
     send_lock: asyncio.Lock,
-    on_finished,
 ) -> None:
-    # always emits a DoneEvent so the client exits streaming
-    saw_done = False
     try:
-        agent_code = await agent_sessions.ensure_chat_session_meta(
-            session_id,
-            text,
-            requested_agent_code,
-            user_id=user.id,
-            user_role=user.role,
+        await agent_runtime.submit_turn(
+            session_id=session_id,
+            text=text,
+            user=user,
+            sandbox_container_id=sandbox_container_id,
+            requested_agent_code=requested_agent_code,
         )
-        context = await _build_runtime_context(session_id, user, sandbox_container_id, agent_code)
-        runtime = get_agent_pool().get_or_create(session_id)
-        async for event in runtime.stream_turn(text, agent_code, context):
-            if isinstance(event, DoneEvent):
-                saw_done = True
-            if not await _send_event(websocket, event, send_lock):
-                return
-    except asyncio.CancelledError:
-        raise
     except PermissionError:
-        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message="agent session not found", code="not_found"), send_lock)
+        await _send_event(websocket, agent_runtime.not_found_error(), send_lock)
+        await _send_event(websocket, agent_runtime.done_event(), send_lock)
     except Exception as exc:
         logger.exception("agent turn failed for session=%s", session_id)
         await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message=str(exc) or "agent turn failed"), send_lock)
-    finally:
-        if not saw_done:
-            await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
-        asyncio.get_running_loop().call_soon(on_finished)
+        await _send_event(websocket, agent_runtime.done_event(), send_lock)
 
 
 async def _interrupt_turn(
     websocket: WebSocket,
     session_id: str,
-    runner: asyncio.Task | None,
     user: AuthUser,
     send_lock: asyncio.Lock,
 ) -> None:
-    if not await agent_sessions.can_access_session(session_id, user.id, user.role):
-        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message="agent session not found", code="not_found"), send_lock)
-        await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+    try:
+        interrupted = await agent_runtime.interrupt_turn(session_id=session_id, user=user)
+    except PermissionError:
+        await _send_event(websocket, agent_runtime.not_found_error(), send_lock)
+        await _send_event(websocket, agent_runtime.done_event(), send_lock)
         return
-
-    had_local_runner = runner is not None and not runner.done()
-    interrupted = await get_agent_pool().try_interrupt(session_id)
-    await _cancel_task(runner)
-    if interrupted and not had_local_runner:
-        await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+    if not interrupted:
+        await _send_event(websocket, agent_runtime.done_event(), send_lock)
 
 
 async def _cancel_all_tasks(
     websocket: WebSocket,
     session_id: str,
-    runner: asyncio.Task | None,
-    notification_runner: asyncio.Task | None,
     user: AuthUser,
     send_lock: asyncio.Lock,
 ) -> None:
-    if not await agent_sessions.can_access_session(session_id, user.id, user.role):
-        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message="agent session not found", code="not_found"), send_lock)
-        await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
-        return
-
-    await _cancel_task(runner)
-    await _cancel_task(notification_runner)
-    await get_agent_pool().cancel_all(session_id)
-    await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
+    try:
+        await agent_runtime.cancel_all_tasks(session_id=session_id, user=user)
+    except PermissionError:
+        await _send_event(websocket, agent_runtime.not_found_error(), send_lock)
+    await _send_event(websocket, agent_runtime.done_event(), send_lock)
 
 
 async def _send_event(
@@ -295,137 +200,20 @@ async def _send_event(
         return False
 
 
-async def _forward_subagent_events(
+async def _forward_events(
     websocket: WebSocket,
-    session_id: str,
     queue: asyncio.Queue[AgentEventSchema],
-    user: AuthUser,
     send_lock: asyncio.Lock,
-    get_runner: Callable[[], asyncio.Task | None],
-    get_notification_runner: Callable[[], asyncio.Task | None],
-    set_notification_runner: Callable[[asyncio.Task | None], None],
 ) -> None:
     try:
         while True:
             event = await queue.get()
             if not await _send_event(websocket, event, send_lock):
                 return
-            if _is_terminal_subagent_event(event):
-                _schedule_notification_drain(
-                    websocket,
-                    session_id,
-                    user,
-                    send_lock,
-                    get_runner,
-                    get_notification_runner,
-                    set_notification_runner,
-                )
     except asyncio.CancelledError:
         raise
     except Exception:
-        logger.debug("subagent event forwarding stopped session=%s", session_id, exc_info=True)
-
-
-async def _forward_notification_wakeups(
-    websocket: WebSocket,
-    session_id: str,
-    queue: asyncio.Queue[str],
-    user: AuthUser,
-    send_lock: asyncio.Lock,
-    get_runner: Callable[[], asyncio.Task | None],
-    get_notification_runner: Callable[[], asyncio.Task | None],
-    set_notification_runner: Callable[[asyncio.Task | None], None],
-) -> None:
-    try:
-        while True:
-            await queue.get()
-            _schedule_notification_drain(
-                websocket,
-                session_id,
-                user,
-                send_lock,
-                get_runner,
-                get_notification_runner,
-                set_notification_runner,
-            )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.debug("notification wakeup forwarding stopped session=%s", session_id, exc_info=True)
-
-
-def _schedule_notification_drain(
-    websocket: WebSocket,
-    session_id: str,
-    user: AuthUser,
-    send_lock: asyncio.Lock,
-    get_runner: Callable[[], asyncio.Task | None],
-    get_notification_runner: Callable[[], asyncio.Task | None],
-    set_notification_runner: Callable[[asyncio.Task | None], None],
-) -> None:
-    local_runner = get_runner()
-    if local_runner is not None and not local_runner.done():
-        return
-    current = get_notification_runner()
-    if current is not None and not current.done():
-        return
-    task = asyncio.create_task(
-        _drain_notifications(
-            websocket=websocket,
-            session_id=session_id,
-            user=user,
-            send_lock=send_lock,
-            get_runner=get_runner,
-            set_notification_runner=set_notification_runner,
-        ),
-        name=f"agent-notifications-{session_id}",
-    )
-    set_notification_runner(task)
-
-
-async def _drain_notifications(
-    *,
-    websocket: WebSocket,
-    session_id: str,
-    user: AuthUser,
-    send_lock: asyncio.Lock,
-    get_runner: Callable[[], asyncio.Task | None],
-    set_notification_runner: Callable[[asyncio.Task | None], None],
-) -> None:
-    try:
-        if not await agent_sessions.can_access_session(session_id, user.id, user.role):
-            return
-        runtime = get_agent_pool().get_or_create(session_id)
-        while True:
-            local_runner = get_runner()
-            if local_runner is not None and not local_runner.done():
-                return
-            if not await runtime.has_pending_notification():
-                return
-            context = _build_base_runtime_context(session_id, user)
-            saw_done = False
-            async for event in runtime.stream_notification(context):
-                if isinstance(event, DoneEvent):
-                    saw_done = True
-                if not await _send_event(websocket, event, send_lock):
-                    return
-            if not saw_done:
-                await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("agent notification drain failed for session=%s", session_id)
-        await _send_event(websocket, ErrorEvent(created_at=datetime.now(), message="agent notification handling failed"), send_lock)
-        await _send_event(websocket, DoneEvent(created_at=datetime.now()), send_lock)
-    finally:
-        set_notification_runner(None)
-
-
-def _is_terminal_subagent_event(event: AgentEventSchema) -> bool:
-    return (
-        getattr(event, "type", "") == "subagent_task"
-        and getattr(event, "status", "") in {"completed", "failed", "canceled"}
-    )
+        logger.debug("agent event forwarding stopped", exc_info=True)
 
 
 async def _cancel_task(task: asyncio.Task | None) -> None:
@@ -443,123 +231,6 @@ async def _close_silently(websocket: WebSocket) -> None:
         await websocket.close(code=ws_status.WS_1011_INTERNAL_ERROR)
     except Exception:
         pass
-
-
-async def _build_runtime_context(
-    session_id: str,
-    user: AuthUser,
-    sandbox_container_id: int | None,
-    agent_code: str = "",
-) -> AgentRuntimeContext:
-    selected_container_id = None
-    selected_container_generation = 0
-    sandbox_skill_metadata: tuple[str, ...] = ()
-    if sandbox_container_id is not None:
-        binding = await resolve_sandbox_container_tool_binding(
-            id=sandbox_container_id,
-            user_id=user.id,
-            user_role=user.role,
-        )
-        if binding is not None:
-            selected_container_id = binding.id
-            selected_container_generation = binding.generation
-            sandbox_skill_metadata = await _load_sandbox_skill_metadata(binding.id)
-
-    return AgentRuntimeContext(
-        session_id=session_id,
-        user=_agent_user_context(user),
-        agent_code=agent_code,
-        agent_instance_id=main_agent_instance_id(session_id, user.id, agent_code) if agent_code else "",
-        knowledge_generation=current_knowledge_generation(),
-        sandbox_container_id=selected_container_id,
-        sandbox_container_generation=selected_container_generation,
-        sandbox_skill_metadata=sandbox_skill_metadata,
-    )
-
-
-def _build_base_runtime_context(session_id: str, user: AuthUser, agent_code: str = "") -> AgentRuntimeContext:
-    return AgentRuntimeContext(
-        session_id=session_id,
-        user=_agent_user_context(user),
-        agent_code=agent_code,
-        agent_instance_id=main_agent_instance_id(session_id, user.id, agent_code) if agent_code else "",
-        knowledge_generation=current_knowledge_generation(),
-    )
-
-
-def _agent_user_context(user: AuthUser) -> AgentUserContext:
-    return AgentUserContext(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        role=user.role,
-    )
-
-
-async def _load_sandbox_skill_metadata(container_id: int) -> tuple[str, ...]:
-    try:
-        result = await execute_sandbox_container_command(
-            id=container_id,
-            command=_build_skill_metadata_command(),
-            timeout_seconds=30,
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.debug("failed to load sandbox skill metadata: %s", container_id, exc_info=True)
-        return ()
-    if result.exit_code != 0 or not result.output.strip():
-        return ()
-    return tuple(_parse_skill_metadata_output(result.output))
-
-
-def _build_skill_metadata_command() -> str:
-    skills_dir = shlex.quote(SANDBOX_SKILLS_DIR)
-    return f"""
-if [ -d {skills_dir} ]; then
-  find {skills_dir} -mindepth 2 -maxdepth 2 -name SKILL.md -type f | sort | head -n {_MAX_SANDBOX_SKILLS} | while IFS= read -r skill_file; do
-    skill_name=$(basename "$(dirname "$skill_file")")
-    printf '===SKILL:%s===\n' "$skill_name"
-    awk '
-      NR == 1 && $0 == "---" {{ print; in_fm = 1; next }}
-      in_fm {{ print; if ($0 == "---") exit }}
-    ' "$skill_file"
-  done
-fi
-""".strip()
-
-
-def _parse_skill_metadata_output(output: str) -> list[str]:
-    blocks: list[str] = []
-    current_name = ""
-    current_lines: list[str] = []
-    for raw_line in output.splitlines():
-        if raw_line.startswith("===SKILL:") and raw_line.endswith("==="):
-            _append_skill_metadata(blocks, current_name, current_lines)
-            current_name = raw_line.removeprefix("===SKILL:").removesuffix("===").strip()
-            current_lines = []
-            continue
-        current_lines.append(raw_line)
-    _append_skill_metadata(blocks, current_name, current_lines)
-    return blocks
-
-
-def _append_skill_metadata(blocks: list[str], name: str, lines: list[str]) -> None:
-    if not name or not lines:
-        return
-    front_matter = _front_matter_from_lines(lines)
-    if front_matter is None:
-        return
-    blocks.append(f"## {name}\n\n```yaml\n{front_matter}\n```")
-
-
-def _front_matter_from_lines(lines: list[str]) -> str | None:
-    if not lines or lines[0] != "---":
-        return None
-    for index, line in enumerate(lines[1:], start=1):
-        if line == "---":
-            return "\n".join(lines[:index + 1]).strip()
-    return None
 
 
 def _decode_ws_token(token: str) -> AuthUser | None:

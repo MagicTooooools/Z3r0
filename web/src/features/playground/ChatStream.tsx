@@ -1,43 +1,32 @@
 import { AtSign, Sparkles } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, type RefObject } from "react";
 import type { AgentInfo } from "../../shared/api/types";
 import { formatDateTime } from "../../shared/lib/date";
 import type { AgentTranscript, ChatNode } from "./playgroundReducer";
 import { emptyAgentTranscript, isTranscriptEmpty, TranscriptContent } from "./Transcript";
-import { useAutoFollowScroll } from "./useAutoFollowScroll";
 import type { SubagentSelection } from "./subagentView";
 
 type ChatStreamProps = {
   nodes: ChatNode[];
   streaming: boolean;
   agents: AgentInfo[];
-  followLatest: boolean;
   selectedSubagent: SubagentSelection | null;
+  tailRef: RefObject<HTMLDivElement | null>;
   onOpenSubagent: (selection: SubagentSelection) => void;
-  onFollowLatestChange: (following: boolean) => void;
-  onScrollToLatestReady: (handler: (() => void) | null) => void;
 };
 
 export function ChatStream({
   nodes,
   streaming,
   agents,
-  followLatest,
   selectedSubagent,
+  tailRef,
   onOpenSubagent,
-  onFollowLatestChange,
-  onScrollToLatestReady,
 }: ChatStreamProps) {
   const agentNameByCode = useMemo(
     () => new Map(agents.map((a) => [a.code, a.name])),
     [agents],
   );
-  const { tailRef, scrollHandlers } = useAutoFollowScroll({
-    followLatest,
-    onFollowLatestChange,
-    onScrollToLatestReady,
-    watch: [nodes, streaming],
-  });
 
   if (nodes.length === 0) {
     return (
@@ -58,7 +47,7 @@ export function ChatStream({
   const lastIndex = nodes.length - 1;
   const lastNode = nodes[lastIndex];
   return (
-    <div className="chat-stream" {...scrollHandlers}>
+    <div className="chat-stream">
       {nodes.map((node, index) => {
         if (node.kind === "user") {
           const targetName = agentNameByCode.get(node.targetAgentCode) ?? node.targetAgentCode;

@@ -1,6 +1,63 @@
 {
   "components": {
     "schemas": {
+      "AgentEventSchema": {
+        "discriminator": {
+          "mapping": {
+            "done": "#/components/schemas/DoneEvent",
+            "error": "#/components/schemas/ErrorEvent",
+            "run_state": "#/components/schemas/RunStateEvent",
+            "subagent_task": "#/components/schemas/SubagentTaskEvent",
+            "text_complete": "#/components/schemas/TextCompleteEvent",
+            "text_delta": "#/components/schemas/TextDeltaEvent",
+            "thinking_complete": "#/components/schemas/ThinkingCompleteEvent",
+            "thinking_delta": "#/components/schemas/ThinkingDeltaEvent",
+            "tool_call": "#/components/schemas/ToolCallEvent",
+            "tool_result": "#/components/schemas/ToolResultEvent",
+            "turn_boundary": "#/components/schemas/TurnBoundaryEvent",
+            "user_message": "#/components/schemas/UserMessageEvent"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UserMessageEvent"
+          },
+          {
+            "$ref": "#/components/schemas/TurnBoundaryEvent"
+          },
+          {
+            "$ref": "#/components/schemas/RunStateEvent"
+          },
+          {
+            "$ref": "#/components/schemas/TextDeltaEvent"
+          },
+          {
+            "$ref": "#/components/schemas/TextCompleteEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ThinkingDeltaEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ThinkingCompleteEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ToolCallEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ToolResultEvent"
+          },
+          {
+            "$ref": "#/components/schemas/SubagentTaskEvent"
+          },
+          {
+            "$ref": "#/components/schemas/DoneEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ErrorEvent"
+          }
+        ]
+      },
       "AgentInfoSchema": {
         "properties": {
           "code": {
@@ -36,6 +93,11 @@
             "title": "Created At",
             "type": "string"
           },
+          "is_running": {
+            "default": false,
+            "title": "Is Running",
+            "type": "boolean"
+          },
           "message_count": {
             "default": 0,
             "title": "Message Count",
@@ -45,6 +107,56 @@
             "default": 0,
             "title": "Owner Id",
             "type": "integer"
+          },
+          "run_error": {
+            "default": "",
+            "title": "Run Error",
+            "type": "string"
+          },
+          "run_finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Finished At"
+          },
+          "run_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Started At"
+          },
+          "runtime_agent_code": {
+            "default": "",
+            "title": "Runtime Agent Code",
+            "type": "string"
+          },
+          "runtime_sandbox_container_generation": {
+            "default": 0,
+            "title": "Runtime Sandbox Container Generation",
+            "type": "integer"
+          },
+          "runtime_sandbox_container_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Sandbox Container Id"
           },
           "session_id": {
             "title": "Session Id",
@@ -1502,6 +1614,31 @@
           "items"
         ],
         "title": "QueryWorkProjectsResponse",
+        "type": "object"
+      },
+      "RunStateEvent": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "run_state",
+            "default": "run_state",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "running"
+        ],
+        "title": "RunStateEvent",
         "type": "object"
       },
       "SandboxContainerDefaultPortMappingsResponse": {

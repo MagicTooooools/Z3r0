@@ -77,15 +77,14 @@ def inspect_image_exposed_ports_sync(image_ref: str) -> list[ExposedPort]:
 
 def create_container_sync(
     image_ref: str,
-    container_name: str,
+    container_name_prefix: str,
     container_command: str,
     port_mappings: list[SandboxContainerPortMapping],
-) -> str:
+) -> tuple[str, str]:
     client = docker.from_env()
     try:
         create_kwargs = {
             "image": image_ref,
-            "name": container_name,
             "ports": _to_docker_ports(port_mappings),
             "stdin_open": True,
             "tty": False,
@@ -97,7 +96,13 @@ def create_container_sync(
         container = client.containers.create(
             **create_kwargs,
         )
-        return container.id
+        container_name = f"{container_name_prefix}-{container.id[:12]}"
+        try:
+            container.rename(container_name)
+        except Exception:
+            container.remove(force=True)
+            raise
+        return container.id, container_name
     finally:
         client.close()
 

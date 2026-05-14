@@ -10,6 +10,7 @@ from schema.agent.subordinates import AgentSubordinateStatus
 class AgentEventTypeSchema(StrEnum):
     USER_MESSAGE = "user_message"
     TURN_BOUNDARY = "turn_boundary"
+    RUN_STATE = "run_state"
     THINKING_DELTA = "thinking_delta"
     THINKING_COMPLETE = "thinking_complete"
     TEXT_DELTA = "text_delta"
@@ -48,6 +49,12 @@ class UserMessageEvent(BaseModel):
 
 class TurnBoundaryEvent(_AgentScopedEvent):
     type: Literal[AgentEventTypeSchema.TURN_BOUNDARY] = AgentEventTypeSchema.TURN_BOUNDARY
+
+
+class RunStateEvent(BaseModel):
+    type: Literal[AgentEventTypeSchema.RUN_STATE] = AgentEventTypeSchema.RUN_STATE
+    created_at: datetime
+    running: bool
 
 
 class TextDeltaEvent(_AgentScopedEvent):
@@ -128,6 +135,7 @@ AgentContentEventSchema = Annotated[
 AgentEventSchema = Annotated[
     UserMessageEvent
     | TurnBoundaryEvent
+    | RunStateEvent
     | TextDeltaEvent
     | TextCompleteEvent
     | ThinkingDeltaEvent
@@ -170,6 +178,4 @@ AgentStreamCommandSchema = Annotated[
 ]
 
 
-agent_content_event_adapter: TypeAdapter[AgentContentEventSchema] = TypeAdapter(AgentContentEventSchema)
-agent_event_adapter: TypeAdapter[AgentEventSchema] = TypeAdapter(AgentEventSchema)
 agent_stream_command_adapter: TypeAdapter[AgentStreamCommandSchema] = TypeAdapter(AgentStreamCommandSchema)

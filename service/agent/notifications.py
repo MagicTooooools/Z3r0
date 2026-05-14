@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -22,39 +21,7 @@ from schema.agent.subordinates import AgentSubordinateTaskSnapshot
 
 
 logger = get_logger(__name__)
-_WAKEUP_QUEUE_SIZE = 256
-_wakeup_subscribers: dict[str, set[asyncio.Queue[str]]] = defaultdict(set)
-_wakeup_subscribers_lock = asyncio.Lock()
 _notification_claim_lock = asyncio.Lock()
-
-
-async def subscribe_session_notification_wakeups(session_id: str) -> asyncio.Queue[str]:
-    queue: asyncio.Queue[str] = asyncio.Queue(maxsize=_WAKEUP_QUEUE_SIZE)
-    async with _wakeup_subscribers_lock:
-        _wakeup_subscribers[session_id].add(queue)
-    return queue
-
-
-async def unsubscribe_session_notification_wakeups(session_id: str, queue: asyncio.Queue[str]) -> None:
-    async with _wakeup_subscribers_lock:
-        queues = _wakeup_subscribers.get(session_id)
-        if queues is None:
-            return
-        queues.discard(queue)
-        if not queues:
-            _wakeup_subscribers.pop(session_id, None)
-
-
-async def publish_notification_wakeup(session_id: str) -> None:
-    if not session_id:
-        return
-    async with _wakeup_subscribers_lock:
-        targets = list(_wakeup_subscribers.get(session_id, ()))
-    for queue in targets:
-        try:
-            queue.put_nowait(session_id)
-        except asyncio.QueueFull:
-            logger.debug("notification wakeup dropped for slow subscriber session=%s", session_id)
 
 
 async def enqueue_subagent_finished_notification(
@@ -113,7 +80,6 @@ async def enqueue_subagent_finished_notification(
         notification.run_id,
         notification.target_agent_code,
     )
-    await publish_notification_wakeup(notification.session_id)
     return snapshot_from_notification(notification)
 
 
@@ -210,6 +176,22 @@ async def has_pending_main_agent_notification(*, session_id: str) -> bool:
                 AgentNotification.session_id == session_id,
                 AgentNotification.status == AgentNotificationStatus.PENDING.value,
                 AgentNotification.target_agent_instance_id.like(f"{MAIN_AGENT_INSTANCE_PREFIX}%"),
+            )
+            .limit(1)
+        )).first()
+        return notification_id is not None
+
+
+async def has_active_session_notifications(*, session_id: str) -> bool:
+    async with get_async_session() as session:
+        notification_id = (await session.exec(
+            select(AgentNotification.id)
+            .where(
+                AgentNotification.session_id == session_id,
+                AgentNotification.status.in_([
+                    AgentNotificationStatus.PENDING.value,
+                    AgentNotificationStatus.PROCESSING.value,
+                ]),
             )
             .limit(1)
         )).first()

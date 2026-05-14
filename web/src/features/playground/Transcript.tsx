@@ -136,7 +136,11 @@ function ThinkingGroup({
   );
 
   useEffect(() => {
-    if (wasActive.current && !active) setOpen(false);
+    if (active) {
+      setOpen(true);
+    } else if (wasActive.current) {
+      setOpen(false);
+    }
     wasActive.current = active;
   }, [active]);
 

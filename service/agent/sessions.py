@@ -1,11 +1,12 @@
+from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import delete, func, text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from core.delegation.subagents import cancel_session_subagent_runs
 from core.agent.specs import DEFAULT_AGENT_CODE
+from core.delegation.subagents import cancel_session_subagent_runs
 from core.runtime.events import event_from_subagent_task, events_from_sdk_message
 from core.runtime.session import get_agent_pool, get_agent_registry
 from core.conversation.store import fetch_stored_items
@@ -18,6 +19,9 @@ from model.work_project.projects import WorkProject
 from schema.agent.events import AgentContentEventSchema
 from schema.agent.sessions import AgentSessionSummarySchema, SessionType
 from schema.system_user.users import SystemUserRole
+from service.agent import notifications as agent_notifications
+from service.agent import subordinates as agent_subordinates
+from service.sandbox import async_jobs as sandbox_async_jobs
 from utils.sdk_tables import BOOTSTRAP_SESSION_ID, agent_messages, agent_sessions
 
 
@@ -146,11 +150,106 @@ async def list_sessions(
             title=_resolve_title(session_type, meta, projects.get(row.session_id)),
             agent_code=meta.agent_code if meta else "",
             owner_id=meta.owner_id if meta else 0,
+            is_running=meta.is_running if meta else False,
+            runtime_agent_code=meta.runtime_agent_code if meta else "",
+            runtime_sandbox_container_id=meta.runtime_sandbox_container_id if meta else None,
+            runtime_sandbox_container_generation=meta.runtime_sandbox_container_generation if meta else 0,
+            run_started_at=meta.run_started_at if meta else None,
+            run_finished_at=meta.run_finished_at if meta else None,
+            run_error=meta.run_error if meta else "",
             message_count=row.message_count or 0,
             created_at=row.created_at,
             updated_at=row.updated_at,
         ))
     return summaries
+
+
+async def list_running_sessions() -> list[AgentSessionMeta]:
+    async with get_async_session() as session:
+        return list((await session.exec(
+            select(AgentSessionMeta).where(AgentSessionMeta.is_running == True)  # noqa: E712
+        )).all())
+
+
+async def mark_session_running(
+    session_id: str,
+    *,
+    agent_code: str,
+    sandbox_container_id: int | None,
+    sandbox_container_generation: int,
+) -> None:
+    async with get_async_session() as session:
+        meta = await session.get(AgentSessionMeta, session_id)
+        if meta is None:
+            return
+        meta.is_running = True
+        meta.runtime_agent_code = agent_code
+        meta.runtime_sandbox_container_id = sandbox_container_id
+        meta.runtime_sandbox_container_generation = sandbox_container_generation
+        meta.run_started_at = datetime.now()
+        meta.run_finished_at = None
+        meta.run_error = ""
+        session.add(meta)
+        await session.commit()
+
+
+async def mark_session_stopped(session_id: str, *, error: str = "") -> None:
+    if await has_active_session_runtime(session_id):
+        return
+    await finish_session_run(session_id, error=error)
+
+
+async def finish_session_run(session_id: str, *, error: str = "") -> None:
+    async with get_async_session() as session:
+        meta = await session.get(AgentSessionMeta, session_id)
+        if meta is None:
+            return
+        meta.is_running = False
+        meta.run_finished_at = datetime.now()
+        meta.run_error = _truncate_error(error)
+        session.add(meta)
+        await session.commit()
+
+
+async def mark_sessions_stopped(session_ids: list[str], *, error: str = "") -> None:
+    if not session_ids:
+        return
+    active_session_ids = {
+        session_id for session_id in session_ids
+        if await has_active_session_runtime(session_id)
+    }
+    async with get_async_session() as session:
+        metas = (await session.exec(
+            select(AgentSessionMeta).where(AgentSessionMeta.session_id.in_(session_ids))
+        )).all()
+        for meta in metas:
+            if meta.session_id in active_session_ids:
+                continue
+            meta.is_running = False
+            meta.run_finished_at = datetime.now()
+            meta.run_error = _truncate_error(error)
+            session.add(meta)
+        await session.commit()
+
+
+async def force_mark_session_stopped(session_id: str, *, error: str = "") -> None:
+    async with get_async_session() as session:
+        meta = await session.get(AgentSessionMeta, session_id)
+        if meta is None:
+            return
+        meta.is_running = False
+        meta.run_finished_at = datetime.now()
+        meta.run_error = _truncate_error(error)
+        session.add(meta)
+        await session.commit()
+
+
+async def has_active_session_runtime(session_id: str) -> bool:
+    return (
+        await agent_subordinates.has_running_subagent_tasks(session_id=session_id)
+        or await agent_notifications.has_active_session_notifications(session_id=session_id)
+        or await sandbox_async_jobs.has_running_async_jobs(session_id=session_id)
+    )
 
 
 async def replay_session_events(
@@ -314,6 +413,11 @@ def _can_access_meta(meta: AgentSessionMeta, user_id: int, user_role: SystemUser
 def _truncate(value: str) -> str:
     value = value.strip().replace("\n", " ")
     return value if len(value) <= _TITLE_MAX_LEN else value[: _TITLE_MAX_LEN - 1] + "..."
+
+
+def _truncate_error(value: str) -> str:
+    value = value.strip().replace("\n", " ")
+    return value if len(value) <= 500 else value[:499] + "..."
 
 
 def _resolve_title(

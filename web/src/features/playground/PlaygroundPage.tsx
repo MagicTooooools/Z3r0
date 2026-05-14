@@ -12,6 +12,7 @@ import { ChatStream } from "./ChatStream";
 import { Composer } from "./Composer";
 import { SandboxSelector } from "./SandboxSelector";
 import { SubagentSidePanel } from "./SubagentSidePanel";
+import { useAutoFollowScroll } from "./useAutoFollowScroll";
 import { useSubagentPanel } from "./useSubagentPanel";
 
 type PlaygroundLocationState = { sessionId?: string };
@@ -31,8 +32,6 @@ const STATUS_LABEL: Record<string, string> = {
   idle: "Idle",
 };
 
-const SANDBOX_REFRESH_MS = 5000;
-
 export function PlaygroundPage() {
   const setHeaderActions = useAdminHeaderActions();
   const {
@@ -47,7 +46,17 @@ export function PlaygroundPage() {
   const [sandboxLoading, setSandboxLoading] = useState(false);
   const [sandboxContainerId, setSandboxContainerId] = useState<number | null>(null);
   const [followLatest, setFollowLatest] = useState(true);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   const scrollToLatestRef = useRef<(() => void) | null>(null);
+  const { tailRef, scrollHandlers } = useAutoFollowScroll({
+    containerRef: canvasRef,
+    followLatest,
+    onFollowLatestChange: setFollowLatest,
+    onScrollToLatestReady: (handler) => {
+      scrollToLatestRef.current = handler;
+    },
+    watch: [chatState.nodes, chatState.streaming],
+  });
   const { openFileManager, openNoVNC, openShell } = useContainerShell();
   const { selectedSubagent, setSelectedSubagent, subagentTabs, closeSubagentPanel } = useSubagentPanel(chatState, activeSessionId);
   const hasRunningSubagents = subagentTabs.some((tab) => tab.status === "running");
@@ -97,8 +106,6 @@ export function PlaygroundPage() {
 
   useEffect(() => {
     void loadSandboxes();
-    const timer = window.setInterval(() => void loadSandboxes(), SANDBOX_REFRESH_MS);
-    return () => window.clearInterval(timer);
   }, [loadSandboxes]);
 
   const headerNode = useMemo(() => (
@@ -162,19 +169,15 @@ export function PlaygroundPage() {
         <div className="playground-conversation-frame">
           <div className="playground-main-column">
             <div className="playground-canvas-shell">
-              <div className="playground-canvas">
+              <div ref={canvasRef} className="playground-canvas" {...scrollHandlers}>
                 <Spin spinning={historyLoading} wrapperClassName="playground-spin">
                   <ChatStream
                     nodes={chatState.nodes}
                     streaming={chatState.streaming}
                     agents={agents}
-                    followLatest={followLatest}
                     selectedSubagent={selectedSubagent}
+                    tailRef={tailRef}
                     onOpenSubagent={setSelectedSubagent}
-                    onFollowLatestChange={setFollowLatest}
-                    onScrollToLatestReady={(handler) => {
-                      scrollToLatestRef.current = handler;
-                    }}
                   />
                 </Spin>
               </div>

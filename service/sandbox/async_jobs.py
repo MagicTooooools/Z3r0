@@ -71,6 +71,19 @@ async def get_async_job(run_id: str, *, session_id: str) -> SandboxAsyncJobSnaps
         return snapshot_from_job(job)
 
 
+async def has_running_async_jobs(*, session_id: str) -> bool:
+    async with get_async_session() as session:
+        run_id = (await session.exec(
+            select(SandboxAsyncJob.run_id)
+            .where(
+                SandboxAsyncJob.session_id == session_id,
+                SandboxAsyncJob.status == SandboxAsyncJobStatus.RUNNING.value,
+            )
+            .limit(1)
+        )).first()
+        return run_id is not None
+
+
 async def wait_async_job_terminal(run_id: str, *, session_id: str) -> SandboxAsyncJobSnapshot | None:
     snapshot = await get_async_job(run_id, session_id=session_id)
     if snapshot is None or snapshot.status in TERMINAL_ASYNC_JOB_STATUSES:

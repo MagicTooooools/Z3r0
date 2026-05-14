@@ -15,6 +15,7 @@ from core.agent.registry import AgentRegistry, AgentToolSnapshot, SessionAgentGr
 from core.runtime.context import AgentRuntimeContext, main_agent_instance_id
 from core.runtime.events import SdkStreamEventNormalizer
 from core.runtime.input_items import build_user_message_item
+from core.runtime.live_projection import LiveEventProjection
 from core.runtime.partial_context import DeltaBuffer, flush_partial_context, track_delta
 from core.conversation.store import Z3r0Session
 from core.delegation.subagents import cancel_sandbox_subagent_runs, cancel_session_subagent_runs
@@ -26,6 +27,7 @@ from schema.agent.events import (
     AgentEventSchema,
     DoneEvent,
     ErrorEvent,
+    RunStateEvent,
     UserMessageEvent,
 )
 from schema.agent.notifications import AgentNotificationSnapshot
@@ -34,13 +36,18 @@ from service.agent import notifications as agent_notifications
 
 logger = get_logger(__name__)
 
+_SUBSCRIBER_QUEUE_SIZE = 512
+
 
 class AgentSession:
     def __init__(self, session_id: str, registry: AgentRegistry) -> None:
         self.session_id = session_id
         self._registry = registry
+        self._start_lock = asyncio.Lock()
         self._turn_lock = asyncio.Lock()
         self._current_task: asyncio.Task | None = None
+        self._subscribers: set[asyncio.Queue[AgentEventSchema]] = set()
+        self._live_projection = LiveEventProjection()
         self._main_agent_code: str = ""
         self._tool_snapshot: AgentToolSnapshot | None = None
         self._agent_graph: SessionAgentGraph | None = None
@@ -49,63 +56,98 @@ class AgentSession:
         task = self._current_task
         return task is not None and not task.done()
 
-    async def stream_turn(
-        self, text: str, agent_code: str, context: AgentRuntimeContext,
-    ) -> AsyncIterator[AgentEventSchema]:
-        async with self._turn_lock:
-            task = asyncio.current_task()
-            self._current_task = task
-            try:
-                async for event in self._run_turn(text, agent_code, context):
-                    yield event
-            finally:
-                if self._current_task is task:
-                    self._current_task = None
+    async def subscribe(self) -> asyncio.Queue[AgentEventSchema]:
+        queue: asyncio.Queue[AgentEventSchema] = asyncio.Queue(maxsize=_SUBSCRIBER_QUEUE_SIZE)
+        if self.is_running():
+            for event in self._live_projection.snapshot():
+                _put_nowait_drop_oldest(queue, event)
+        self._subscribers.add(queue)
+        return queue
 
-    async def stream_notification(
-        self, context: AgentRuntimeContext,
+    def unsubscribe(self, queue: asyncio.Queue[AgentEventSchema]) -> None:
+        self._subscribers.discard(queue)
+
+    async def start_turn(self, text: str, agent_code: str, context: AgentRuntimeContext) -> None:
+        async with self._start_lock:
+            if self.is_running():
+                await self.interrupt()
+            await _mark_session_running(
+                self.session_id,
+                agent_code=agent_code,
+                sandbox_container_id=context.sandbox_container_id,
+                sandbox_container_generation=context.sandbox_container_generation,
+            )
+            self._begin_live_projection()
+            task = asyncio.create_task(
+                self._run_background_turn(text, agent_code, context),
+                name=f"agent-turn-{self.session_id}",
+            )
+            self._current_task = task
+
+    async def start_notification_drain(
+        self,
+        context: AgentRuntimeContext,
+        *,
+        target_agent_instance_id: str | None = None,
+    ) -> bool:
+        async with self._start_lock:
+            if self.is_running():
+                return False
+            if not await self.has_pending_notification(target_agent_instance_id=target_agent_instance_id):
+                return False
+            await _mark_session_running(
+                self.session_id,
+                agent_code=context.agent_code,
+                sandbox_container_id=context.sandbox_container_id,
+                sandbox_container_generation=context.sandbox_container_generation,
+            )
+            self._begin_live_projection()
+            task = asyncio.create_task(
+                self._run_background_notifications(context, target_agent_instance_id=target_agent_instance_id),
+                name=f"agent-notifications-{self.session_id}",
+            )
+            self._current_task = task
+            return True
+
+    async def _claim_and_run_notification(
+        self,
+        context: AgentRuntimeContext,
         *,
         target_agent_instance_id: str | None = None,
     ) -> AsyncIterator[AgentEventSchema]:
-        async with self._turn_lock:
-            notification = await agent_notifications.claim_next_pending_notification(
-                session_id=self.session_id,
-                target_agent_instance_id=target_agent_instance_id,
-            )
-            if notification is None:
-                return
-            agent_code = notification.target_agent_code
-            notification_context = _context_for_notification(context, notification)
-            task = asyncio.current_task()
-            self._current_task = task
-            saw_error = False
-            try:
-                async for event in self._run_turn(
-                    notification_prompt(notification),
-                    agent_code,
-                    notification_context,
-                    emit_user_message=False,
-                ):
-                    if isinstance(event, ErrorEvent):
-                        saw_error = True
-                    yield _tag_notification_event(event, notification_context)
-            except asyncio.CancelledError:
-                await agent_notifications.release_notification(notification.id)
-                raise
-            except GeneratorExit:
-                await agent_notifications.release_notification(notification.id)
-                raise
-            except Exception as exc:
-                await agent_notifications.fail_notification(notification.id, str(exc) or "notification handling failed")
-                raise
+        notification = await agent_notifications.claim_next_pending_notification(
+            session_id=self.session_id,
+            target_agent_instance_id=target_agent_instance_id,
+        )
+        if notification is None:
+            return
+        agent_code = notification.target_agent_code
+        notification_context = _context_for_notification(context, notification)
+        saw_error = False
+        try:
+            async for event in self._run_turn(
+                notification_prompt(notification),
+                agent_code,
+                notification_context,
+                emit_user_message=False,
+            ):
+                if isinstance(event, ErrorEvent):
+                    saw_error = True
+                yield _tag_notification_event(event, notification_context)
+        except asyncio.CancelledError:
+            await agent_notifications.release_notification(notification.id)
+            raise
+        except GeneratorExit:
+            await agent_notifications.release_notification(notification.id)
+            raise
+        except Exception as exc:
+            await agent_notifications.fail_notification(notification.id, str(exc) or "notification handling failed")
+            raise
+        else:
+            if saw_error:
+                await agent_notifications.fail_notification(notification.id, "notification handling produced an error")
             else:
-                if saw_error:
-                    await agent_notifications.fail_notification(notification.id, "notification handling produced an error")
-                else:
-                    await agent_notifications.complete_notification(notification.id)
-            finally:
-                if self._current_task is task:
-                    self._current_task = None
+                await agent_notifications.complete_notification(notification.id)
 
     async def has_pending_notification(self, *, target_agent_instance_id: str | None = None) -> bool:
         if target_agent_instance_id is None:
@@ -124,6 +166,8 @@ class AgentSession:
             await task
         except asyncio.CancelledError:
             pass
+        await _mark_session_stopped(self.session_id)
+        await self._publish(DoneEvent(created_at=datetime.now()))
         return True
 
     async def cancel_all(self) -> bool:
@@ -134,12 +178,15 @@ class AgentSession:
                 await task
             except asyncio.CancelledError:
                 pass
+            await _mark_session_stopped(self.session_id)
+            await self._publish(DoneEvent(created_at=datetime.now()))
         canceled_subagents = await cancel_session_subagent_runs(self.session_id)
         canceled_commands = await cancel_session_async_sandbox_commands(self.session_id)
         canceled_notifications = await agent_notifications.cancel_session_notifications(
             self.session_id,
             "Agent session tasks canceled by user.",
         )
+        await _force_mark_session_stopped(self.session_id)
         return canceled_subagents or canceled_commands or bool(canceled_notifications)
 
     async def shutdown(self) -> None:
@@ -286,6 +333,90 @@ class AgentSession:
         self._agent_graph = None
         self._main_agent_code = ""
 
+    async def _run_background_turn(
+        self,
+        text: str,
+        agent_code: str,
+        context: AgentRuntimeContext,
+    ) -> None:
+        should_drain_notifications = False
+        async with self._turn_lock:
+            task = asyncio.current_task()
+            self._current_task = task
+            saw_done = False
+            canceled = False
+            try:
+                async for event in self._run_turn(text, agent_code, context):
+                    if isinstance(event, DoneEvent):
+                        saw_done = True
+                    await self._publish(event)
+                should_drain_notifications = True
+            except asyncio.CancelledError:
+                canceled = True
+                raise
+            except Exception as exc:
+                logger.exception("agent background turn failed session=%s", self.session_id)
+                await _force_mark_session_stopped(self.session_id, error=str(exc) or "agent turn failed")
+                await self._publish(ErrorEvent(created_at=datetime.now(), message=str(exc) or "agent turn failed"))
+            finally:
+                if not saw_done and not canceled:
+                    await self._publish(DoneEvent(created_at=datetime.now()))
+                if saw_done:
+                    await _finish_session_run(self.session_id)
+                if self._current_task is task:
+                    self._current_task = None
+        if should_drain_notifications:
+            await self.start_notification_drain(context)
+
+    async def _run_background_notifications(
+        self,
+        context: AgentRuntimeContext,
+        *,
+        target_agent_instance_id: str | None = None,
+    ) -> None:
+        async with self._turn_lock:
+            task = asyncio.current_task()
+            self._current_task = task
+            failed = False
+            try:
+                while True:
+                    if not await self.has_pending_notification(target_agent_instance_id=target_agent_instance_id):
+                        break
+                    saw_done = False
+                    async for event in self._claim_and_run_notification(
+                        context,
+                        target_agent_instance_id=target_agent_instance_id,
+                    ):
+                        if isinstance(event, DoneEvent):
+                            saw_done = True
+                        await self._publish(event)
+                    if not saw_done:
+                        await self._publish(DoneEvent(created_at=datetime.now()))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                failed = True
+                logger.exception("agent notification drain failed session=%s", self.session_id)
+                await _force_mark_session_stopped(self.session_id, error="agent notification handling failed")
+                await self._publish(ErrorEvent(created_at=datetime.now(), message="agent notification handling failed"))
+                await self._publish(DoneEvent(created_at=datetime.now()))
+            finally:
+                if not failed:
+                    await _finish_session_run(self.session_id)
+                if self._current_task is task:
+                    self._current_task = None
+
+    def _begin_live_projection(self) -> None:
+        event = RunStateEvent(created_at=datetime.now(), running=True)
+        self._live_projection.reset(event)
+        for queue in tuple(self._subscribers):
+            _put_nowait_drop_oldest(queue, event)
+
+    async def _publish(self, event: AgentEventSchema) -> None:
+        self._live_projection.apply(event)
+        for queue in tuple(self._subscribers):
+            _put_nowait_drop_oldest(queue, event)
+
 
 @dataclass
 class _PooledSession:
@@ -326,8 +457,10 @@ class AgentSessionPool:
                 pass
 
         entries = list(self._pool.values())
+        session_ids = list(self._pool.keys())
         self._pool.clear()
         await asyncio.gather(*(entry.session.shutdown() for entry in entries), return_exceptions=True)
+        await _mark_sessions_stopped(session_ids)
         logger.debug("agent pool stopped")
 
     def get_or_create(self, session_id: str) -> AgentSession:
@@ -344,6 +477,7 @@ class AgentSessionPool:
     async def discard(self, session_id: str) -> None:
         entry = self._pool.pop(session_id, None)
         if entry is None:
+            await _force_mark_session_stopped(session_id)
             return
         await entry.session.shutdown()
         logger.debug("agent pool discarded session=%s", session_id)
@@ -354,6 +488,13 @@ class AgentSessionPool:
             return False
         return await entry.session.interrupt()
 
+    async def subscribe(self, session_id: str) -> tuple[AgentSession, asyncio.Queue[AgentEventSchema]]:
+        session = self.get_or_create(session_id)
+        return session, await session.subscribe()
+
+    async def drain_notifications(self, session_id: str, context: AgentRuntimeContext) -> bool:
+        return await self.get_or_create(session_id).start_notification_drain(context)
+
     async def cancel_all(self, session_id: str) -> bool:
         entry = self._pool.get(session_id)
         if entry is None:
@@ -363,6 +504,7 @@ class AgentSessionPool:
                 session_id,
                 "Agent session tasks canceled by user.",
             )
+            await _force_mark_session_stopped(session_id)
             return canceled_subagents or canceled_commands or bool(canceled_notifications)
         return await entry.session.cancel_all()
 
@@ -433,6 +575,22 @@ def get_agent_registry() -> AgentRegistry:
     return get_agent_pool().registry
 
 
+def _put_nowait_drop_oldest(queue: asyncio.Queue[AgentEventSchema], event: AgentEventSchema) -> None:
+    try:
+        queue.put_nowait(event)
+        return
+    except asyncio.QueueFull:
+        pass
+    try:
+        queue.get_nowait()
+    except asyncio.QueueEmpty:
+        pass
+    try:
+        queue.put_nowait(event)
+    except asyncio.QueueFull:
+        logger.debug("agent event dropped for slow subscriber")
+
+
 def _context_for_notification(
     base: AgentRuntimeContext,
     notification: AgentNotificationSnapshot,
@@ -458,3 +616,44 @@ def _tag_notification_event(event: AgentEventSchema, context: AgentRuntimeContex
         "nested_for": context.nested_for_agent_code,
         "nested_call_id": context.nested_call_id,
     })
+
+
+async def _mark_session_running(
+    session_id: str,
+    *,
+    agent_code: str,
+    sandbox_container_id: int | None,
+    sandbox_container_generation: int,
+) -> None:
+    from service.agent import sessions as agent_sessions
+
+    await agent_sessions.mark_session_running(
+        session_id,
+        agent_code=agent_code,
+        sandbox_container_id=sandbox_container_id,
+        sandbox_container_generation=sandbox_container_generation,
+    )
+
+
+async def _mark_session_stopped(session_id: str, *, error: str = "") -> None:
+    from service.agent import sessions as agent_sessions
+
+    await agent_sessions.mark_session_stopped(session_id, error=error)
+
+
+async def _force_mark_session_stopped(session_id: str, *, error: str = "") -> None:
+    from service.agent import sessions as agent_sessions
+
+    await agent_sessions.force_mark_session_stopped(session_id, error=error)
+
+
+async def _finish_session_run(session_id: str, *, error: str = "") -> None:
+    from service.agent import sessions as agent_sessions
+
+    await agent_sessions.finish_session_run(session_id, error=error)
+
+
+async def _mark_sessions_stopped(session_ids: list[str], *, error: str = "") -> None:
+    from service.agent import sessions as agent_sessions
+
+    await agent_sessions.mark_sessions_stopped(session_ids, error=error)

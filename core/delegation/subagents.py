@@ -16,6 +16,7 @@ from config import get_config
 from core.runtime.context import AgentRuntimeContext, subagent_instance_id
 from core.runtime.events import SdkStreamEventNormalizer
 from core.runtime.input_items import build_user_message_item
+from core.runtime.live_projection import LiveEventProjection
 from core.runtime.partial_context import DeltaBuffer, flush_partial_context, track_delta
 from core.sandbox.command_jobs import cancel_agent_async_sandbox_commands
 from core.conversation.store import Z3r0Session
@@ -52,6 +53,7 @@ class _SubagentJob:
 _jobs: dict[str, _SubagentJob] = {}
 _session_starters: dict[str, set[asyncio.Task[AgentSubordinateTaskSnapshot]]] = defaultdict(set)
 _subscribers: dict[str, set[asyncio.Queue[AgentEventSchema]]] = defaultdict(set)
+_live_projections: dict[str, LiveEventProjection] = {}
 _subscribers_lock = asyncio.Lock()
 
 _SUBSCRIBER_QUEUE_SIZE = 256
@@ -223,6 +225,7 @@ async def start_subagent_task_run(
         nested_call_id=nested_call_id,
         owner_id=context.user.id,
     )
+    await _mark_parent_session_running(snapshot, context)
     runtime_context = _subagent_context(context, snapshot, agent_code)
     task = asyncio.create_task(
         _run_subagent_task(
@@ -371,6 +374,10 @@ async def stop_subagent_runtime() -> None:
 async def subscribe_session_events(session_id: str) -> asyncio.Queue[AgentEventSchema]:
     queue: asyncio.Queue[AgentEventSchema] = asyncio.Queue(maxsize=_SUBSCRIBER_QUEUE_SIZE)
     async with _subscribers_lock:
+        projection = _live_projections.get(session_id)
+        if projection is not None:
+            for event in projection.snapshot():
+                _put_nowait_drop_oldest(queue, event)
         _subscribers[session_id].add(queue)
     return queue
 
@@ -389,12 +396,38 @@ async def publish_subagent_event(session_id: str, event: AgentEventSchema) -> No
     if not session_id:
         return
     async with _subscribers_lock:
+        _live_projection(session_id).apply(event)
         targets = list(_subscribers.get(session_id, ()))
     for queue in targets:
-        try:
-            queue.put_nowait(event)
-        except asyncio.QueueFull:
-            logger.debug("subagent event dropped for slow subscriber session=%s", session_id)
+        _put_nowait_drop_oldest(queue, event)
+
+
+def _clear_subagent_projection(session_id: str) -> None:
+    _live_projections.pop(session_id, None)
+
+
+def _live_projection(session_id: str) -> LiveEventProjection:
+    projection = _live_projections.get(session_id)
+    if projection is None:
+        projection = LiveEventProjection()
+        _live_projections[session_id] = projection
+    return projection
+
+
+def _put_nowait_drop_oldest(queue: asyncio.Queue[AgentEventSchema], event: AgentEventSchema) -> None:
+    try:
+        queue.put_nowait(event)
+        return
+    except asyncio.QueueFull:
+        pass
+    try:
+        queue.get_nowait()
+    except asyncio.QueueEmpty:
+        pass
+    try:
+        queue.put_nowait(event)
+    except asyncio.QueueFull:
+        logger.debug("subagent event dropped for slow subscriber")
 
 
 async def _run_subagent_task(
@@ -470,6 +503,12 @@ async def _run_subagent_task(
         current = _jobs.get(snapshot.run_id)
         if current is not None and current.task is asyncio.current_task():
             _jobs.pop(snapshot.run_id, None)
+        if not any(
+            job.session_id == snapshot.session_id and not job.task.done()
+            for job in _jobs.values()
+        ):
+            _clear_subagent_projection(snapshot.session_id)
+            await _mark_parent_session_stopped(snapshot.session_id)
 
 
 async def _run_subagent_turn(
@@ -564,8 +603,33 @@ async def _queue_parent_notification(
             sandbox_container_generation=context.sandbox_container_generation if context else 0,
             sandbox_skill_metadata=context.sandbox_skill_metadata if context else (),
         )
+        await _schedule_parent_notification_drain(snapshot, context)
     except Exception:
         logger.exception("failed to queue parent notification for subagent task: %s", snapshot.run_id)
+
+
+async def _schedule_parent_notification_drain(
+    snapshot: AgentSubordinateTaskSnapshot,
+    context: AgentRuntimeContext | None,
+) -> None:
+    if context is None:
+        return
+    try:
+        from core.runtime.session import get_agent_pool
+
+        parent_context = AgentRuntimeContext(
+            session_id=context.session_id,
+            user=context.user,
+            agent_code=snapshot.parent_agent_code,
+            agent_instance_id=snapshot.parent_agent_instance_id,
+            knowledge_generation=context.knowledge_generation,
+            sandbox_container_id=context.sandbox_container_id,
+            sandbox_container_generation=context.sandbox_container_generation,
+            sandbox_skill_metadata=context.sandbox_skill_metadata,
+        )
+        await get_agent_pool().drain_notifications(snapshot.session_id, parent_context)
+    except Exception:
+        logger.exception("failed to schedule parent notification drain: %s", snapshot.run_id)
 
 
 def _tag_nested(event: AgentEventSchema, snapshot: AgentSubordinateTaskSnapshot) -> AgentEventSchema:
@@ -575,6 +639,32 @@ def _tag_nested(event: AgentEventSchema, snapshot: AgentSubordinateTaskSnapshot)
         "nested_for": snapshot.parent_agent_code,
         "nested_call_id": snapshot.nested_call_id,
     })
+
+
+async def _mark_parent_session_running(
+    snapshot: AgentSubordinateTaskSnapshot,
+    context: AgentRuntimeContext,
+) -> None:
+    try:
+        from service.agent import sessions as agent_sessions
+
+        await agent_sessions.mark_session_running(
+            snapshot.session_id,
+            agent_code=snapshot.parent_agent_code,
+            sandbox_container_id=context.sandbox_container_id,
+            sandbox_container_generation=context.sandbox_container_generation,
+        )
+    except Exception:
+        logger.debug("failed to mark parent session running: %s", snapshot.session_id, exc_info=True)
+
+
+async def _mark_parent_session_stopped(session_id: str) -> None:
+    try:
+        from service.agent import sessions as agent_sessions
+
+        await agent_sessions.mark_session_stopped(session_id)
+    except Exception:
+        logger.debug("failed to mark parent session stopped: %s", session_id, exc_info=True)
 
 
 def _subagent_context(

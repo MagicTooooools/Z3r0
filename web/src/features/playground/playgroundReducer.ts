@@ -1,5 +1,6 @@
 import type {
   AgentContentEvent,
+  AgentStreamEvent,
   SubagentTaskEvent,
   TextCompleteEvent,
   ThinkingCompleteEvent,
@@ -69,9 +70,10 @@ export type ChatState = {
   nodes: ChatNode[];
   streaming: boolean;
   pendingNested: Record<string, AgentContentEvent[]>;
+  liveFrom: number | null;
 };
 
-export const initialChatState: ChatState = { nodes: [], streaming: false, pendingNested: {} };
+export const initialChatState: ChatState = { nodes: [], streaming: false, pendingNested: {}, liveFrom: null };
 
 function newId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -90,26 +92,72 @@ export function appendUserMessage(
   createdAt: AgentContentEvent["created_at"],
 ): ChatState {
   const lastNode = state.nodes[state.nodes.length - 1];
-  if (lastNode?.kind === "user" && lastNode.text === text && lastNode.createdAt === createdAt) {
+  if (state.streaming) {
+    const existingIndex = findLiveUserMessageIndex(state.nodes, text, targetAgentCode);
+    if (existingIndex !== -1) {
+      const existing = state.nodes[existingIndex];
+      if (existing.kind !== "user" || !targetAgentCode || existing.targetAgentCode === targetAgentCode) {
+        return { ...state, streaming: true, liveFrom: state.liveFrom ?? state.nodes.length };
+      }
+      const nodes = state.nodes.slice();
+      nodes[existingIndex] = { ...existing, targetAgentCode };
+      return { ...state, nodes, streaming: true, liveFrom: state.liveFrom ?? nodes.length };
+    }
+  }
+  if (lastNode?.kind === "user" && lastNode.text === text && (state.streaming || lastNode.createdAt === createdAt)) {
+    const liveFrom = state.nodes.length;
     if (!targetAgentCode || lastNode.targetAgentCode === targetAgentCode) {
-      return { ...state, streaming: true };
+      return { ...state, streaming: true, liveFrom };
     }
     const nodes = state.nodes.slice();
     nodes[nodes.length - 1] = { ...lastNode, targetAgentCode };
-    return { ...state, nodes, streaming: true };
+    return { ...state, nodes, streaming: true, liveFrom };
   }
+  const nodes = [...state.nodes, { kind: "user" as const, id: newId(), createdAt, text, targetAgentCode }];
   return {
     ...state,
-    nodes: [...state.nodes, { kind: "user", id: newId(), createdAt, text, targetAgentCode }],
+    nodes,
     streaming: true,
+    liveFrom: nodes.length,
   };
 }
 
+function findLiveUserMessageIndex(nodes: ChatNode[], text: string, targetAgentCode: string): number {
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const node = nodes[index];
+    if (node.kind !== "user") continue;
+    if (node.text !== text) return -1;
+    if (!targetAgentCode || !node.targetAgentCode || node.targetAgentCode === targetAgentCode) {
+      return index;
+    }
+    return -1;
+  }
+  return -1;
+}
+
 export function finishChatTurn(state: ChatState): ChatState {
-  return { ...state, streaming: false, pendingNested: prunePendingNested(state) };
+  return { ...state, streaming: false, liveFrom: null, pendingNested: prunePendingNested(state) };
+}
+
+export function disconnectChatTurn(state: ChatState): ChatState {
+  if (!state.streaming) return state;
+  const nodes = state.liveFrom === null ? state.nodes : state.nodes.slice(0, state.liveFrom);
+  return { ...state, nodes, streaming: false, liveFrom: null, pendingNested: prunePendingNested({ ...state, nodes }) };
 }
 
 export function chatReduce(state: ChatState, event: AgentContentEvent): ChatState {
+  return applyContentEvent(state, event);
+}
+
+export function streamReduce(state: ChatState, event: AgentStreamEvent): ChatState {
+  if (event.type === "done") return finishChatTurn(state);
+  if (event.type === "run_state") {
+    return event.running ? { ...state, streaming: true, liveFrom: state.liveFrom ?? state.nodes.length } : finishChatTurn(state);
+  }
+  return applyContentEvent(state, event);
+}
+
+function applyContentEvent(state: ChatState, event: AgentContentEvent): ChatState {
   if (event.type === "user_message") {
     return appendUserMessage(state, event.text, event.target_agent_code, event.created_at);
   }
@@ -135,7 +183,7 @@ function routeToTopLevel(state: ChatState, event: AgentContentEvent): ChatState 
   const lastNode = nodes[lastIndex];
 
   let agent: AgentNode;
-  if (lastNode?.kind === "agent" && state.streaming) {
+  if (lastNode?.kind === "agent" && state.streaming && state.liveFrom !== null) {
     agent = cloneAgentNode(lastNode);
     if (!agent.createdAt) agent.createdAt = event.created_at;
     nodes[lastIndex] = agent;
@@ -145,7 +193,10 @@ function routeToTopLevel(state: ChatState, event: AgentContentEvent): ChatState 
   }
 
   const finished = applyEventToTranscript(agent, event);
-  const nextState = finished ? finishChatTurn({ ...state, nodes }) : { ...state, nodes, streaming: true };
+  const liveFrom = state.liveFrom ?? nodes.length - 1;
+  const nextState = finished
+    ? finishChatTurn({ ...state, nodes, liveFrom })
+    : { ...state, nodes, streaming: true, liveFrom };
   if (event.type === "tool_call" || event.type === "tool_result") {
     return drainPendingNested(nextState, event.call_id);
   }
@@ -335,10 +386,18 @@ function upsertStreamingBlock(
 ) {
   const index = blocks.findIndex((block) => block.kind === kind && block.id === blockId);
   if (index === -1) {
+    const text = patch.text ?? patch.delta ?? "";
+    if (patch.complete && text && blocks.some((block) => (
+      block.kind === kind
+      && block.complete
+      && block.text === text
+    ))) {
+      return;
+    }
     blocks.push({
       kind,
       id: blockId,
-      text: patch.text ?? patch.delta ?? "",
+      text,
       complete: Boolean(patch.complete),
     } as StreamingItem);
     return;

@@ -32,6 +32,7 @@ from router.sandbox.images import router as sandbox_image_router
 from router.system_user.users import router as system_user_router
 from router.work_project.projects import router as work_project_router
 from schema.system_user.users import SystemUserRole
+from service.agent.recovery import recover_pending_sessions
 from service.sandbox.status import (
     invalidate_all_agent_tool_bindings,
     start_sandbox_container_status_monitor,
@@ -96,6 +97,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
         set_tracing_disabled(True)
         await start_async_sandbox_runtime()
         await start_subagent_runtime()
+        await recover_pending_sessions()
         await get_agent_pool().start()
         await start_sandbox_container_status_monitor()
 

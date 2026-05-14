@@ -1,0 +1,33 @@
+from core.runtime.session import get_agent_pool
+from logger import get_logger
+from middleware.auth import AuthUser
+from service.agent import sessions as agent_sessions
+from service.system_user.users import query_system_user_by_id
+from service.agent.runtime import build_base_runtime_context
+
+
+logger = get_logger(__name__)
+
+
+async def recover_pending_sessions() -> None:
+    pending = await agent_sessions.list_running_sessions()
+    if not pending:
+        return
+    for session in pending:
+        if not await agent_sessions.has_active_session_runtime(session.session_id):
+            await agent_sessions.force_mark_session_stopped(
+                session.session_id,
+                error="Agent runtime was interrupted by backend restart.",
+            )
+            continue
+        user = await query_system_user_by_id(session.owner_id)
+        if user is None:
+            await agent_sessions.force_mark_session_stopped(
+                session.session_id,
+                error="Agent session owner no longer exists.",
+            )
+            continue
+        auth_user = AuthUser(id=user.id, role=user.role, email=user.email, username=user.username)
+        agent_code = session.runtime_agent_code or session.agent_code
+        runtime = get_agent_pool().get_or_create(session.session_id)
+        await runtime.start_notification_drain(build_base_runtime_context(session.session_id, auth_user, agent_code))
