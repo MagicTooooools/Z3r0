@@ -109,6 +109,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     sandboxContainerId: number | null;
     agentCode: string;
   } | null>(null);
+  const manualBlankSessionRef = useRef(false);
 
   // ---------------------------------------------------------------- helpers
   const initRuntime = useCallback((sessionId: string) => {
@@ -353,6 +354,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     if (!sessionId || pendingSendRef.current?.sessionId !== sessionId) {
       pendingSendRef.current = null;
     }
+    manualBlankSessionRef.current = sessionId === null;
     setActiveSessionId(sessionId);
   }, []);
 
@@ -369,7 +371,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     const runningSessions = sessions.filter((session) => session.is_running);
     if (!runningSessions.length) return;
 
-    if (!activeSessionId) {
+    if (!activeSessionId && !manualBlankSessionRef.current) {
       const [first] = runningSessions;
       if (first) setActiveSessionId(first.session_id);
     }
@@ -445,6 +447,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       const id = response.data?.session_id ?? null;
       if (!id) return;
       pendingSendRef.current = { sessionId: id, text, sandboxContainerId, agentCode };
+      manualBlankSessionRef.current = false;
       setActiveSessionId(id);
     } catch (error) {
       showApiError(error);
