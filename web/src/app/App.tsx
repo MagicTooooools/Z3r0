@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "../shared/auth/AuthProvider";
 import { AdminLayout } from "./layouts/AdminLayout";
 import { LoginPage } from "../features/auth/LoginPage";
 import { ContainerShellProvider } from "../features/container-shell/ContainerShellProvider";
+import { LandingPage } from "../features/landing/LandingPage";
 import { PlaygroundPage } from "../features/playground/PlaygroundPage";
 import { SandboxContainersPage } from "../features/sandbox-containers/SandboxContainersPage";
 import { SandboxImagesPage } from "../features/sandbox-images/SandboxImagesPage";
@@ -32,12 +33,12 @@ export function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={<LandingPage />} />
           <Route element={<PublicOnlyRoute />}>
             <Route path="/login" element={<LoginPage />} />
           </Route>
           <Route element={<ProtectedRoute />}>
             <Route element={<AgentSessionProvider><ContainerShellProvider><AdminLayout /></ContainerShellProvider></AgentSessionProvider>}>
-              <Route index element={<Navigate to="/playground" replace />} />
               <Route path="/playground" element={<PlaygroundPage />} />
               <Route path="/sandbox-images" element={<SandboxImagesPage />} />
               <Route path="/sandbox-containers" element={<SandboxContainersPage />} />
