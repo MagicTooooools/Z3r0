@@ -1,10 +1,11 @@
 import { Avatar, Button } from "@douyinfe/semi-ui";
-import { Box, Boxes, FolderKanban, LogOut, MessageSquareCode, ShieldCheck, Users } from "lucide-react";
+import { Box, Boxes, FolderKanban, LogOut, MessageSquareCode, Users } from "lucide-react";
 import { ReactNode, useCallback, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { SessionList } from "../../features/playground/SessionList";
 import { useAgentSessionContext } from "../../features/playground/AgentSessionProvider";
 import { useAuth } from "../../shared/auth/AuthProvider";
+import z3r0Logo from "../../assets/z3r0-logo.png";
 
 type AdminLayoutContext = { setHeaderActions: (actions: ReactNode) => void };
 
@@ -51,7 +52,7 @@ export function AdminLayout() {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="brand-lockup">
-          <div className="brand-mark"><ShieldCheck size={22} /></div>
+          <img className="brand-logo" src={z3r0Logo} alt="" />
           <div>
             <div className="brand-name">Z3r0</div>
             <div className="brand-kicker">Red Team Collaboration Platform</div>

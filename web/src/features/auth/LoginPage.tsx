@@ -1,10 +1,11 @@
 import { Button, Input, Typography } from "@douyinfe/semi-ui";
-import { Crosshair, KeyRound, Mail, ShieldCheck } from "lucide-react";
+import { Crosshair, KeyRound, Mail } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { login } from "../../shared/api/systemUsers";
 import { showApiError } from "../../shared/api/feedback";
 import { useAuth } from "../../shared/auth/AuthProvider";
+import z3r0Logo from "../../assets/z3r0-logo.png";
 
 const { Text } = Typography;
 
@@ -43,9 +44,7 @@ export function LoginPage() {
       <div className="login-scanline" aria-hidden="true" />
       <section className="login-panel" aria-labelledby="login-title">
         <div className="login-brand">
-          <div className="brand-mark large">
-            <ShieldCheck size={28} />
-          </div>
+          <img className="brand-logo large" src={z3r0Logo} alt="" />
           <div>
             <Text className="login-kicker">Red Team Collaboration Platform</Text>
             <h1 id="login-title">Z3r0 Console</h1>
