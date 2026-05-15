@@ -54,44 +54,6 @@ flowchart LR
 
 ## 分层设计
 
-```mermaid
-flowchart TB
-  subgraph Frontend["Frontend"]
-    Playground["Playground 会话工作台"]
-    ResourceUI["用户 / 镜像 / 容器 / 项目管理"]
-    ShellUI["xterm / noVNC / 文件管理器"]
-  end
-
-  subgraph API["API Layer"]
-    Router["router"]
-    Handler["handler"]
-    Middleware["JWT / CommonResponse"]
-  end
-
-  subgraph Domain["Domain Service"]
-    AgentService["agent service"]
-    SandboxService["sandbox service"]
-    UserService["system user service"]
-    ProjectService["work project service"]
-  end
-
-  subgraph Core["Core Runtime"]
-    SessionPool["AgentSessionPool"]
-    AgentGraph["SessionAgentGraph"]
-    Delegation["Subagent Runtime"]
-    Conversation["Projection / Compaction"]
-    Tooling["Knowledge / Sandbox Tools"]
-  end
-
-  subgraph Infra["Infrastructure"]
-    DB[("PostgreSQL")]
-    Docker["Docker Engine"]
-    Models["LLM Provider"]
-  end
-
-  Frontend --> API --> Domain --> Core --> Infra
-```
-
 ## Agent 编队
 
 | Code | Name | Role | 主要职责 |
