@@ -4,7 +4,7 @@ import {
   Copy, Download, File, FilePlus, Folder, FolderOpen, FolderPlus, Grid3X3, List,
   RefreshCw, Scissors, Trash2, Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   copyContainerFiles, createContainerDirectory, deleteContainerFiles,
   downloadContainerFiles, listContainerFiles, moveContainerFiles, uploadContainerFiles, writeContainerFile,
@@ -13,7 +13,8 @@ import { showApiError } from "../../shared/api/feedback";
 import type { ContainerFileInfo } from "../../shared/api/types";
 import { formatDateTime } from "../../shared/lib/date";
 import { formatBytes } from "../../shared/lib/number";
-import { FileViewer } from "./FileViewer";
+
+const FileViewer = lazy(() => import("./FileViewer").then((module) => ({ default: module.FileViewer })));
 
 type ViewMode = "list" | "icon";
 type ClipboardState = { action: "copy" | "cut"; paths: string[]; sourceDir: string } | null;
@@ -374,12 +375,14 @@ export function ContainerFileManager({ containerId, containerHash, containerName
 
       {viewingFile ? (
         <div className="file-manager-viewer-overlay">
-          <FileViewer
-            containerId={containerId}
-            containerHash={containerHash}
-            file={viewingFile}
-            onClose={() => setViewingFile(null)}
-          />
+          <Suspense fallback={<div className="file-manager-loading">Loading viewer...</div>}>
+            <FileViewer
+              containerId={containerId}
+              containerHash={containerHash}
+              file={viewingFile}
+              onClose={() => setViewingFile(null)}
+            />
+          </Suspense>
         </div>
       ) : null}
     </div>

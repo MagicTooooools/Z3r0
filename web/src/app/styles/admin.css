@@ -182,6 +182,12 @@
   height: 100%;
 }
 
+.admin-route-fallback {
+  min-height: calc(100vh - 132px);
+  display: grid;
+  place-items: center;
+}
+
 /* shared background decoration: subtle drifting grid + scanline overlay */
 .admin-content::before,
 .playground-main::before,

@@ -1,6 +1,6 @@
 import { Avatar, Button } from "@douyinfe/semi-ui";
 import { Box, Boxes, FolderKanban, LogOut, MessageSquareCode, Users } from "lucide-react";
-import { ReactNode, useCallback, useState } from "react";
+import { ReactNode, Suspense, useCallback, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { SessionList } from "../../features/playground/SessionList";
 import { useAgentSessionContext } from "../../features/playground/AgentSessionProvider";
@@ -106,10 +106,20 @@ export function AdminLayout() {
         </header>
         <main className="admin-content">
           <div key={activeItem?.path ?? location.pathname} className="route-transition">
-            <Outlet context={outletContext} />
+            <Suspense fallback={<AdminRouteFallback />}>
+              <Outlet context={outletContext} />
+            </Suspense>
           </div>
         </main>
       </div>
+    </div>
+  );
+}
+
+function AdminRouteFallback() {
+  return (
+    <div className="admin-route-fallback">
+      <div className="route-fallback-spinner" />
     </div>
   );
 }

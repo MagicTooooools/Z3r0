@@ -1,10 +1,11 @@
 import { Button, Toast } from "@douyinfe/semi-ui";
 import { Download, Edit3, Save, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { downloadContainerFiles, readContainerFile, writeContainerFile } from "../../shared/api/sandboxContainers";
 import { showApiError } from "../../shared/api/feedback";
 import type { ContainerFileInfo } from "../../shared/api/types";
-import { CodeEditor } from "./CodeEditor";
+
+const CodeEditor = lazy(() => import("./CodeEditor").then((module) => ({ default: module.CodeEditor })));
 
 type ViewerType = "text" | "image" | "binary";
 
@@ -173,11 +174,13 @@ export function FileViewer({ containerId, containerHash, file, onClose }: Props)
         editing ? (
           <div className="fv-editor">
             <div className="fv-editor-cm">
-              <CodeEditor
-                value={editContent}
-                onChange={setEditContent}
-                filename={file.name}
-              />
+              <Suspense fallback={<div className="fv-loading">Loading editor...</div>}>
+                <CodeEditor
+                  value={editContent}
+                  onChange={setEditContent}
+                  filename={file.name}
+                />
+              </Suspense>
             </div>
             <div className="fv-editor-actions">
               <Button icon={<Save size={14} />} size="small" type="primary" loading={saving} onClick={() => void handleSave()}>Save</Button>
@@ -186,11 +189,13 @@ export function FileViewer({ containerId, containerHash, file, onClose }: Props)
           </div>
         ) : (
           <div className="fv-preview">
-            <CodeEditor
-              value={content}
-              readOnly
-              filename={file.name}
-            />
+            <Suspense fallback={<div className="fv-loading">Loading preview...</div>}>
+              <CodeEditor
+                value={content}
+                readOnly
+                filename={file.name}
+              />
+            </Suspense>
           </div>
         )
       ) : (

@@ -255,6 +255,15 @@
 
 /* ── file manager ─────────────────────────────────────────────────────────── */
 
+.file-manager-loading {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #8fa2ba;
+  background: #0b111c;
+  font-size: 12px;
+}
+
 .file-manager-body {
   position: relative;
   display: grid;

@@ -2,24 +2,8 @@ import { basicSetup } from "codemirror";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { javascript } from "@codemirror/lang-javascript";
-import { python } from "@codemirror/lang-python";
-import { json } from "@codemirror/lang-json";
-import { html } from "@codemirror/lang-html";
-import { css } from "@codemirror/lang-css";
-import { xml } from "@codemirror/lang-xml";
-import { sql } from "@codemirror/lang-sql";
-import { markdown } from "@codemirror/lang-markdown";
-import { rust } from "@codemirror/lang-rust";
-import { go } from "@codemirror/lang-go";
-import { java } from "@codemirror/lang-java";
-import { cpp } from "@codemirror/lang-cpp";
-import { php } from "@codemirror/lang-php";
-import { StreamLanguage } from "@codemirror/language";
-import { shell } from "@codemirror/legacy-modes/mode/shell";
-import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
-import { yaml } from "@codemirror/legacy-modes/mode/yaml";
-import { useEffect, useMemo, useRef } from "react";
+import type { Extension } from "@codemirror/state";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Props = {
   value: string;
@@ -28,7 +12,7 @@ type Props = {
   filename?: string;
 };
 
-function resolveLanguage(filename: string) {
+async function resolveLanguage(filename: string): Promise<Extension[] | null> {
   if (!filename) return null;
   const base = filename.split("/").pop() || filename;
   const e = base.includes(".") ? base.slice(base.lastIndexOf(".") + 1).toLowerCase() : "";
@@ -36,24 +20,87 @@ function resolveLanguage(filename: string) {
   if (!key) return null;
 
   switch (key) {
-    case "js": case "jsx": case "mjs": case "cjs": return javascript();
-    case "ts": return javascript({ typescript: true });
-    case "tsx": return javascript({ typescript: true, jsx: true });
-    case "py": case "pyx": return python();
-    case "json": return json();
-    case "html": case "htm": return html();
-    case "css": case "scss": case "less": return css();
-    case "xml": case "svg": return xml();
-    case "sql": return sql();
-    case "md": case "markdown": return markdown();
-    case "yaml": case "yml": return [StreamLanguage.define(yaml)];
-    case "rs": return rust();
-    case "go": return go();
-    case "java": return java();
-    case "c": case "cpp": case "cc": case "cxx": case "h": case "hpp": case "hh": case "hxx": return cpp();
-    case "php": return php();
-    case "sh": case "bash": case "zsh": return [StreamLanguage.define(shell)];
-    case "Dockerfile": return [StreamLanguage.define(dockerFile)];
+    case "js": case "jsx": case "mjs": case "cjs": {
+      const { javascript } = await import("@codemirror/lang-javascript");
+      return [javascript()];
+    }
+    case "ts": {
+      const { javascript } = await import("@codemirror/lang-javascript");
+      return [javascript({ typescript: true })];
+    }
+    case "tsx": {
+      const { javascript } = await import("@codemirror/lang-javascript");
+      return [javascript({ typescript: true, jsx: true })];
+    }
+    case "py": case "pyx": {
+      const { python } = await import("@codemirror/lang-python");
+      return [python()];
+    }
+    case "json": {
+      const { json } = await import("@codemirror/lang-json");
+      return [json()];
+    }
+    case "html": case "htm": {
+      const { html } = await import("@codemirror/lang-html");
+      return [html()];
+    }
+    case "css": case "scss": case "less": {
+      const { css } = await import("@codemirror/lang-css");
+      return [css()];
+    }
+    case "xml": case "svg": {
+      const { xml } = await import("@codemirror/lang-xml");
+      return [xml()];
+    }
+    case "sql": {
+      const { sql } = await import("@codemirror/lang-sql");
+      return [sql()];
+    }
+    case "md": case "markdown": {
+      const { markdown } = await import("@codemirror/lang-markdown");
+      return [markdown()];
+    }
+    case "yaml": case "yml": {
+      const [{ StreamLanguage }, { yaml }] = await Promise.all([
+        import("@codemirror/language"),
+        import("@codemirror/legacy-modes/mode/yaml"),
+      ]);
+      return [StreamLanguage.define(yaml)];
+    }
+    case "rs": {
+      const { rust } = await import("@codemirror/lang-rust");
+      return [rust()];
+    }
+    case "go": {
+      const { go } = await import("@codemirror/lang-go");
+      return [go()];
+    }
+    case "java": {
+      const { java } = await import("@codemirror/lang-java");
+      return [java()];
+    }
+    case "c": case "cpp": case "cc": case "cxx": case "h": case "hpp": case "hh": case "hxx": {
+      const { cpp } = await import("@codemirror/lang-cpp");
+      return [cpp()];
+    }
+    case "php": {
+      const { php } = await import("@codemirror/lang-php");
+      return [php()];
+    }
+    case "sh": case "bash": case "zsh": {
+      const [{ StreamLanguage }, { shell }] = await Promise.all([
+        import("@codemirror/language"),
+        import("@codemirror/legacy-modes/mode/shell"),
+      ]);
+      return [StreamLanguage.define(shell)];
+    }
+    case "Dockerfile": {
+      const [{ StreamLanguage }, { dockerFile }] = await Promise.all([
+        import("@codemirror/language"),
+        import("@codemirror/legacy-modes/mode/dockerfile"),
+      ]);
+      return [StreamLanguage.define(dockerFile)];
+    }
     default: return null;
   }
 }
@@ -62,6 +109,7 @@ export function CodeEditor({ value, onChange, readOnly = false, filename }: Prop
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const [languageExtensions, setLanguageExtensions] = useState<Extension[]>([]);
   onChangeRef.current = onChange;
 
   const updateListener = useMemo(
@@ -72,16 +120,26 @@ export function CodeEditor({ value, onChange, readOnly = false, filename }: Prop
   );
 
   useEffect(() => {
+    let canceled = false;
+    resolveLanguage(filename || "")
+      .then((extensions) => {
+        if (!canceled) setLanguageExtensions(extensions ?? []);
+      })
+      .catch(() => {
+        if (!canceled) setLanguageExtensions([]);
+      });
+    return () => { canceled = true; };
+  }, [filename]);
+
+  useEffect(() => {
     if (!hostRef.current) return;
 
-    const lang = resolveLanguage(filename || "");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const exts: any[] = [
+    const exts: Extension[] = [
       basicSetup,
       oneDark,
       updateListener,
       EditorView.lineWrapping,
-      ...(lang ? (Array.isArray(lang) ? lang : [lang]) : []),
+      ...languageExtensions,
     ];
     if (readOnly) {
       exts.push(EditorState.readOnly.of(true));
@@ -95,7 +153,7 @@ export function CodeEditor({ value, onChange, readOnly = false, filename }: Prop
     });
     viewRef.current = view;
     return () => view.destroy();
-  }, [readOnly, filename]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [readOnly, updateListener, languageExtensions]);
 
   useEffect(() => {
     const view = viewRef.current;

@@ -8,10 +8,7 @@ import {
   PanelRightOpen,
   Wrench,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   AgentTranscript,
   ErrorItem,
@@ -29,7 +26,7 @@ import {
   type SubagentSelection,
 } from "./subagentView";
 
-const MARKDOWN_PLUGINS = [remarkGfm, remarkBreaks];
+const MarkdownRenderer = lazy(() => import("./MarkdownRenderer").then((module) => ({ default: module.MarkdownRenderer })));
 type TranscriptItem = AgentTranscript["blocks"][number];
 type ToolBlock = ToolExecutionItem | SubagentExecutionItem;
 type ContentBlock = TextItem | ErrorItem;
@@ -110,7 +107,9 @@ function MarkdownText({ text, streaming }: { text: string; streaming: boolean })
   }
   return (
     <div className="agent-text">
-      <ReactMarkdown remarkPlugins={MARKDOWN_PLUGINS}>{markdown}</ReactMarkdown>
+      <Suspense fallback={<pre className="agent-text-fallback">{markdown}</pre>}>
+        <MarkdownRenderer markdown={markdown} />
+      </Suspense>
       {streaming ? <span className="caret" /> : null}
     </div>
   );

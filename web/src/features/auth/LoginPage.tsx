@@ -20,7 +20,7 @@ export function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as LoginLocationState | null)?.from?.pathname || "/system-users";
+  const from = (location.state as LoginLocationState | null)?.from?.pathname || "/playground";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

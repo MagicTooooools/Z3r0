@@ -171,6 +171,7 @@ class AgentSession:
             pass
         await _mark_session_stopped(self.session_id)
         await self._publish(DoneEvent(created_at=datetime.now()))
+        await self._publish_idle_if_inactive()
         return True
 
     async def cancel_all(self) -> bool:
@@ -190,6 +191,7 @@ class AgentSession:
             "Agent session tasks canceled by user.",
         )
         await _force_mark_session_stopped(self.session_id)
+        await self._publish_run_state(False)
         return canceled_subagents or canceled_commands or bool(canceled_notifications)
 
     async def shutdown(self) -> None:
@@ -365,9 +367,11 @@ class AgentSession:
                 if not saw_done and not canceled:
                     await self._publish(DoneEvent(created_at=datetime.now()))
                 if saw_done:
-                    await _finish_session_run(self.session_id)
+                    await _mark_session_stopped(self.session_id)
                 if self._current_task is task:
                     self._current_task = None
+                if not canceled:
+                    await self._publish_idle_if_inactive()
         if should_drain_notifications:
             await self.start_notification_drain(context)
 
@@ -405,9 +409,10 @@ class AgentSession:
                 await self._publish(DoneEvent(created_at=datetime.now()))
             finally:
                 if not failed:
-                    await _finish_session_run(self.session_id)
+                    await _mark_session_stopped(self.session_id)
                 if self._current_task is task:
                     self._current_task = None
+                await self._publish_idle_if_inactive()
 
     def _begin_live_projection(self) -> None:
         event = RunStateEvent(created_at=datetime.now(), running=True)
@@ -415,13 +420,26 @@ class AgentSession:
         for queue in tuple(self._subscribers):
             _put_nowait_drop_oldest(queue, event)
 
+    async def _publish_run_state(self, running: bool) -> None:
+        event = RunStateEvent(created_at=datetime.now(), running=running)
+        if running:
+            self._live_projection.reset(event)
+        else:
+            self._live_projection.apply(event)
+        for queue in tuple(self._subscribers):
+            _put_nowait_drop_oldest(queue, event)
+        if not running:
+            self._live_projection.reset(event)
+
+    async def _publish_idle_if_inactive(self) -> None:
+        if self.is_running() or await _has_active_session_runtime(self.session_id):
+            return
+        await self._publish_run_state(False)
+
     async def _publish(self, event: AgentEventSchema) -> None:
         self._live_projection.apply(event)
         for queue in tuple(self._subscribers):
             _put_nowait_drop_oldest(queue, event)
-
-        if isinstance(event, DoneEvent):
-            self._live_projection.reset(RunStateEvent(created_at=event.created_at, running=False))
 
 
 @dataclass
@@ -677,6 +695,12 @@ async def _finish_session_run(session_id: str, *, error: str = "") -> None:
     from service.agent import sessions as agent_sessions
 
     await agent_sessions.finish_session_run(session_id, error=error)
+
+
+async def _has_active_session_runtime(session_id: str) -> bool:
+    from service.agent import sessions as agent_sessions
+
+    return await agent_sessions.has_active_session_runtime(session_id)
 
 
 async def _mark_sessions_stopped(session_ids: list[str], *, error: str = "") -> None:

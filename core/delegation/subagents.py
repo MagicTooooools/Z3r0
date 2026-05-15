@@ -25,6 +25,7 @@ from logger import get_logger
 from schema.agent.events import (
     AgentEventSchema,
     ErrorEvent,
+    RunStateEvent,
     SubagentTaskEvent,
     TextCompleteEvent,
     ThinkingCompleteEvent,
@@ -538,6 +539,7 @@ async def _run_subagent_task(
             async with _subscribers_lock:
                 _live_projections.pop(snapshot.session_id, None)
             await _mark_parent_session_stopped(snapshot.session_id)
+            await _publish_parent_idle_if_inactive(snapshot.session_id)
 
 
 async def _run_subagent_turn(
@@ -694,6 +696,22 @@ async def _mark_parent_session_stopped(session_id: str) -> None:
         await agent_sessions.mark_session_stopped(session_id)
     except Exception:
         logger.debug("failed to mark parent session stopped: %s", session_id, exc_info=True)
+
+
+async def _publish_parent_idle_if_inactive(session_id: str) -> None:
+    try:
+        from service.agent import sessions as agent_sessions
+
+        if await agent_sessions.has_active_session_runtime(session_id):
+            return
+        await publish_subagent_event(
+            session_id,
+            RunStateEvent(created_at=datetime.now(), running=False),
+        )
+        async with _subscribers_lock:
+            _live_projections.pop(session_id, None)
+    except Exception:
+        logger.debug("failed to publish parent session idle: %s", session_id, exc_info=True)
 
 
 def _subagent_context(

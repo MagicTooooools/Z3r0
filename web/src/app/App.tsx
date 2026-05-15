@@ -1,15 +1,15 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
-import { AgentSessionProvider } from "../features/playground/AgentSessionProvider";
 import { AuthProvider, useAuth } from "../shared/auth/AuthProvider";
-import { AdminLayout } from "./layouts/AdminLayout";
-import { LoginPage } from "../features/auth/LoginPage";
-import { ContainerShellProvider } from "../features/container-shell/ContainerShellProvider";
-import { LandingPage } from "../features/landing/LandingPage";
-import { PlaygroundPage } from "../features/playground/PlaygroundPage";
-import { SandboxContainersPage } from "../features/sandbox-containers/SandboxContainersPage";
-import { SandboxImagesPage } from "../features/sandbox-images/SandboxImagesPage";
-import { SystemUsersPage } from "../features/system-users/SystemUsersPage";
-import { WorkProjectsPage } from "../features/work-projects/WorkProjectsPage";
+
+const LandingPage = lazy(() => import("../features/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
+const LoginPage = lazy(() => import("../features/auth/LoginPage").then((module) => ({ default: module.LoginPage })));
+const ProtectedAdminShell = lazy(() => import("./layouts/ProtectedAdminShell").then((module) => ({ default: module.ProtectedAdminShell })));
+const PlaygroundPage = lazy(() => import("../features/playground/PlaygroundPage").then((module) => ({ default: module.PlaygroundPage })));
+const SandboxContainersPage = lazy(() => import("../features/sandbox-containers/SandboxContainersPage").then((module) => ({ default: module.SandboxContainersPage })));
+const SandboxImagesPage = lazy(() => import("../features/sandbox-images/SandboxImagesPage").then((module) => ({ default: module.SandboxImagesPage })));
+const SystemUsersPage = lazy(() => import("../features/system-users/SystemUsersPage").then((module) => ({ default: module.SystemUsersPage })));
+const WorkProjectsPage = lazy(() => import("../features/work-projects/WorkProjectsPage").then((module) => ({ default: module.WorkProjectsPage })));
 
 function ProtectedRoute() {
   const { isAuthenticated } = useAuth();
@@ -32,23 +32,33 @@ export function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route element={<PublicOnlyRoute />}>
-            <Route path="/login" element={<LoginPage />} />
-          </Route>
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AgentSessionProvider><ContainerShellProvider><AdminLayout /></ContainerShellProvider></AgentSessionProvider>}>
-              <Route path="/playground" element={<PlaygroundPage />} />
-              <Route path="/sandbox-images" element={<SandboxImagesPage />} />
-              <Route path="/sandbox-containers" element={<SandboxContainersPage />} />
-              <Route path="/system-users" element={<SystemUsersPage />} />
-              <Route path="/work-projects" element={<WorkProjectsPage />} />
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route element={<PublicOnlyRoute />}>
+              <Route path="/login" element={<LoginPage />} />
             </Route>
-          </Route>
-          <Route path="*" element={<Navigate to="/playground" replace />} />
-        </Routes>
+            <Route element={<ProtectedRoute />}>
+              <Route element={<ProtectedAdminShell />}>
+                <Route path="/playground" element={<PlaygroundPage />} />
+                <Route path="/sandbox-images" element={<SandboxImagesPage />} />
+                <Route path="/sandbox-containers" element={<SandboxContainersPage />} />
+                <Route path="/system-users" element={<SystemUsersPage />} />
+                <Route path="/work-projects" element={<WorkProjectsPage />} />
+              </Route>
+            </Route>
+            <Route path="*" element={<Navigate to="/playground" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
+  );
+}
+
+function RouteFallback() {
+  return (
+    <div className="route-fallback">
+      <div className="route-fallback-spinner" />
+    </div>
   );
 }

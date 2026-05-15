@@ -556,7 +556,8 @@
 }
 
 .landing-terminal > div {
-  display: flex;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
@@ -565,11 +566,17 @@
 }
 
 .landing-terminal > div span {
+  display: block;
   width: 10px;
   height: 10px;
   border-radius: 999px;
   background: #d92d3a;
   box-shadow: 16px 0 0 #219699, 32px 0 0 #90a6bd;
+}
+
+.landing-terminal > div strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .landing-terminal pre {

@@ -1,7 +1,4 @@
 import { Button } from "@douyinfe/semi-ui";
-import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
-import "@xterm/xterm/css/xterm.css";
 import { Maximize2, Minimize2, Minus, Monitor, FolderOpen, SquareTerminal, X } from "lucide-react";
 import {
   CSSProperties,
@@ -11,17 +8,22 @@ import {
   useCallback,
   useContext,
   useEffect,
+  lazy,
   MutableRefObject,
   useMemo,
   PointerEvent as ReactPointerEvent,
   useRef,
   useState,
   SetStateAction,
+  Suspense,
 } from "react";
+import type { FitAddon } from "@xterm/addon-fit";
+import type { Terminal } from "@xterm/xterm";
 import { buildContainerNoVNCUrl, buildContainerShellUrl } from "../../shared/api/sandboxContainers";
 import { showApiError } from "../../shared/api/feedback";
 import type { SandboxContainer } from "../../shared/api/types";
-import { ContainerFileManager } from "./ContainerFileManager";
+
+const ContainerFileManager = lazy(() => import("./ContainerFileManager").then((module) => ({ default: module.ContainerFileManager })));
 
 type ShellStatus = "idle" | "connecting" | "open" | "closed";
 type ShellDockState = "normal" | "minimized";
@@ -137,6 +139,15 @@ const DOCK_BUTTON_SIZE = 46;
 const DOCK_BUTTON_GAP = 54;
 const WINDOW_DOCK_TRANSITION_MS = 420;
 const SHELL_OUTPUT_DECODER = new TextDecoder();
+
+async function loadXterm() {
+  const [{ Terminal }, { FitAddon }] = await Promise.all([
+    import("@xterm/xterm"),
+    import("@xterm/addon-fit"),
+    import("@xterm/xterm/css/xterm.css"),
+  ]);
+  return { Terminal, FitAddon };
+}
 
 const ContainerShellContext = createContext<ContainerShellContextValue | null>(null);
 
@@ -388,73 +399,99 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!activeContainerHash || activeConnectionKey === null || terminalRef.current || !terminalHostRef.current) return;
 
-    const terminal = new Terminal({
-      cursorBlink: true,
-      convertEol: true,
-      fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, monospace",
-      fontSize: 13,
-      theme: {
-        background: "#0b111c",
-        foreground: "#d8e1ec",
-        cursor: "#ffffff",
-        selectionBackground: "#35506e",
-      },
-    });
-    const fit = new FitAddon();
-    terminal.loadAddon(fit);
-    terminal.open(terminalHostRef.current);
-    terminalRef.current = terminal;
-    fitRef.current = fit;
-    window.setTimeout(fitTerminal, 0);
+    let canceled = false;
+    let terminal: Terminal | null = null;
+    let fit: FitAddon | null = null;
+    let socket: WebSocket | null = null;
+    let disposable: { dispose: () => void } | null = null;
 
-    let socket: WebSocket;
-    try {
-      socket = new WebSocket(buildContainerShellUrl(activeContainerHash));
-    } catch (error) {
-      terminal.dispose();
-      terminalRef.current = null;
-      fitRef.current = null;
-      showApiError(error);
-      setShell((current) => current ? { ...current, status: "closed" } : current);
-      return;
-    }
-
-    socket.binaryType = "arraybuffer";
-    socketRef.current = socket;
-
-    const disposable = terminal.onData((data) => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "input", data }));
+    const cleanup = () => {
+      disposable?.dispose();
+      if (socket) {
+        socket.removeEventListener("close", onSocketTerminated);
+        socket.removeEventListener("error", onSocketTerminated);
+        socket.close();
       }
-    });
-
-    socket.addEventListener("open", () => {
-      setShell((current) => current ? { ...current, status: "open" } : current);
-      terminal.focus();
-      fitTerminal({ snapHeight: false });
-    });
-    socket.addEventListener("message", (event) => {
-      if (typeof event.data === "string") {
-        terminal.write(event.data);
-        return;
-      }
-      terminal.write(SHELL_OUTPUT_DECODER.decode(event.data as ArrayBuffer));
-    });
-    const onSocketTerminated = () => {
-      setShell((current) => current ? { ...current, status: "closed" } : current);
-    };
-    socket.addEventListener("close", onSocketTerminated);
-    socket.addEventListener("error", onSocketTerminated);
-
-    return () => {
-      disposable.dispose();
-      socket.removeEventListener("close", onSocketTerminated);
-      socket.removeEventListener("error", onSocketTerminated);
-      socket.close();
-      terminal.dispose();
+      terminal?.dispose();
       if (socketRef.current === socket) socketRef.current = null;
       if (terminalRef.current === terminal) terminalRef.current = null;
       if (fitRef.current === fit) fitRef.current = null;
+      disposable = null;
+      socket = null;
+      terminal = null;
+      fit = null;
+    };
+
+    const onSocketTerminated = () => {
+      setShell((current) => current ? { ...current, status: "closed" } : current);
+    };
+
+    void loadXterm()
+      .then(({ Terminal, FitAddon }) => {
+        if (canceled || !terminalHostRef.current) return;
+
+        terminal = new Terminal({
+          cursorBlink: true,
+          convertEol: true,
+          fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, monospace",
+          fontSize: 13,
+          theme: {
+            background: "#0b111c",
+            foreground: "#d8e1ec",
+            cursor: "#ffffff",
+            selectionBackground: "#35506e",
+          },
+        });
+        fit = new FitAddon();
+        terminal.loadAddon(fit);
+        terminal.open(terminalHostRef.current);
+        terminalRef.current = terminal;
+        fitRef.current = fit;
+        window.setTimeout(fitTerminal, 0);
+
+        try {
+          socket = new WebSocket(buildContainerShellUrl(activeContainerHash));
+        } catch (error) {
+          cleanup();
+          showApiError(error);
+          setShell((current) => current ? { ...current, status: "closed" } : current);
+          return;
+        }
+
+        socket.binaryType = "arraybuffer";
+        socketRef.current = socket;
+
+        disposable = terminal.onData((data) => {
+          if (socket?.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "input", data }));
+          }
+        });
+
+        socket.addEventListener("open", () => {
+          setShell((current) => current ? { ...current, status: "open" } : current);
+          terminal?.focus();
+          fitTerminal({ snapHeight: false });
+        });
+        socket.addEventListener("message", (event) => {
+          if (!terminal) return;
+          if (typeof event.data === "string") {
+            terminal.write(event.data);
+            return;
+          }
+          terminal.write(SHELL_OUTPUT_DECODER.decode(event.data as ArrayBuffer));
+        });
+        socket.addEventListener("close", onSocketTerminated);
+        socket.addEventListener("error", onSocketTerminated);
+      })
+      .catch((error) => {
+        if (canceled) return;
+        showApiError(error);
+        setShell((current) => current ? { ...current, status: "closed" } : current);
+      });
+
+    return () => {
+      canceled = true;
+      cleanup();
     };
   }, [activeConnectionKey, activeContainerHash, fitTerminal]);
 
@@ -690,11 +727,13 @@ export function ContainerShellProvider({ children }: { children: ReactNode }) {
               />
             )}
           >
-            <ContainerFileManager
-              containerId={fileManager.containerId}
-              containerHash={fileManager.containerHash}
-              containerName={fileManager.containerName}
-            />
+            <Suspense fallback={<div className="file-manager-loading">Loading files...</div>}>
+              <ContainerFileManager
+                containerId={fileManager.containerId}
+                containerHash={fileManager.containerHash}
+                containerName={fileManager.containerName}
+              />
+            </Suspense>
           </FloatingWindow>
           {fileManager.dockState === "minimized" && !fileManagerFlight ? (
             <MinimizedWindowButton className="filemanager-minimized-button" ariaLabel="Restore file manager" icon={<FolderOpen size={20} />} onClick={restoreFileManager} />

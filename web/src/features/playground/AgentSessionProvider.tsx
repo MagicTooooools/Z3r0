@@ -213,6 +213,13 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         ...r,
         state: finishChatTurn(r.state),
       }));
+      return;
+    }
+    if (parsed.type === "run_state" && !parsed.running) {
+      updateRuntime(sessionId, (r) => ({
+        ...r,
+        state: streamReduce(r.state, parsed),
+      }));
       pendingLiveEventsRef.current.delete(sessionId);
       reloadHistoryRef.current(sessionId, true);
       void refreshSessionsRef.current(true);
@@ -309,7 +316,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       .then((response) => {
         const events = response.data?.items ?? [];
         const buffered = pendingLiveEventsRef.current.get(sessionId) ?? [];
-        const bufferedDone = buffered.some((event) => event.type === "done");
+        const bufferedIdle = buffered.some((event) => event.type === "run_state" && !event.running);
         pendingLiveEventsRef.current.delete(sessionId);
         if (markEnsured) ensuredRef.current.add(sessionId);
         historyReadyRef.current.add(sessionId);
@@ -320,7 +327,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
           historyLoading: false,
         }));
         connectForRef.current(sessionId);
-        if (bufferedDone && !forceReplace) {
+        if (bufferedIdle && !forceReplace) {
           reloadHistoryRef.current(sessionId, true);
           void refreshSessionsRef.current(true);
         }
