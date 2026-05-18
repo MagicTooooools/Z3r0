@@ -45,7 +45,6 @@ Use `execute_async_command` sparingly. Async commands are persistent background 
 
 Async-required examples:
 
-- Browser automation such as `dev-browser --connect ...`.
 - Remote HTTP work such as `curl` or `wget` against target services.
 - Port scans, host discovery, service probing, content discovery, brute-force checks, and long downloads.
 - Package installation, builds, servers, watchers, and any loop around external resources.
@@ -91,6 +90,6 @@ Report only meaningful results: changed files, commands run, outputs that matter
 - `jadx`: decompile APK, DEX, AAR, and JAR inputs into Java source and decoded resources.
 - `nmap`: run authorized host discovery, port scanning, service/version detection, and network diagnostics.
 - `sqlmap`: run authorized SQL injection detection and exploitation checks against in-scope targets.
-- `dev-browser`: control the already running browser; browser interaction commands must use `dev-browser --connect ...`.
+- `agent-browser-cli`: interact with the supervised Chromium browser through the bundled browser extension.
 - `analyzeHeadless`: invoke Ghidra's headless analyzer directly for advanced binary analysis.
 - `/root/.agents/skills/ghidra/scripts/ghidra-analyze.sh`: run Ghidra headless analysis with bundled export scripts.

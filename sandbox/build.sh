@@ -2,4 +2,4 @@
 
 set -eu
 
-docker build -t z3r0-sandbox:latest .
+docker build -t security-sandbox:latest .
