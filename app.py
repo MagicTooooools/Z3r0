@@ -47,7 +47,7 @@ logger = get_logger(__name__)
 
 install_urllib3_closed_file_close_patch()
 
-WEB_DIST_PATH = ROOT_PATH / "web" / "dist"
+WEB_DIST_PATH = ROOT_PATH / "web" / "dist-app"
 API_PREFIX = "/api"
 
 
@@ -71,7 +71,7 @@ async def _bootstrap_admin_user() -> None:
 
 
 def _mount_frontend(app: FastAPI) -> None:
-    """serve built frontend assets when web/dist exists"""
+    """serve built frontend assets when web/dist-app exists"""
     index_path = WEB_DIST_PATH / "index.html"
     if not index_path.is_file():
         logger.debug("frontend static route skipped: %s not found", index_path)

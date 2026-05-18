@@ -16,3 +16,5 @@ config.json
 
 web/node_modules
 web/dist
+web/dist-app
+web/dist-landing

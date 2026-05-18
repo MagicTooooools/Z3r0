@@ -120,13 +120,6 @@
   animation: contentFadeUp 320ms var(--ease-emphasized) both;
 }
 
-.page-eyebrow {
-  color: #66758b;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .admin-topbar h1 {
   margin: 2px 0 0;
   color: #162033;

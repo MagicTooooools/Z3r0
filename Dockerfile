@@ -31,7 +31,7 @@ COPY router ./router
 COPY schema ./schema
 COPY service ./service
 COPY utils ./utils
-COPY --from=web-builder /app/web/dist ./web/dist
+COPY --from=web-builder /app/web/dist-app ./web/dist-app
 
 EXPOSE 8000
 

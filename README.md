@@ -11,7 +11,8 @@
   <a href="#architecture">Architecture</a> ·
   <a href="#agent-team">Agent Team</a> ·
   <a href="#runtime-model">Runtime Model</a> ·
-  <a href="#deployment">Deployment</a>
+  <a href="#deployment">Deployment</a> ·
+  <a href="Quickstart.md">Quickstart</a>
 </p>
 
 ---
@@ -182,6 +183,8 @@ sandbox/     Optional Docker sandbox image
 ```
 
 ## Deployment
+
+For a step-by-step setup guide, see [Quickstart.md](Quickstart.md).
 
 ```bash
 cp .z3r0/config.json.example .z3r0/config.json

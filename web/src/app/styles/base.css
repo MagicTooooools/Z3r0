@@ -48,6 +48,13 @@ a,
   height: 68px;
 }
 
+.page-eyebrow {
+  color: #66758b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 @keyframes chatRowIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
