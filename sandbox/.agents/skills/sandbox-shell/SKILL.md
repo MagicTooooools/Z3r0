@@ -64,13 +64,13 @@ Treat the returned `run_id` and `output_file` as task state. When the result is 
 ## Output Handling
 
 - Keep generated files and installed packages scoped to the task whenever possible.
-- Command output larger than the sandbox tool inline limit is saved under `/tmp/z3r0-command-output/` with UUID names like `/tmp/z3r0-command-output/<uuid>.log`. Async command output uses its `run_id` as the file name: `/tmp/z3r0-command-output/<run_id>.log`.
+- Command output larger than the sandbox tool inline limit is saved under `/tmp/shell-command-output/` with UUID names like `/tmp/shell-command-output/<uuid>.log`. Async command output uses its `run_id` as the file name: `/tmp/shell-command-output/<run_id>.log`.
 - When a command returns an `output_file`, do not re-run the original command just to inspect output.
 - Read saved output in bounded chunks, for example `sed -n '1,200p' <output_file>`.
 - Continue with `sed -n '201,400p' <output_file>` only when the next chunk is needed.
 - Never `cat` an entire large `output_file` back into the conversation.
 - Use line-bounded `sed`, `awk`, `head`, `tail`, `grep -n`, or `wc -l` to inspect only relevant ranges.
-- Delete stale files under `/tmp/z3r0-command-output/` only after the task no longer needs them.
+- Delete stale files under `/tmp/shell-command-output/` only after the task no longer needs them.
 
 ## Reporting
 
