@@ -200,4 +200,4 @@ Z3r0 is intended for authorized security testing, code auditing, red team exerci
 
 ## License
 
-This repository does not currently declare an open source license. Add a `LICENSE` file before public release.
+This project is licensed under the [MIT License](LICENSE).
