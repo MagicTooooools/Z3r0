@@ -2,12 +2,6 @@
   <img src="assets/z3r0-logo.png" width="156" alt="Z3r0 logo" />
 </p>
 
-<h1 align="center">Z3r0</h1>
-
-<p align="center">
-  A multi-agent collaboration platform for authorized red team operations, code auditing, and security research
-</p>
-
 <p align="center">
   <strong>English</strong> ·
   <a href="README_zh.md">中文</a>
@@ -16,43 +10,54 @@
 <p align="center">
   <a href="#architecture">Architecture</a> ·
   <a href="#agent-team">Agent Team</a> ·
-  <a href="#technical-highlights">Technical Highlights</a> ·
-  <a href="#quick-start">Quick Start</a>
+  <a href="#runtime-model">Runtime Model</a> ·
+  <a href="#deployment">Deployment</a>
 </p>
 
 ---
 
-Z3r0 is a multi-agent collaboration platform for authorized red team operations, code auditing, and security research. It organizes security work around a coordinator, specialist agents, and controlled Docker sandboxes so analysis, validation, execution, and review can stay in one workflow.
+Z3r0 is a controlled multi-agent workbench for enterprise red team operations, authorized security assessments, code auditing, and security research. It coordinates a lead security agent, domain specialists, and Docker-backed execution surfaces so planning, evidence collection, validation, operator takeover, and review remain in one governed workflow.
 
-## Design Context
+## Design Principles
 
-Security work often spans multiple domains:
-
-- Intelligence work starts with target profiling and asset mapping.
-- Penetration testing needs interaction with live environments.
-- Reverse engineering depends on toolchains and sample context.
-- Cryptography review requires a separate analysis framework.
-
-Z3r0 maps these responsibilities to specialized agents. `Z3r0` handles task understanding, decomposition, and result integration, while specialist agents work within their own domains. The platform provides a real-time workbench, persistent sessions, sandbox execution, and replayable history for long-running investigations.
+- **Authorized operation first**: Z3r0 is designed for approved internal assessments, adversary emulation, code review, and controlled research environments.
+- **Clear role boundaries**: a coordinator decomposes the task, while specialist agents handle intelligence, penetration validation, reverse engineering, and cryptographic review within defined scopes.
+- **Traceable work**: sessions, tool calls, delegation jobs, and streamed events are persisted so investigations can be resumed and reviewed.
+- **Controlled execution**: command execution, browser access, file management, and GUI tooling run through bound Docker sandboxes.
+- **Model abstraction**: model access is kept behind runtime and role interfaces, with support for LiteLLM and OpenAI-compatible providers.
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-  User["Security Operator"] --> Web["React Workbench"]
-  Web -->|REST / WebSocket| API["FastAPI API"]
-  API --> Runtime["Agent Runtime"]
-  Runtime --> Registry["Agent Registry"]
-  Registry --> Team["CSO + Specialist Agents"]
-  Team --> LLM["LiteLLM / OpenAI-compatible Models"]
-  Runtime --> Store[("PostgreSQL Session Store")]
-  Runtime --> Sandbox["Docker Sandbox"]
-  Sandbox --> Tools["Commands / Skills / Shell / Files / noVNC"]
+flowchart TB
+  Operator["Security Operator"]
+  Workbench["React Workbench<br/>Presentation Layer"]
+  API["FastAPI API<br/>API Layer"]
+  Runtime["Agent Runtime<br/>Orchestration Layer"]
+  Graph["Session Agent Graph<br/>Capability Layer"]
+  Record["Assessment Record<br/>Review Layer"]
+  Sandbox["Docker Sandbox<br/>Execution Layer"]
+  Tools["Tool Surface<br/>Tool Layer"]
+  Models["Model Providers<br/>Model Layer"]
+  Events["Event Contract<br/>Streaming Layer"]
+  Store[("PostgreSQL Store<br/>Persistence Layer")]
+
+  Operator --> Workbench
+  Workbench -->|REST / WebSocket| API
+  API --> Runtime
+  Runtime --> Graph
+  Runtime --> Record
+  Runtime --> Sandbox
+  Runtime --> Events
+  Runtime --> Store
+  Graph --> Tools
+  Graph --> Models
+  Sandbox --> Tools
+  Record --> Store
+  Events --> Workbench
 ```
 
-The backend is organized around clear runtime boundaries: session lifecycle, agent graph construction, tool mounting, sandbox binding, stream-event normalization, and context compaction. The frontend consumes a stable application event protocol and does not depend on model SDK internals.
-
-## Layered Design
+The system is organized into explicit layers: operator-facing workbench, API boundary, runtime orchestration, session agent graph, controlled execution, model access, streaming event contract, and persisted assessment record. The backend owns authentication, session lifecycle, context projection, event normalization, delegation, sandbox binding, tool mounting, persistence, and history compaction. The frontend consumes stable application-level REST and WebSocket contracts and does not depend on model SDK or provider internals.
 
 ## Agent Team
 
@@ -78,9 +83,9 @@ flowchart TB
   CCE --> S3["Sandbox Tools"]
 ```
 
-Agent capabilities are built per session. `AgentRegistry` uses configuration, role specs, knowledge generation, and the current sandbox binding to create a session-level Agent Graph. Command tools are mounted only when a usable sandbox is bound to the session.
+Agent capabilities are assembled per session. `AgentRegistry` uses configuration, role specifications, knowledge generation, and the current sandbox binding to create a session-level agent graph. Command tools are mounted only when an authorized, running sandbox is bound to the session.
 
-## Session Runtime Flow
+## Runtime Model
 
 ```mermaid
 sequenceDiagram
@@ -102,14 +107,14 @@ sequenceDiagram
   W-->>U: thinking / text / tool / done
 ```
 
-Key design points:
+Key runtime boundaries:
 
-- **Event normalization**: raw OpenAI Agents SDK stream events are converted into stable frontend events such as `thinking_delta`, `text_delta`, `tool_call`, `tool_result`, and `subagent_task`.
+- **Event normalization**: raw model and agent SDK events are converted into stable frontend events such as `thinking_delta`, `text_delta`, `tool_call`, `tool_result`, and `subagent_task`.
 - **Session pool**: `AgentSessionPool` manages active sessions, interruption, cancellation, idle eviction, and tool-binding invalidation.
 - **History projection**: `Z3r0Session` adds owner and nested-call metadata around SDK messages so each agent receives the right view of the shared conversation.
-- **Automatic compaction**: when context approaches the model window, the runtime summarizes earlier projected history while keeping recent context and durable facts.
+- **Context compaction**: when context approaches the model window, the runtime summarizes earlier projected history while preserving recent context and durable facts.
 
-## Subagent Delegation Flow
+## Delegation Flow
 
 ```mermaid
 sequenceDiagram
@@ -129,9 +134,9 @@ sequenceDiagram
   CSO-->>CSO: integrate result
 ```
 
-Subagents run as persistent background jobs. Status, progress, results, and errors are stored in PostgreSQL and streamed to the frontend. Once a subagent reaches a terminal state, the parent agent receives a runtime notification and continues integrating the result.
+Specialist agents can run as persistent background jobs. Status, progress, results, and errors are stored in PostgreSQL and streamed to the frontend. When a delegated job reaches a terminal state, the coordinator receives a runtime notification and can integrate the result into the main assessment.
 
-## Sandbox Tooling Architecture
+## Sandbox Tooling
 
 ```mermaid
 flowchart LR
@@ -151,12 +156,12 @@ flowchart LR
   Screen --> Docker
 ```
 
-The optional sandbox image includes a browser, noVNC, Ghidra, jadx, sqlmap, nmap, and related tooling. Agents receive structured tool results, while operators can open an interactive shell, GUI screen, and file manager for manual takeover and review.
+The optional sandbox image includes a browser, noVNC, Ghidra, jadx, sqlmap, nmap, and related security tooling. Agents receive structured tool results; operators can open an interactive shell, GUI screen, and file manager for manual takeover, validation, and review.
 
-## Technical Highlights
+## Technical Characteristics
 
-- **Session-level Agent Graph**: role configuration, tools, knowledge, and subagents are bound dynamically per session.
-- **Persistent delegation jobs**: subagents run in the background, can be canceled, can recover from stale runtime state, and notify the parent agent when finished.
+- **Session-level agent graph**: role configuration, tools, knowledge, and subagents are bound dynamically per session.
+- **Persistent delegation jobs**: subagents run in the background, can be canceled, can recover from stale runtime state, and notify the coordinator when finished.
 - **Viewer-specific context projection**: agents share one persisted history while receiving scoped context views, reducing cross-agent leakage of private tool details.
 - **Long-context compaction**: model-window-aware summaries preserve durable facts and recent state for long investigations.
 - **Stable streaming contract**: the frontend is decoupled from SDK event details and consumes application-level event schemas.
@@ -176,11 +181,11 @@ sandbox/     Optional Docker sandbox image
 .z3r0/       Runtime config, agent prompts, logs
 ```
 
-## Quick Start
+## Deployment
 
 ```bash
 cp .z3r0/config.json.example .z3r0/config.json
-# Edit .z3r0/config.json for database, bootstrap admin, and model settings.
+# Review database, initial administrator, model provider, and sandbox settings.
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
@@ -188,7 +193,7 @@ Open `http://127.0.0.1:8000`.
 
 ## Security Boundary
 
-Z3r0 is intended for authorized security testing, code auditing, red team exercises, and research or training environments. Sandbox containers, the Docker socket, terminal access, file management, and model credentials should be treated as high-privilege assets and used only in trusted, isolated environments.
+Z3r0 is intended for authorized security testing, code auditing, red team exercises, and research or training environments. Sandbox containers, the Docker socket, terminal access, file management, and model credentials are high-privilege assets and should be used only in trusted, isolated environments.
 
 ## License
 

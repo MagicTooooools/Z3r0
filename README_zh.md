@@ -2,12 +2,6 @@
   <img src="assets/z3r0-logo.png" width="156" alt="Z3r0 logo" />
 </p>
 
-<h1 align="center">Z3r0</h1>
-
-<p align="center">
-  面向授权红队、代码审计和安全研究场景的多 Agent 协作平台
-</p>
-
 <p align="center">
   <a href="README.md">English</a> ·
   <strong>中文</strong>
@@ -16,43 +10,54 @@
 <p align="center">
   <a href="#总体架构">总体架构</a> ·
   <a href="#agent-编队">Agent 编队</a> ·
-  <a href="#技术亮点">技术亮点</a> ·
-  <a href="#快速运行">快速运行</a>
+  <a href="#运行模型">运行模型</a> ·
+  <a href="#部署运行">部署运行</a>
 </p>
 
 ---
 
-Z3r0 是一个面向授权红队、代码审计和安全研究场景的多 Agent 协作平台。它以“指挥官 + 专业工程师 + 可控沙箱”的方式组织安全任务，让分析、验证、执行和复盘都能在同一套工作流中完成。
+Z3r0 是一个面向企业授权红队行动、授权安全评估、代码审计和安全研究场景的多 Agent 工作台。平台以主控安全 Agent、专业 Agent 和 Docker 执行边界组织任务，使计划制定、证据收集、漏洞验证、人工接管和过程复盘保持在同一套受控工作流中。
 
-## 设计背景
+## 设计原则
 
-安全任务经常横跨多个专业方向：
-
-- 情报收集需要先建立目标画像。
-- 渗透验证需要真实环境交互。
-- 逆向分析依赖工具链和样本上下文。
-- 密码学问题需要独立的判断框架。
-
-Z3r0 把这些职责拆给不同 Agent：`Z3r0` 负责目标理解、任务拆分和结论整合，专业 Agent 在各自边界内完成分析与验证。平台提供实时工作台、持久化会话、沙箱执行和历史回放，使长任务能够持续推进并保留可审计过程。
+- **授权优先**：面向经过批准的内部评估、对抗演练、代码审计和受控研究环境。
+- **职责清晰**：主控 Agent 负责任务拆解和结果整合，专业 Agent 分别处理情报、渗透验证、逆向分析和密码学审查。
+- **过程追踪**：会话、工具调用、委派任务和流式事件持久化存储，便于恢复、审计和复盘。
+- **执行受控**：命令执行、浏览器、文件管理和图形工具均通过绑定的 Docker 沙箱提供。
+- **模型解耦**：模型访问收敛在运行时和角色接口之后，支持 LiteLLM 与 OpenAI 兼容模型服务。
 
 ## 总体架构
 
 ```mermaid
-flowchart LR
-  User["安全人员"] --> Web["React Workbench"]
-  Web -->|REST / WebSocket| API["FastAPI API"]
-  API --> Runtime["Agent Runtime"]
-  Runtime --> Registry["Agent Registry"]
-  Registry --> Team["CSO + Specialist Agents"]
-  Team --> LLM["LiteLLM / OpenAI-compatible Models"]
-  Runtime --> Store[("PostgreSQL Session Store")]
-  Runtime --> Sandbox["Docker Sandbox"]
-  Sandbox --> Tools["Commands / Skills / Shell / Files / noVNC"]
+flowchart TB
+  Operator["安全人员"]
+  Workbench["React Workbench<br/>表现层"]
+  API["FastAPI API<br/>接口层"]
+  Runtime["Agent Runtime<br/>编排层"]
+  Graph["Session Agent Graph<br/>能力层"]
+  Record["Assessment Record<br/>复盘层"]
+  Sandbox["Docker Sandbox<br/>执行层"]
+  Tools["Tool Surface<br/>工具层"]
+  Models["Model Providers<br/>模型层"]
+  Events["Event Contract<br/>流式协议层"]
+  Store[("PostgreSQL Store<br/>持久化层")]
+
+  Operator --> Workbench
+  Workbench -->|REST / WebSocket| API
+  API --> Runtime
+  Runtime --> Graph
+  Runtime --> Record
+  Runtime --> Sandbox
+  Runtime --> Events
+  Runtime --> Store
+  Graph --> Tools
+  Graph --> Models
+  Sandbox --> Tools
+  Record --> Store
+  Events --> Workbench
 ```
 
-后端围绕几个清晰边界组织：会话生命周期、Agent 图构建、工具挂载、沙箱绑定、事件流归一化和上下文压缩。前端不直接感知模型 SDK 细节，只消费统一事件协议并渲染工作台视图。
-
-## 分层设计
+系统按明确的层次组织：面向安全人员的工作台、API 边界、运行时编排、会话级 Agent Graph、受控执行、模型访问、流式事件协议和持久化评估记录。后端负责认证、会话生命周期、上下文投影、事件归一化、任务委派、沙箱绑定、工具挂载、持久化和历史压缩；前端消费稳定的应用级 REST 与 WebSocket 协议，不直接依赖模型 SDK 或模型服务商细节。
 
 ## Agent 编队
 
@@ -78,9 +83,9 @@ flowchart TB
   CCE --> S3["Sandbox Tools"]
 ```
 
-Agent 能力按会话动态生成。`AgentRegistry` 根据配置、角色规格、知识库版本和当前沙箱绑定生成会话级 Agent Graph；如果会话没有可用沙箱，命令类工具不会挂载，避免模型调用不可用能力。
+Agent 能力按会话动态装配。`AgentRegistry` 基于配置、角色规格、知识生成结果和当前沙箱绑定创建会话级 Agent Graph；只有当会话绑定了已授权且运行中的沙箱时，命令类工具才会挂载。
 
-## 会话运行链路
+## 运行模型
 
 ```mermaid
 sequenceDiagram
@@ -102,14 +107,14 @@ sequenceDiagram
   W-->>U: thinking / text / tool / done
 ```
 
-关键设计点：
+关键运行边界：
 
-- **事件归一化**：OpenAI Agents SDK 的原始流被转换成稳定的 `thinking_delta`、`text_delta`、`tool_call`、`tool_result`、`subagent_task` 等前端协议。
-- **会话池**：`AgentSessionPool` 维护运行中会话，支持中断、取消、空闲回收和工具绑定失效。
-- **历史投影**：`Z3r0Session` 在 SDK 原始消息外增加 owner、nested call 等元数据，使不同 Agent 能看到适合自己的上下文视图。
-- **自动压缩**：当上下文接近模型窗口时，系统按会话与 Agent 视角生成摘要，保留近期上下文和关键事实。
+- **事件归一化**：模型和 Agent SDK 的原始事件被转换为稳定的 `thinking_delta`、`text_delta`、`tool_call`、`tool_result`、`subagent_task` 等前端事件。
+- **会话池**：`AgentSessionPool` 维护活跃会话，支持中断、取消、空闲回收和工具绑定失效。
+- **历史投影**：`Z3r0Session` 在 SDK 消息外补充 owner、nested call 等元数据，使不同 Agent 获得适合自身角色的共享上下文视图。
+- **上下文压缩**：当上下文接近模型窗口时，运行时会摘要更早的投影历史，同时保留近期上下文和关键事实。
 
-## 子 Agent 委派链路
+## 委派链路
 
 ```mermaid
 sequenceDiagram
@@ -129,9 +134,9 @@ sequenceDiagram
   CSO-->>CSO: integrate result
 ```
 
-子 Agent 以持久化后台任务运行。任务状态、进度、结果和错误会写入数据库并实时推送到前端；主 Agent 收到完成通知后继续整合结果，适合长时间、多阶段安全分析。
+专业 Agent 可以作为持久化后台任务运行。任务状态、进度、结果和错误会写入 PostgreSQL 并实时推送到前端；当委派任务进入终态后，主控 Agent 会收到运行时通知，并将结果纳入主评估流程。
 
-## 沙箱工具架构
+## 沙箱工具
 
 ```mermaid
 flowchart LR
@@ -151,16 +156,16 @@ flowchart LR
   Screen --> Docker
 ```
 
-内置沙箱镜像包含浏览器、noVNC、Ghidra、jadx、sqlmap、nmap 等工具。Agent 侧接收结构化工具结果，用户侧可直接打开终端、图形界面和文件管理器，便于人工接管与复核。
+可选沙箱镜像包含浏览器、noVNC、Ghidra、jadx、sqlmap、nmap 等安全工具。Agent 侧接收结构化工具结果，用户侧可打开交互式终端、图形界面和文件管理器，用于人工接管、验证和复核。
 
-## 技术亮点
+## 技术特性
 
-- **会话级 Agent Graph**：同一套角色配置按会话状态动态绑定工具、知识库和子 Agent。
-- **持久化委派任务**：子 Agent 后台运行、可取消、可恢复，并通过通知驱动主 Agent 继续推理。
-- **多视角上下文投影**：共享数据库历史，但不同 Agent 只看到对自己合适的上下文，避免工具私有信息互相污染。
-- **长上下文压缩**：基于模型窗口和消息投影自动生成摘要，降低长任务丢上下文的风险。
-- **统一流式协议**：前端与模型 SDK 解耦，只消费稳定的应用事件模型。
-- **沙箱工具热插拔**：沙箱状态变化会触发工具绑定失效，运行中任务和异步命令会被清理。
+- **会话级 Agent Graph**：角色配置、工具、知识库和子 Agent 按会话状态动态绑定。
+- **持久化委派任务**：子 Agent 后台运行、可取消、可从陈旧运行状态恢复，并在完成后通知主控 Agent。
+- **多视角上下文投影**：不同 Agent 共享同一份持久化历史，但只接收符合自身角色的上下文视图，降低工具私有信息互相污染的风险。
+- **长上下文压缩**：基于模型窗口生成摘要，保留长周期调查中的关键事实和近期状态。
+- **稳定流式协议**：前端与模型 SDK 解耦，只消费应用级事件模型。
+- **沙箱工具失效控制**：沙箱状态变化会触发工具绑定失效，并清理运行中的子任务或异步命令。
 
 ## 代码结构
 
@@ -176,11 +181,11 @@ sandbox/     可选 Docker 沙箱镜像
 .z3r0/       运行配置、Agent 角色提示词、日志
 ```
 
-## 快速运行
+## 部署运行
 
 ```bash
 cp .z3r0/config.json.example .z3r0/config.json
-# 修改 .z3r0/config.json 中的数据库、管理员密码和模型配置
+# 检查数据库、初始管理员、模型服务和沙箱相关配置
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
@@ -188,8 +193,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ## 安全边界
 
-Z3r0 面向合法授权的安全测试、代码审计、红队演练和研究教学场景。沙箱容器、Docker socket、终端、文件管理器和模型密钥都属于高权限资产，请只在可信隔离环境中使用。
+Z3r0 面向合法授权的安全测试、代码审计、红队演练和研究教学场景。沙箱容器、Docker socket、终端、文件管理器和模型密钥均属于高权限资产，应仅在可信、隔离的环境中使用。
 
 ## License
 
-当前仓库尚未声明开源许可证。发布前建议补充 `LICENSE` 文件。
+当前仓库尚未声明开源许可证。公开发布前建议补充 `LICENSE` 文件。
