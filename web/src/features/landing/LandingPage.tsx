@@ -56,11 +56,56 @@ const architectureNodes: ArchitectureNode[] = [
 ];
 
 const agents = [
-  { code: "cso", name: "Z3r0", role: "Chief Security Officer", detail: "Task decomposition, coordination, result integration.", accent: "red" },
-  { code: "cie", name: "L1ly", role: "Chief Intelligence Engineer", detail: "Target profiling, asset mapping, relationship analysis.", accent: "cyan" },
-  { code: "cpe", name: "Fr4nk", role: "Chief Penetration Engineer", detail: "Penetration testing, vulnerability validation, risk verification.", accent: "red" },
-  { code: "cre", name: "J4m3", role: "Chief Reverse Engineer", detail: "File, binary, firmware, and APK reverse engineering.", accent: "cyan" },
-  { code: "cce", name: "Nu1L", role: "Chief Cryptography Engineer", detail: "Protocol review, key management, implementation analysis.", accent: "red" },
+  {
+    code: "cso",
+    name: "Z3r0",
+    role: "Chief Security Officer",
+    capability: "Orchestration",
+    direction: "Planning, delegation, and result synthesis",
+    detail: "Task decomposition, coordination, result integration.",
+    accent: "red",
+    icon: Workflow,
+  },
+  {
+    code: "cie",
+    name: "L1ly",
+    role: "Chief Intelligence Engineer",
+    capability: "Intelligence",
+    direction: "Target profiling and asset relationships",
+    detail: "Target profiling, asset mapping, relationship analysis.",
+    accent: "cyan",
+    icon: FileSearch,
+  },
+  {
+    code: "cpe",
+    name: "Fr4nk",
+    role: "Chief Penetration Engineer",
+    capability: "Validation",
+    direction: "Exploitability checks and risk verification",
+    detail: "Penetration testing, vulnerability validation, risk verification.",
+    accent: "red",
+    icon: ShieldCheck,
+  },
+  {
+    code: "cre",
+    name: "J4m3",
+    role: "Chief Reverse Engineer",
+    capability: "Reverse",
+    direction: "Binary, firmware, and APK analysis",
+    detail: "File, binary, firmware, and APK reverse engineering.",
+    accent: "cyan",
+    icon: Code2,
+  },
+  {
+    code: "cce",
+    name: "Nu1L",
+    role: "Chief Cryptography Engineer",
+    capability: "Cryptography",
+    direction: "Protocol, key, and implementation review",
+    detail: "Protocol review, key management, implementation analysis.",
+    accent: "red",
+    icon: LockKeyhole,
+  },
 ];
 
 const runtimeSteps = [
@@ -132,18 +177,27 @@ export function LandingPage() {
           </div>
         </div>
 
-        <div className="landing-orbit" aria-label="Z3r0 operating model">
-          <div className="landing-orbit-core">
-            <div className="landing-orbit-core-mark">Z3r0</div>
-            <strong>Coordinator</strong>
-            <span>specialist graph</span>
+        <div className="landing-capability-matrix" aria-label="Z3r0 capability matrix">
+          <div className="landing-capability-header">
+            <span className="page-eyebrow">Capability Matrix</span>
+            <strong>Agents mapped to platform capability directions</strong>
           </div>
-          {agents.slice(1).map((agent, index) => (
-            <div key={agent.code} className={`landing-orbit-node landing-orbit-node-${index + 1}`}>
-              <b>{agent.name}</b>
-              <span>{agent.role.replace("Chief ", "").replace(" Engineer", "")}</span>
-            </div>
-          ))}
+          <div className="landing-capability-grid">
+            {agents.map((agent) => {
+              const Icon = agent.icon;
+              return (
+                <article key={agent.code} className={`landing-capability-cell landing-capability-cell-${agent.accent}`}>
+                  <div className="landing-capability-cell-top">
+                    <span>{agent.code}</span>
+                    <Icon size={18} />
+                  </div>
+                  <h2>{agent.capability}</h2>
+                  <strong>{agent.name}</strong>
+                  <p>{agent.direction}</p>
+                </article>
+              );
+            })}
+          </div>
         </div>
       </section>
 
