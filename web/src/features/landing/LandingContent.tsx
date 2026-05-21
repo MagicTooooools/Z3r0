@@ -1,4 +1,3 @@
-import { Button } from "@douyinfe/semi-ui";
 import {
   Activity,
   Bot,
@@ -23,12 +22,19 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
-import z3r0Logo from "../../assets/z3r0-logo.png";
 
 const repositoryUrl = "https://github.com/yv1ing/Z3r0";
 
+type LandingPrimaryAction = {
+  label: string;
+  href?: string;
+  external?: boolean;
+  onSelect?: () => void;
+};
+
 type LandingContentProps = {
-  onOpenWorkbench: () => void;
+  logoSrc: string;
+  primaryAction: LandingPrimaryAction;
 };
 
 type ArchitectureNode = {
@@ -251,7 +257,7 @@ const highlights = [
 
 const sandboxTools = ["Commands", "Skills", "Shell", "Files", "noVNC", "Ghidra", "jadx", "sqlmap", "nmap"];
 
-export function LandingContent({ onOpenWorkbench }: LandingContentProps) {
+export function LandingContent({ logoSrc, primaryAction }: LandingContentProps) {
   const [activeNode, setActiveNode] = useState(architectureNodes[3]);
   const ActiveArchitectureIcon = activeNode.icon;
   const mainArchitectureNodes = mainArchitectureNodeIds.map(getArchitectureNode);
@@ -266,8 +272,9 @@ export function LandingContent({ onOpenWorkbench }: LandingContentProps) {
       <section id="top" className="landing-hero" aria-label="Z3r0 landing page">
         <div className="landing-hero-copy">
           <div className="landing-title-row">
-            <img className="landing-hero-logo" src={z3r0Logo} alt="Z3r0 logo" />
+            <img className="landing-hero-logo" src={logoSrc} width="1000" height="1000" alt="Z3r0 logo" />
             <div>
+              <h1>Z3r0 Multi-Agent Security Workbench</h1>
               <p>
                 A controlled multi-agent workbench for enterprise red team operations,
                 authorized security assessments, code auditing, and security research.
@@ -275,20 +282,15 @@ export function LandingContent({ onOpenWorkbench }: LandingContentProps) {
             </div>
           </div>
           <div className="landing-actions">
-            <Button theme="solid" type="danger" size="large" icon={<ShieldCheck size={17} />} onClick={onOpenWorkbench}>
-              Open workbench
-            </Button>
-            <Button theme="outline" size="large" icon={<Network size={17} />} onClick={() => scrollToSection("architecture")}>
-              View architecture
-            </Button>
-            <Button
-              theme="outline"
-              size="large"
-              icon={<Github size={17} />}
-              onClick={() => window.open(repositoryUrl, "_blank", "noopener,noreferrer")}
-            >
-              Follow us
-            </Button>
+            <PrimaryActionLink action={primaryAction} />
+            <a className="landing-action-link landing-action-secondary" href="#architecture">
+              <Network size={17} />
+              <span>View architecture</span>
+            </a>
+            <a className="landing-action-link landing-action-secondary" href={repositoryUrl} target="_blank" rel="noopener noreferrer">
+              <Github size={17} />
+              <span>Follow us</span>
+            </a>
           </div>
         </div>
 
@@ -307,7 +309,7 @@ export function LandingContent({ onOpenWorkbench }: LandingContentProps) {
                 <article key={agent.code} className={`landing-capability-cell landing-capability-cell-${agent.accent}`}>
                   <div className="landing-capability-title">
                     <Icon size={20} />
-                    <h2>{agent.capability}</h2>
+                    <h3>{agent.capability}</h3>
                   </div>
                   <div className="landing-capability-identity">
                     <span>{agent.code}</span>
@@ -481,8 +483,27 @@ export function LandingContent({ onOpenWorkbench }: LandingContentProps) {
   );
 }
 
-function scrollToSection(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+function PrimaryActionLink({ action }: { action: LandingPrimaryAction }) {
+  if (action.href) {
+    return (
+      <a
+        className="landing-action-link landing-action-primary"
+        href={action.href}
+        target={action.external ? "_blank" : undefined}
+        rel={action.external ? "noopener noreferrer" : undefined}
+      >
+        <ShieldCheck size={17} />
+        <span>{action.label}</span>
+      </a>
+    );
+  }
+
+  return (
+    <button className="landing-action-link landing-action-primary" type="button" onClick={action.onSelect}>
+      <ShieldCheck size={17} />
+      <span>{action.label}</span>
+    </button>
+  );
 }
 
 function getArchitectureNode(id: string) {
