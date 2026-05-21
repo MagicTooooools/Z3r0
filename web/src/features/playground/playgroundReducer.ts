@@ -183,7 +183,15 @@ function routeToTopLevel(state: ChatState, event: AgentContentEvent): ChatState 
   const lastNode = nodes[lastIndex];
 
   let agent: AgentNode;
-  if (lastNode?.kind === "agent" && state.streaming && state.liveFrom !== null) {
+  // Notification turns (for example, parent-agent follow-up after a subagent
+  // finishes) have no visible user message, so liveFrom can point after the
+  // current tail. In that case the first live agent event must start a new node.
+  if (
+    lastNode?.kind === "agent"
+    && state.streaming
+    && state.liveFrom !== null
+    && lastIndex >= state.liveFrom
+  ) {
     agent = cloneAgentNode(lastNode);
     if (!agent.createdAt) agent.createdAt = event.created_at;
     nodes[lastIndex] = agent;

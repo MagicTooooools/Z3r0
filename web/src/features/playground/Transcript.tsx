@@ -51,7 +51,6 @@ export function TranscriptContent({
   const isEmpty = isTranscriptEmpty(transcript);
   const activeTextId = live ? activeTextItemId(transcript.blocks) : "";
   const activeThinkingId = live ? activeThinkingItemId(transcript.blocks) : "";
-  const hasActiveText = Boolean(activeTextId);
   const thinkingBlocks = transcript.blocks.filter((block): block is ThinkingItem => block.kind === "thinking");
   const toolBlocks = transcript.blocks.filter(isToolBlock);
   const contentBlocks = transcript.blocks.filter(isContentBlock);
@@ -84,8 +83,8 @@ export function TranscriptContent({
             streaming={block.kind === "text" ? block.id === activeTextId && !block.complete : false}
           />
         ))}
-        {live && !isEmpty && !hasActiveText ? <span className="caret" /> : null}
       </div>
+      {live && !isEmpty ? <span className="caret" /> : null}
       {isEmpty && emptyText ? <div className="transcript-empty">{emptyText}</div> : null}
     </div>
   );
@@ -103,14 +102,13 @@ function ContentBlockView({ block, streaming }: { block: ContentBlock; streaming
 function MarkdownText({ text, streaming }: { text: string; streaming: boolean }) {
   const markdown = useMemo(() => normalizeMarkdownForRender(text, streaming), [streaming, text]);
   if (!text) {
-    return streaming ? <span className="caret" /> : null;
+    return null;
   }
   return (
     <div className="agent-text">
-      <Suspense fallback={<pre className="agent-text-fallback">{markdown}</pre>}>
+      <Suspense fallback={<pre>{markdown}</pre>}>
         <MarkdownRenderer markdown={markdown} />
       </Suspense>
-      {streaming ? <span className="caret" /> : null}
     </div>
   );
 }
