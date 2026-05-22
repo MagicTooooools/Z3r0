@@ -17,13 +17,19 @@
 
 ---
 
-Z3r0 is a controlled multi-agent workbench for enterprise red team operations, authorized security assessments, code auditing, and security research. It coordinates a lead security agent, domain specialists, and Docker-backed execution surfaces so planning, evidence collection, validation, operator takeover, and review remain in one governed workflow.
+> :warning: **Legal Notice**
+>
+> **This project may be used only within a lawful and explicitly authorized scope for security testing, assessment, and research. Any unauthorized, unlawful, or harmful use is strictly prohibited. The author assumes no responsibility for any consequences, losses, damages, legal liabilities, or unlawful acts caused by users.**
+>
+> This project is provided only for authorized security assessment, code auditing, internal review, and controlled research. It does not grant permission to test, access, scan, or affect any third-party system, network, service, account, or data. Users are solely responsible for obtaining and preserving authorization, defining scope, and complying with applicable laws, contracts, and authorization boundaries.
+
+Z3r0 is a controlled multi-agent workbench for authorized security assessment, code auditing, internal review, and controlled research. It coordinates a lead security agent, domain specialists, and Docker-backed execution surfaces so planning, evidence collection, validation, manual review, and reporting remain in a governed workflow.
 
 ## Design Principles
 
-- **Authorized operation first**: Z3r0 is designed for approved internal assessments, adversary emulation, code review, and controlled research environments.
+- **Authorized operation first**: Z3r0 is designed for approved internal assessments, code review, training, and controlled research environments.
 - **Clear role boundaries**: a coordinator decomposes the task, while specialist agents handle intelligence, penetration validation, reverse engineering, and cryptographic review within defined scopes.
-- **Traceable work**: sessions, tool calls, delegation jobs, and streamed events are persisted so investigations can be resumed and reviewed.
+- **Traceable work**: sessions, tool calls, delegation jobs, and streamed events are persisted so reviews can be resumed and audited.
 - **Controlled execution**: command execution, browser access, file management, and GUI tooling run through bound Docker sandboxes.
 - **Model abstraction**: model access is kept behind runtime and role interfaces, with support for LiteLLM and OpenAI-compatible providers.
 
@@ -31,7 +37,7 @@ Z3r0 is a controlled multi-agent workbench for enterprise red team operations, a
 
 ```mermaid
 flowchart TB
-  Operator["Security Operator"]
+  Operator["Authorized Operator"]
   Workbench["React Workbench<br/>Presentation Layer"]
   API["FastAPI API<br/>API Layer"]
   Runtime["Agent Runtime<br/>Orchestration Layer"]
@@ -58,7 +64,7 @@ flowchart TB
   Events --> Workbench
 ```
 
-The system is organized into explicit layers: operator-facing workbench, API boundary, runtime orchestration, session agent graph, controlled execution, model access, streaming event contract, and persisted assessment record. The backend owns authentication, session lifecycle, context projection, event normalization, delegation, sandbox binding, tool mounting, persistence, and history compaction. The frontend consumes stable application-level REST and WebSocket contracts and does not depend on model SDK or provider internals.
+The system is organized into explicit layers: user-facing workbench, API boundary, runtime orchestration, session agent graph, controlled execution, model access, streaming event contract, and persisted assessment record. The backend owns authentication, session lifecycle, context projection, event normalization, delegation, sandbox binding, tool mounting, persistence, and history compaction. The frontend consumes stable REST and WebSocket contracts and does not depend on model SDK or provider internals.
 
 ## Agent Team
 
@@ -157,14 +163,14 @@ flowchart LR
   Screen --> Docker
 ```
 
-The optional sandbox image includes a browser, noVNC, Ghidra, jadx, sqlmap, nmap, and related security tooling. Agents receive structured tool results; operators can open an interactive shell, GUI screen, and file manager for manual takeover, validation, and review.
+The optional sandbox image can include a browser, noVNC, reverse engineering utilities, network assessment utilities, and related review tools. Agents receive structured tool results, while users can open an interactive shell, GUI screen, and file manager for manual validation and review within an authorized scope.
 
 ## Technical Characteristics
 
 - **Session-level agent graph**: role configuration, tools, knowledge, and subagents are bound dynamically per session.
 - **Persistent delegation jobs**: subagents run in the background, can be canceled, can recover from stale runtime state, and notify the coordinator when finished.
 - **Viewer-specific context projection**: agents share one persisted history while receiving scoped context views, reducing cross-agent leakage of private tool details.
-- **Long-context compaction**: model-window-aware summaries preserve durable facts and recent state for long investigations.
+- **Long-context compaction**: model-window-aware summaries preserve durable facts and recent state for long reviews.
 - **Stable streaming contract**: the frontend is decoupled from SDK event details and consumes application-level event schemas.
 - **Sandbox tool invalidation**: sandbox status changes invalidate tool bindings and clean up running subagent tasks or async commands.
 
@@ -196,7 +202,9 @@ Open `http://127.0.0.1:8000`.
 
 ## Security Boundary
 
-Z3r0 is intended for authorized security testing, code auditing, red team exercises, and research or training environments. Sandbox containers, the Docker socket, terminal access, file management, and model credentials are high-privilege assets and should be used only in trusted, isolated environments.
+Z3r0 is intended only for authorized security assessment, code auditing, internal review, and research or training environments. The project does not authorize access to any third-party target and must not be used for unauthorized or unlawful activity. Sandbox containers, the Docker socket, terminal access, file management, and model credentials are high-privilege assets and should be used only in trusted, isolated environments.
+
+Users must define and follow an explicit authorization scope before using any tool capability. The author is not responsible for any consequence, loss, damage, legal liability, or unlawful act caused by user activity.
 
 ## Acknowledgments
 
