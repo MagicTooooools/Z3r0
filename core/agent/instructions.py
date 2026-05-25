@@ -31,9 +31,9 @@ Project state is live shared memory for users and future agents. Keep it current
 - Use `update_work_project_agent_summary` for your own live state only. Replace stale content with concise current fields: `task_id`, `task_title`, `progress`, `status`, `findings`, `decisions`, `blockers`, `next_steps`, `evidence`, `notes`.
 - If nothing material changed, do not rewrite the summary. If material state changed and your next step is another command, subagent, wait, handoff, or user reply, checkpoint first.
 - Summary `progress` is your subtask progress, `0..100` with at most two decimals. Match an existing `task_id` when possible; otherwise use the closest `task_title`.
-- If `update_work_project_tasks` is available, you own the shared task list: create/replan tasks, set active work `in_progress`, blockers `blocked`, completed work `done`, and update task progress after your work or subagent results change global task state. After subagent results, update tasks before reporting or delegating more work.
+- If `update_work_project_tasks` is available, you own the shared task list only: create/replan tasks, set active work `in_progress`, blockers `blocked`, completed work `done`, and update per-task progress after your work or subagent results change task state. After subagent results, update tasks before reporting or delegating more work.
 - If `update_work_project_tasks` is unavailable, do not edit shared tasks; maintain task status/progress through your own summary so `cso` can aggregate it.
-- Task status values: `todo`, `in_progress`, `blocked`, `done`. Overall project progress is code-calculated from task progress; never write it separately.
+- Task status values: `todo`, `in_progress`, `blocked`, `done`. Overall project progress is read-only for agents: query it with `load_work_project_tasks`; it is code-calculated from task progress and must never be estimated or written by an agent.
 """
 
 

@@ -44,7 +44,7 @@ async def load_work_project_target_assets(ctx: RunContextWrapper[AgentRuntimeCon
 
 @function_tool
 async def load_work_project_tasks(ctx: RunContextWrapper[AgentRuntimeContext]) -> str:
-    """Load the current WorkProject task progress list."""
+    """Load the current WorkProject task list and code-calculated overall project progress."""
     project = await _current_project(ctx.context)
     if project is None:
         return _error("No WorkProject is bound to this session.")
@@ -76,8 +76,8 @@ async def update_work_project_agent_summary(
     Args:
         summary: Full replacement of this agent's current summary. Include task_id/task_title,
             progress, status, findings, decisions, blockers, next_steps, evidence, and notes as applicable.
-            When task_id or exact task_title matches a shared task, that task's progress is synchronized
-            and project progress is recalculated.
+            When task_id or exact task_title matches a shared task, that task's progress is synchronized.
+            Overall project progress is recalculated by code and is not an input.
     """
     agent_code = ctx.context.agent_code.strip()
     if not agent_code:
@@ -132,20 +132,21 @@ async def update_work_project_tasks(
     ctx: RunContextWrapper[AgentRuntimeContext],
     tasks: list[WorkProjectTaskSchema],
 ) -> str:
-    """Replace the current WorkProject task progress list.
+    """Update the shared WorkProject task list.
 
     Only the chief security officer agent (`cso`) can update the shared project task list.
     Call when global task state changes, including after your own progress or subagent results,
     before reporting or delegating more work when practical.
     Each task status must be one of: todo, in_progress, blocked, done.
     Each task progress value must be 0-100 with at most two decimal places.
+    Do not provide or estimate overall project progress; it is recalculated by code from task progress.
 
     Args:
-        tasks: Full replacement of the shared task list. Preserve existing tasks that still matter,
+        tasks: Complete desired task list after applying your changes. Preserve existing tasks that still matter,
             update status/progress/summary, and add or remove tasks only when the project plan changes.
     """
     if ctx.context.agent_code != _CSO_AGENT_CODE:
-        return _error("Only the cso agent can update WorkProject task progress.")
+        return _error("Only the cso agent can update the shared WorkProject task list.")
     project_id = ctx.context.work_project_id
     if project_id is None:
         return _error("No WorkProject is bound to this session.")
@@ -155,8 +156,7 @@ async def update_work_project_tasks(
         if project is None:
             return _error("WorkProject not found.")
         project.tasks = [task.model_dump(mode="json") for task in tasks]
-        project.progress = calculate_work_project_progress(project.tasks)
-        project.status = derive_work_project_status(project.tasks, project.status)
+        _recalculate_project_progress(project)
         project.updated_at = datetime.now()
         session.add(project)
         await session.commit()
@@ -242,8 +242,12 @@ def _sync_summary_progress_to_task(
     if not changed:
         return
     project.tasks = tasks
-    project.progress = calculate_work_project_progress(tasks)
-    project.status = derive_work_project_status(tasks, project.status)
+    _recalculate_project_progress(project)
+
+
+def _recalculate_project_progress(project: WorkProject) -> None:
+    project.progress = calculate_work_project_progress(project.tasks)
+    project.status = derive_work_project_status(project.tasks, project.status)
 
 
 def _success(payload: object) -> str:
