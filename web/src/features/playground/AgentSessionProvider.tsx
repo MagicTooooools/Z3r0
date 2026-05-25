@@ -59,9 +59,12 @@ type AgentSessionContextValue = {
   sessionsLoading: boolean;
   refreshSessions: () => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
+  dropSessionRuntime: (sessionId: string) => void;
+  ensureSessionRuntime: (sessionId: string) => void;
+  getSessionRuntime: (sessionId: string | null) => Pick<SessionRuntime, "state" | "status" | "historyLoading">;
 
   activeSessionId: string | null;
-  selectSession: (sessionId: string | null) => void;
+  selectSession: (sessionId: string | null, options?: { navigateBlank?: boolean }) => void;
 
   chatState: ChatState;
   status: ConnectionStatus;
@@ -71,10 +74,12 @@ type AgentSessionContextValue = {
   defaultAgentCode: string;
   activeAgentCode: string;
   setActiveAgentCode: (code: string) => void;
+  getSessionAgentCode: (sessionId: string | null) => string;
+  setSessionAgentCode: (sessionId: string, code: string) => void;
 
-  send: (text: string, sandboxContainerId?: number | null) => Promise<void>;
-  interrupt: () => Promise<void>;
-  cancelAll: () => Promise<void>;
+  send: (text: string, sandboxContainerId?: number | null, sessionId?: string | null) => Promise<void>;
+  interrupt: (sessionId?: string | null) => Promise<void>;
+  cancelAll: (sessionId?: string | null) => Promise<void>;
 };
 
 const AgentSessionContext = createContext<AgentSessionContextValue | null>(null);
@@ -199,6 +204,11 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       state: disconnectChatTurn(r.state),
     }));
   }, [clearIdleTimer, updateRuntime]);
+
+  const dropSessionRuntime = useCallback((sessionId: string) => {
+    closeSocket(sessionId);
+    dropRuntime(sessionId);
+  }, [closeSocket, dropRuntime]);
 
   const markActivity = useCallback((sessionId: string) => {
     clearIdleTimer(sessionId);
@@ -347,6 +357,14 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     loadHistory(sessionId, true);
   }, [loadHistory]);
 
+  const ensureSessionRuntime = useCallback((sessionId: string) => {
+    if (ensuredRef.current.has(sessionId)) {
+      connectFor(sessionId);
+      return;
+    }
+    ensureHistoryLoaded(sessionId);
+  }, [connectFor, ensureHistoryLoaded]);
+
   const reloadHistory = useCallback((sessionId: string, forceReplace = false) => {
     loadHistory(sessionId, false, forceReplace);
   }, [loadHistory]);
@@ -359,11 +377,11 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   connectForRef.current = connectFor;
 
   // ----------------------------------------------------------- selection
-  const selectSession = useCallback((sessionId: string | null) => {
+  const selectSession = useCallback((sessionId: string | null, options: { navigateBlank?: boolean } = {}) => {
     if (!sessionId || pendingSendRef.current?.sessionId !== sessionId) {
       pendingSendRef.current = null;
     }
-    manualBlankSessionRef.current = sessionId === null;
+    manualBlankSessionRef.current = sessionId === null && options.navigateBlank !== false;
     setActiveSessionId(sessionId);
   }, []);
 
@@ -422,6 +440,19 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     updateRuntime(activeSessionId, (r) => ({ ...r, agentCodeOverride: code }));
   }, [activeSessionId, agents, initRuntime, updateRuntime]);
 
+  const getSessionAgentCode = useCallback((sessionId: string | null) => {
+    if (!sessionId) return pendingAgentCode || defaultAgentCode;
+    const runtime = runtimes.get(sessionId);
+    if (runtime?.agentCodeOverride) return runtime.agentCodeOverride;
+    return sessionAgentCode(sessionId) || defaultAgentCode;
+  }, [defaultAgentCode, pendingAgentCode, runtimes, sessionAgentCode]);
+
+  const setSessionAgentCode = useCallback((sessionId: string, code: string) => {
+    if (!agents.some((agent) => agent.code === code)) return;
+    initRuntime(sessionId);
+    updateRuntime(sessionId, (r) => ({ ...r, agentCodeOverride: code }));
+  }, [agents, initRuntime, updateRuntime]);
+
   // ------------------------------------------------------------- commands
   // drain a queued send once the lazy-created session has loaded its history
   useEffect(() => {
@@ -439,10 +470,10 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     }).catch(showApiError);
   }, [activeSessionId, runtimes, sendCommand, updateRuntime]);
 
-  const send = useCallback(async (text: string, sandboxContainerId: number | null = null) => {
-    const agentCode = activeAgentCode;
-    if (activeSessionId) {
-      await sendCommand(activeSessionId, {
+  const send = useCallback(async (text: string, sandboxContainerId: number | null = null, sessionId: string | null = activeSessionId) => {
+    const agentCode = getSessionAgentCode(sessionId);
+    if (sessionId) {
+      await sendCommand(sessionId, {
         action: "send",
         text,
         sandbox_container_id: sandboxContainerId,
@@ -462,21 +493,23 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       showApiError(error);
     }
-  }, [activeAgentCode, activeSessionId, initRuntime, sendCommand]);
+  }, [activeSessionId, getSessionAgentCode, initRuntime, sendCommand]);
 
-  const interrupt = useCallback(async () => {
-    if (!activeSessionId) return;
+  const interrupt = useCallback(async (sessionId: string | null = activeSessionId) => {
+    const targetSessionId = sessionId ?? activeSessionId;
+    if (!targetSessionId) return;
     try {
-      await sendCommand(activeSessionId, { action: "interrupt" });
+      await sendCommand(targetSessionId, { action: "interrupt" });
     } catch (error) {
       showApiError(error);
     }
   }, [activeSessionId, sendCommand]);
 
-  const cancelAll = useCallback(async () => {
-    if (!activeSessionId) return;
+  const cancelAll = useCallback(async (sessionId: string | null = activeSessionId) => {
+    const targetSessionId = sessionId ?? activeSessionId;
+    if (!targetSessionId) return;
     try {
-      await sendCommand(activeSessionId, { action: "cancel_all" });
+      await sendCommand(targetSessionId, { action: "cancel_all" });
     } catch (error) {
       showApiError(error);
     }
@@ -511,20 +544,32 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
 
   // -------------------------------------------------------------- derived
   const activeRuntime = activeSessionId ? runtimes.get(activeSessionId) ?? DEFAULT_RUNTIME : DEFAULT_RUNTIME;
+  const getSessionRuntime = useCallback((sessionId: string | null) => {
+    const runtime = sessionId ? runtimes.get(sessionId) ?? DEFAULT_RUNTIME : DEFAULT_RUNTIME;
+    return {
+      state: runtime.state,
+      status: runtime.status,
+      historyLoading: runtime.historyLoading,
+    };
+  }, [runtimes]);
 
   const value = useMemo<AgentSessionContextValue>(() => ({
     sessions, sessionsLoading, refreshSessions, deleteSession,
+    dropSessionRuntime, ensureSessionRuntime, getSessionRuntime,
     activeSessionId, selectSession,
     chatState: activeRuntime.state,
     status: activeRuntime.status,
     historyLoading: activeRuntime.historyLoading,
     agents, defaultAgentCode, activeAgentCode, setActiveAgentCode,
+    getSessionAgentCode, setSessionAgentCode,
     send, interrupt, cancelAll,
   }), [
     sessions, sessionsLoading, refreshSessions, deleteSession,
+    dropSessionRuntime, ensureSessionRuntime, getSessionRuntime,
     activeSessionId, selectSession,
     activeRuntime,
     agents, defaultAgentCode, activeAgentCode, setActiveAgentCode,
+    getSessionAgentCode, setSessionAgentCode,
     send, interrupt, cancelAll,
   ]);
 

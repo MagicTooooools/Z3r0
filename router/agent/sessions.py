@@ -6,13 +6,16 @@ from handler.agent.sessions import (
     handle_agent_stream,
     list_agent_events_handler,
     list_agent_sessions_handler,
+    update_agent_session_title_handler,
 )
 from middleware.auth import AuthUser, require_user
 from router.common.responses import COMMON_ERROR_RESPONSES, not_found_response
 from schema.agent.sessions import (
+    AgentSessionSummarySchema,
     CreateAgentSessionResponse,
     ListAgentEventsResponse,
     ListAgentSessionsResponse,
+    UpdateAgentSessionTitleRequest,
 )
 from schema.common.responses import CommonResponse
 
@@ -40,6 +43,14 @@ async def delete_agent_session_route(
     user: AuthUser = Depends(require_user),
 ) -> CommonResponse:
     return await delete_agent_session_handler(session_id=session_id, user=user)
+
+
+async def update_agent_session_title_route(
+    session_id: str,
+    request: UpdateAgentSessionTitleRequest,
+    user: AuthUser = Depends(require_user),
+) -> CommonResponse:
+    return await update_agent_session_title_handler(session_id=session_id, request=request, user=user)
 
 
 async def list_agent_events_route(
@@ -71,6 +82,14 @@ router.add_api_route(
     methods=["GET"],
     response_model=CommonResponse[ListAgentEventsResponse],
     responses=COMMON_ERROR_RESPONSES,
+)
+
+router.add_api_route(
+    "/{session_id}/title",
+    update_agent_session_title_route,
+    methods=["PATCH"],
+    response_model=CommonResponse[AgentSessionSummarySchema],
+    responses={**COMMON_ERROR_RESPONSES, **not_found_response("Agent session")},
 )
 
 router.add_api_route(

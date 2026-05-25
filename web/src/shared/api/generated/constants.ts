@@ -3,7 +3,8 @@
 
 export const SYSTEM_USER_ROLES = ["admin", "user"] as const;
 export const WORK_PROJECT_TYPES = ["penetration_test", "source_code_audit"] as const;
-export const WORK_PROJECT_STATUSES = ["working", "completed", "failed", "canceled"] as const;
+export const WORK_PROJECT_STATUSES = ["working", "completed", "canceled"] as const;
+export const WORK_PROJECT_TASK_STATUSES = ["todo", "in_progress", "blocked", "done"] as const;
 export const SANDBOX_IMAGE_STATUSES = ["pulling", "ready", "failed", "canceled"] as const;
 export const SANDBOX_CONTAINER_STATUSES = ["created", "running", "stopped", "error"] as const;
 export const SESSION_TYPES = ["chat", "project"] as const;

@@ -11,12 +11,20 @@ from middleware.auth import AuthUser
 from schema.agent.events import DoneEvent, ErrorEvent
 from service.agent import sessions as agent_sessions
 from service.sandbox.commands import execute_sandbox_container_command
-from service.sandbox.status import resolve_sandbox_container_tool_binding
+from service.sandbox.status import (
+    resolve_project_sandbox_container_tool_binding,
+    resolve_sandbox_container_tool_binding,
+)
+from service.work_project.projects import can_run_work_project_session, work_project_sandbox_container_id_for_user
 
 
 logger = get_logger(__name__)
 
 _MAX_SANDBOX_SKILLS = 32
+
+
+class SessionNotRunnableError(PermissionError):
+    pass
 
 
 async def submit_turn(
@@ -27,6 +35,10 @@ async def submit_turn(
     sandbox_container_id: int | None,
     requested_agent_code: str | None,
 ) -> None:
+    if not await agent_sessions.can_access_session(session_id, user.id, user.role):
+        raise PermissionError("agent session not found")
+    if not await can_run_work_project_session(session_id, user.id, user.role):
+        raise SessionNotRunnableError("work project is not runnable")
     agent_code = await agent_sessions.ensure_chat_session_meta(
         session_id,
         text,
@@ -53,6 +65,10 @@ def not_found_error() -> ErrorEvent:
     return ErrorEvent(created_at=datetime.now(), message="agent session not found", code="not_found")
 
 
+def not_runnable_error() -> ErrorEvent:
+    return ErrorEvent(created_at=datetime.now(), message="work project is not runnable", code="bad_request")
+
+
 def done_event() -> DoneEvent:
     return DoneEvent(created_at=datetime.now())
 
@@ -68,15 +84,29 @@ async def build_runtime_context(
     sandbox_container_id: int | None,
     agent_code: str = "",
 ) -> AgentRuntimeContext:
-    selected_container_id = None
-    selected_container_generation = 0
-    sandbox_skill_metadata: tuple[str, ...] = ()
-    if sandbox_container_id is not None:
-        binding = await resolve_sandbox_container_tool_binding(
-            id=sandbox_container_id,
+    work_project_id = await agent_sessions.project_id_for_session(session_id)
+    effective_sandbox_container_id = sandbox_container_id
+    project_bound_sandbox = False
+    if work_project_id is not None:
+        effective_sandbox_container_id = await work_project_sandbox_container_id_for_user(
+            project_id=work_project_id,
             user_id=user.id,
             user_role=user.role,
         )
+        project_bound_sandbox = effective_sandbox_container_id is not None
+
+    selected_container_id = None
+    selected_container_generation = 0
+    sandbox_skill_metadata: tuple[str, ...] = ()
+    if effective_sandbox_container_id is not None:
+        if project_bound_sandbox:
+            binding = await resolve_project_sandbox_container_tool_binding(effective_sandbox_container_id)
+        else:
+            binding = await resolve_sandbox_container_tool_binding(
+                id=effective_sandbox_container_id,
+                user_id=user.id,
+                user_role=user.role,
+            )
         if binding is not None:
             selected_container_id = binding.id
             selected_container_generation = binding.generation
@@ -91,16 +121,7 @@ async def build_runtime_context(
         sandbox_container_id=selected_container_id,
         sandbox_container_generation=selected_container_generation,
         sandbox_skill_metadata=sandbox_skill_metadata,
-    )
-
-
-def build_base_runtime_context(session_id: str, user: AuthUser, agent_code: str = "") -> AgentRuntimeContext:
-    return AgentRuntimeContext(
-        session_id=session_id,
-        user=_agent_user_context(user),
-        agent_code=agent_code,
-        agent_instance_id=main_agent_instance_id(session_id, user.id, agent_code) if agent_code else "",
-        knowledge_generation=current_knowledge_generation(),
+        work_project_id=work_project_id,
     )
 
 

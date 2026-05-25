@@ -83,6 +83,9 @@ def build_subagent_tools(
         Args:
             agent_code: Code of the configured subagent to run.
             brief: Self-contained task brief for the subagent.
+                In WorkProject sessions, include the relevant task_id/task_title and instruct the subagent
+                to update its WorkProject summary immediately after findings, useful negative results,
+                blockers, evidence, decisions, or progress changes, before continuing to more tools when practical.
 
         Returns:
             JSON status including run_id, agent_code, status, and timestamps.
@@ -154,6 +157,8 @@ def build_subagent_tools(
             name_override="start_subagent_task",
             description_override=(
                 "Start a configured subagent by code, return a persistent run id, then end the current turn. "
+                "For WorkProject tasks, include task_id/task_title and require event-driven summary/progress updates "
+                "after valuable findings, evidence, blockers, decisions, or progress changes, before further tool use when practical. "
                 f"Allowed agent_code values: {allowed_codes}."
             ),
         ),
@@ -657,6 +662,7 @@ async def _schedule_parent_notification_drain(
             sandbox_container_id=context.sandbox_container_id,
             sandbox_container_generation=context.sandbox_container_generation,
             sandbox_skill_metadata=context.sandbox_skill_metadata,
+            work_project_id=context.work_project_id,
         )
         await get_agent_pool().drain_notifications(snapshot.session_id, parent_context)
     except Exception:
@@ -730,6 +736,7 @@ def _subagent_context(
         sandbox_container_id=context.sandbox_container_id,
         sandbox_container_generation=context.sandbox_container_generation,
         sandbox_skill_metadata=context.sandbox_skill_metadata,
+        work_project_id=context.work_project_id,
     )
 
 

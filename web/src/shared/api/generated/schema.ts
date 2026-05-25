@@ -56,6 +56,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent-sessions/{session_id}/title": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Agent Session Title Route */
+        patch: operations["update_agent_session_title_route_api_agent_sessions__session_id__title_patch"];
+        trace?: never;
+    };
     "/api/agents": {
         parameters: {
             query?: never;
@@ -476,7 +493,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get Work Project Route */
+        get: operations["get_work_project_route_api_work_projects__id__get"];
         put?: never;
         post?: never;
         /** Delete Work Project Handler */
@@ -503,6 +521,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/work-projects/{id}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Work Project Metadata Route */
+        patch: operations["update_work_project_metadata_route_api_work_projects__id__metadata_patch"];
+        trace?: never;
+    };
     "/api/work-projects/{id}/retry": {
         parameters: {
             query?: never;
@@ -515,6 +550,41 @@ export interface paths {
         /** Retry Work Project Handler */
         post: operations["retry_work_project_handler_api_work_projects__id__retry_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/work-projects/{id}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Work Project Sessions Route */
+        get: operations["list_work_project_sessions_route_api_work_projects__id__sessions_get"];
+        put?: never;
+        /** Create Work Project Session Route */
+        post: operations["create_work_project_session_route_api_work_projects__id__sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/work-projects/{id}/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Work Project Session Route */
+        delete: operations["delete_work_project_session_route_api_work_projects__id__sessions__session_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -564,6 +634,8 @@ export interface components {
              * @default 0
              */
             owner_id: number;
+            /** Project Id */
+            project_id?: number | null;
             /**
              * Run Error
              * @default
@@ -673,6 +745,20 @@ export interface components {
              */
             message: string;
         };
+        /** CommonResponse[AgentSessionSummarySchema] */
+        CommonResponse_AgentSessionSummarySchema_: {
+            /**
+             * Code
+             * @default 200
+             */
+            code: number;
+            data?: components["schemas"]["AgentSessionSummarySchema"] | null;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+        };
         /** CommonResponse[Any] */
         CommonResponse_Any_: {
             /**
@@ -724,6 +810,20 @@ export interface components {
              */
             code: number;
             data?: components["schemas"]["CreateAgentSessionResponse"] | null;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+        };
+        /** CommonResponse[CreateWorkProjectSessionResponse] */
+        CommonResponse_CreateWorkProjectSessionResponse_: {
+            /**
+             * Code
+             * @default 200
+             */
+            code: number;
+            data?: components["schemas"]["CreateWorkProjectSessionResponse"] | null;
             /**
              * Message
              * @default success
@@ -836,6 +936,20 @@ export interface components {
              */
             code: number;
             data?: components["schemas"]["ListContainerFilesResponse"] | null;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+        };
+        /** CommonResponse[ListWorkProjectSessionsResponse] */
+        CommonResponse_ListWorkProjectSessionsResponse_: {
+            /**
+             * Code
+             * @default 200
+             */
+            code: number;
+            data?: components["schemas"]["ListWorkProjectSessionsResponse"] | null;
             /**
              * Message
              * @default success
@@ -1110,14 +1224,28 @@ export interface components {
         /** CreateWorkProjectRequest */
         CreateWorkProjectRequest: {
             /**
+             * Assets Text
+             * @default
+             */
+            assets_text: string;
+            /**
              * Description
              * @default
              */
             description: string;
             /** Name */
             name: string;
+            /** Owner User Ids */
+            owner_user_ids?: number[];
+            /** Sandbox Container Id */
+            sandbox_container_id?: number | null;
             /** @default penetration_test */
             type: components["schemas"]["WorkProjectType"];
+        };
+        /** CreateWorkProjectSessionResponse */
+        CreateWorkProjectSessionResponse: {
+            /** Session Id */
+            session_id: string;
         };
         /** DeleteSandboxContainerResponse */
         DeleteSandboxContainerResponse: {
@@ -1227,6 +1355,11 @@ export interface components {
             files: components["schemas"]["ContainerFileInfo"][];
             /** Path */
             path: string;
+        };
+        /** ListWorkProjectSessionsResponse */
+        ListWorkProjectSessionsResponse: {
+            /** Items */
+            items: components["schemas"]["AgentSessionSummarySchema"][];
         };
         /** QuerySandboxContainersResponse */
         QuerySandboxContainersResponse: {
@@ -1697,6 +1830,11 @@ export interface components {
              */
             type: "turn_boundary";
         };
+        /** UpdateAgentSessionTitleRequest */
+        UpdateAgentSessionTitleRequest: {
+            /** Title */
+            title: string;
+        };
         /** UpdateSystemUserRequest */
         UpdateSystemUserRequest: {
             /** Email */
@@ -1706,6 +1844,27 @@ export interface components {
             role?: components["schemas"]["SystemUserRole"] | null;
             /** Username */
             username?: string | null;
+        };
+        /** UpdateWorkProjectMetadataRequest */
+        UpdateWorkProjectMetadataRequest: {
+            /**
+             * Assets Text
+             * @default
+             */
+            assets_text: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Name */
+            name: string;
+            /** Owner User Ids */
+            owner_user_ids?: number[];
+            /** Sandbox Container Id */
+            sandbox_container_id?: number | null;
+            /** @default penetration_test */
+            type: components["schemas"]["WorkProjectType"];
         };
         /** UserMessageEvent */
         UserMessageEvent: {
@@ -1727,8 +1886,86 @@ export interface components {
              */
             type: "user_message";
         };
+        /** WorkProjectAgentSummaryContentSchema */
+        WorkProjectAgentSummaryContentSchema: {
+            /**
+             * Blockers
+             * @description Current blockers or unresolved risks.
+             */
+            blockers?: string[];
+            /**
+             * Decisions
+             * @description Decisions or scope changes made by this agent.
+             */
+            decisions?: string[];
+            /**
+             * Evidence
+             * @description Evidence references such as commands, files, URLs, logs, or artifacts.
+             */
+            evidence?: string[];
+            /**
+             * Findings
+             * @description Confirmed findings or valuable negative results.
+             */
+            findings?: string[];
+            /**
+             * Next Steps
+             * @description Concrete next actions.
+             */
+            next_steps?: string[];
+            /**
+             * Notes
+             * @description Brief extra context that does not fit other fields.
+             * @default
+             */
+            notes: string;
+            /**
+             * Progress
+             * @description This agent's subtask progress from 0 to 100 with at most two decimals.
+             * @default 0
+             */
+            progress: number;
+            /**
+             * Status
+             * @description Current live status of this agent's work.
+             * @default
+             */
+            status: string;
+            /**
+             * Task Id
+             * @description Related WorkProject task id when known.
+             * @default
+             */
+            task_id: string;
+            /**
+             * Task Title
+             * @description Related task title when task_id is unavailable.
+             * @default
+             */
+            task_title: string;
+        };
+        /** WorkProjectAgentSummarySchema */
+        WorkProjectAgentSummarySchema: {
+            /** Agent Code */
+            agent_code: string;
+            summary?: components["schemas"]["WorkProjectAgentSummaryContentSchema"];
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** WorkProjectOwnerSchema */
+        WorkProjectOwnerSchema: {
+            /** Id */
+            id: number;
+            role: components["schemas"]["SystemUserRole"];
+            /** Username */
+            username: string;
+        };
         /** WorkProjectSchema */
         WorkProjectSchema: {
+            /** Agent Summaries */
+            agent_summaries: components["schemas"]["WorkProjectAgentSummarySchema"][];
+            /** Assets Text */
+            assets_text: string;
             /**
              * Created At
              * Format: date-time
@@ -1740,9 +1977,25 @@ export interface components {
             id: number;
             /** Name */
             name: string;
-            /** Session Id */
-            session_id: string;
+            /** Owner User Ids */
+            owner_user_ids: number[];
+            /** Owners */
+            owners: components["schemas"]["WorkProjectOwnerSchema"][];
+            /**
+             * Progress
+             * @default 0
+             */
+            progress: number;
+            /** Sandbox Container Id */
+            sandbox_container_id?: number | null;
+            /**
+             * Session Count
+             * @default 0
+             */
+            session_count: number;
             status: components["schemas"]["WorkProjectStatus"];
+            /** Tasks */
+            tasks: components["schemas"]["WorkProjectTaskSchema"][];
             type: components["schemas"]["WorkProjectType"];
             /**
              * Updated At
@@ -1754,7 +2007,48 @@ export interface components {
          * WorkProjectStatus
          * @enum {string}
          */
-        WorkProjectStatus: "working" | "completed" | "failed" | "canceled";
+        WorkProjectStatus: "working" | "completed" | "canceled";
+        /** WorkProjectTaskSchema */
+        WorkProjectTaskSchema: {
+            /**
+             * Assignee
+             * @description Agent code or owner responsible for this task.
+             * @default
+             */
+            assignee: string;
+            /**
+             * Id
+             * @description Stable task id.
+             */
+            id?: string;
+            /**
+             * Progress
+             * @description Task progress from 0 to 100 with at most two decimals.
+             * @default 0
+             */
+            progress: number;
+            /**
+             * @description Task status.
+             * @default todo
+             */
+            status: components["schemas"]["WorkProjectTaskStatus"];
+            /**
+             * Summary
+             * @description Current concise task summary.
+             * @default
+             */
+            summary: string;
+            /**
+             * Title
+             * @description Short task title.
+             */
+            title: string;
+        };
+        /**
+         * WorkProjectTaskStatus
+         * @enum {string}
+         */
+        WorkProjectTaskStatus: "todo" | "in_progress" | "blocked" | "done";
         /**
          * WorkProjectType
          * @enum {string}
@@ -1918,6 +2212,59 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    update_agent_session_title_route_api_agent_sessions__session_id__title_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAgentSessionTitleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_AgentSessionSummarySchema_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Agent session not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3727,15 +4074,6 @@ export interface operations {
                     "application/json": components["schemas"]["CommonResponse_Any_"];
                 };
             };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommonResponse_Any_"];
-                };
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3769,6 +4107,15 @@ export interface operations {
                     "application/json": components["schemas"]["CommonResponse_WorkProjectSchema_"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -3780,6 +4127,55 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    get_work_project_route_api_work_projects__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_WorkProjectSchema_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Work project not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3923,6 +4319,77 @@ export interface operations {
             };
         };
     };
+    update_work_project_metadata_route_api_work_projects__id__metadata_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkProjectMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_WorkProjectSchema_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Work project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
     retry_work_project_handler_api_work_projects__id__retry_post: {
         parameters: {
             query?: never;
@@ -3950,6 +4417,163 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Work project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    list_work_project_sessions_route_api_work_projects__id__sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_ListWorkProjectSessionsResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Work project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    create_work_project_session_route_api_work_projects__id__sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_CreateWorkProjectSessionResponse_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Work project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    delete_work_project_session_route_api_work_projects__id__sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse"];
                 };
             };
             /** @description Unauthorized */

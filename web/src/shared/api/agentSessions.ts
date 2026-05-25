@@ -4,6 +4,8 @@ import type {
   DeleteAgentSessionResponse,
   ListAgentEventsResponse,
   ListAgentSessionsResponse,
+  UpdateAgentSessionTitleRequest,
+  UpdateAgentSessionTitleResponse,
 } from "./types";
 
 const AGENT_SESSIONS_PATH = "/api/agent-sessions";
@@ -19,6 +21,13 @@ export function createAgentSession() {
 export function listAgentEvents(sessionId: string) {
   return apiRequest<ListAgentEventsResponse>(
     `${AGENT_SESSIONS_PATH}/${encodeURIComponent(sessionId)}/events`,
+  );
+}
+
+export function updateAgentSessionTitle(sessionId: string, payload: UpdateAgentSessionTitleRequest) {
+  return apiRequest<UpdateAgentSessionTitleResponse>(
+    `${AGENT_SESSIONS_PATH}/${encodeURIComponent(sessionId)}/title`,
+    { method: "PATCH", body: payload },
   );
 }
 

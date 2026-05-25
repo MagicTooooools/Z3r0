@@ -1,7 +1,9 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 from schema.agent.events import AgentContentEventSchema
 
@@ -19,6 +21,7 @@ class AgentSessionSummarySchema(BaseModel):
     title: str = ""
     agent_code: str = ""
     owner_id: int = 0
+    project_id: int | None = None
     is_running: bool = False
     runtime_agent_code: str = ""
     runtime_sandbox_container_id: int | None = None
@@ -45,6 +48,17 @@ class ListAgentEventsResponse(BaseModel):
 # create agent session response schema (server-allocated session_id)
 class CreateAgentSessionResponse(BaseModel):
     session_id: str
+
+
+class UpdateAgentSessionTitleRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 # one available agent; surfaced to the @-mention picker in the chat input

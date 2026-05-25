@@ -650,6 +650,7 @@ def _context_for_notification(
         sandbox_container_id=notification.sandbox_container_id,
         sandbox_container_generation=notification.sandbox_container_generation,
         sandbox_skill_metadata=notification.sandbox_skill_metadata,
+        work_project_id=base.work_project_id,
     )
 
 

@@ -105,16 +105,24 @@ export type QueryWorkProjectsData = NonNullable<QueryWorkProjectsResponse["data"
 export type WorkProject = QueryWorkProjectsData["items"][number];
 export type WorkProjectStatus = components["schemas"]["WorkProjectStatus"];
 export type WorkProjectType = components["schemas"]["WorkProjectType"];
+export type WorkProjectTaskStatus = components["schemas"]["WorkProjectTaskStatus"];
+export type WorkProjectAgentSummary = components["schemas"]["WorkProjectAgentSummarySchema"];
 
 export type CreateWorkProjectRequest = JsonRequestBody<paths["/api/work-projects"]["post"]>;
 export type CreateWorkProjectResponse = JsonResponse<paths["/api/work-projects"]["post"]>;
 
 export type WorkProjectPathParams = PathParameters<paths["/api/work-projects/{id}"]["delete"]>;
+export type GetWorkProjectResponse = JsonResponse<paths["/api/work-projects/{id}"]["get"]>;
+export type UpdateWorkProjectMetadataRequest = JsonRequestBody<paths["/api/work-projects/{id}/metadata"]["patch"]>;
+export type UpdateWorkProjectMetadataResponse = JsonResponse<paths["/api/work-projects/{id}/metadata"]["patch"]>;
 export type DeleteWorkProjectResponse = JsonResponse<paths["/api/work-projects/{id}"]["delete"]>;
 export type CancelWorkProjectPathParams = PathParameters<paths["/api/work-projects/{id}/cancel"]["post"]>;
 export type CancelWorkProjectResponse = JsonResponse<paths["/api/work-projects/{id}/cancel"]["post"]>;
 export type RetryWorkProjectPathParams = PathParameters<paths["/api/work-projects/{id}/retry"]["post"]>;
 export type RetryWorkProjectResponse = JsonResponse<paths["/api/work-projects/{id}/retry"]["post"]>;
+export type ListWorkProjectSessionsResponse = JsonResponse<paths["/api/work-projects/{id}/sessions"]["get"]>;
+export type CreateWorkProjectSessionResponse = JsonResponse<paths["/api/work-projects/{id}/sessions"]["post"]>;
+export type DeleteWorkProjectSessionResponse = JsonResponse<paths["/api/work-projects/{id}/sessions/{session_id}"]["delete"]>;
 
 export type AgentSessionSummary = components["schemas"]["AgentSessionSummarySchema"];
 export type SessionType = components["schemas"]["SessionType"];
@@ -131,6 +139,8 @@ export type CreateAgentSessionData = NonNullable<CreateAgentSessionResponse["dat
 
 export type ListAgentEventsResponse = JsonResponse<paths["/api/agent-sessions/{session_id}/events"]["get"]>;
 export type ListAgentEventsData = NonNullable<ListAgentEventsResponse["data"]>;
+export type UpdateAgentSessionTitleRequest = JsonRequestBody<paths["/api/agent-sessions/{session_id}/title"]["patch"]>;
+export type UpdateAgentSessionTitleResponse = JsonResponse<paths["/api/agent-sessions/{session_id}/title"]["patch"]>;
 export type DeleteAgentSessionResponse = JsonResponse<paths["/api/agent-sessions/{session_id}"]["delete"]>;
 
 export type UserMessageEvent = components["schemas"]["UserMessageEvent"];

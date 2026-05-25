@@ -3,6 +3,14 @@ from dataclasses import dataclass
 from agents import Tool
 
 from core.tools.knowledge import create_knowledge, find_knowledge, load_knowledge, update_knowledge
+from core.tools.work_project import (
+    load_work_project_agent_summaries,
+    load_work_project_metadata,
+    load_work_project_target_assets,
+    load_work_project_tasks,
+    update_work_project_agent_summary,
+    update_work_project_tasks,
+)
 from core.tools.sandbox import (
     cancel_sandbox_async_job,
     execute_async_command,
@@ -16,6 +24,7 @@ from core.tools.sandbox import (
 class ToolMount:
     tool: Tool
     requires_sandbox_container: bool = False
+    requires_work_project: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,11 +46,23 @@ KNOWLEDGE_TOOLS = (
     ToolMount(update_knowledge),
 )
 
+WORK_PROJECT_TOOLS = (
+    ToolMount(load_work_project_metadata, requires_work_project=True),
+    ToolMount(load_work_project_target_assets, requires_work_project=True),
+    ToolMount(load_work_project_tasks, requires_work_project=True),
+    ToolMount(load_work_project_agent_summaries, requires_work_project=True),
+    ToolMount(update_work_project_agent_summary, requires_work_project=True),
+)
+
 
 AGENT_SPECS: tuple[AgentSpec, ...] = (
     AgentSpec(
         code="cso",
-        tools=KNOWLEDGE_TOOLS,
+        tools=(
+            *KNOWLEDGE_TOOLS,
+            *WORK_PROJECT_TOOLS,
+            ToolMount(update_work_project_tasks, requires_work_project=True),
+        ),
         subagents=(
             SubagentMount(code="cce"),
             SubagentMount(code="cie"),
@@ -58,6 +79,7 @@ AGENT_SPECS: tuple[AgentSpec, ...] = (
             ToolMount(cancel_sandbox_async_job, requires_sandbox_container=True),
             ToolMount(load_skill, requires_sandbox_container=True),
             *KNOWLEDGE_TOOLS,
+            *WORK_PROJECT_TOOLS,
         ),
     ),
     AgentSpec(
@@ -69,6 +91,7 @@ AGENT_SPECS: tuple[AgentSpec, ...] = (
             ToolMount(cancel_sandbox_async_job, requires_sandbox_container=True),
             ToolMount(load_skill, requires_sandbox_container=True),
             *KNOWLEDGE_TOOLS,
+            *WORK_PROJECT_TOOLS,
         ),
     ),
     AgentSpec(
@@ -80,6 +103,7 @@ AGENT_SPECS: tuple[AgentSpec, ...] = (
             ToolMount(cancel_sandbox_async_job, requires_sandbox_container=True),
             ToolMount(load_skill, requires_sandbox_container=True),
             *KNOWLEDGE_TOOLS,
+            *WORK_PROJECT_TOOLS,
         ),
     ),
     AgentSpec(
@@ -91,6 +115,7 @@ AGENT_SPECS: tuple[AgentSpec, ...] = (
             ToolMount(cancel_sandbox_async_job, requires_sandbox_container=True),
             ToolMount(load_skill, requires_sandbox_container=True),
             *KNOWLEDGE_TOOLS,
+            *WORK_PROJECT_TOOLS,
         ),
     ),
 )

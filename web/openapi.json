@@ -108,6 +108,17 @@
             "title": "Owner Id",
             "type": "integer"
           },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
           "run_error": {
             "default": "",
             "title": "Run Error",
@@ -337,6 +348,32 @@
         "title": "CommonResponse",
         "type": "object"
       },
+      "CommonResponse_AgentSessionSummarySchema_": {
+        "properties": {
+          "code": {
+            "default": 200,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSessionSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "title": "CommonResponse[AgentSessionSummarySchema]",
+        "type": "object"
+      },
       "CommonResponse_Any_": {
         "properties": {
           "code": {
@@ -432,6 +469,32 @@
           }
         },
         "title": "CommonResponse[CreateAgentSessionResponse]",
+        "type": "object"
+      },
+      "CommonResponse_CreateWorkProjectSessionResponse_": {
+        "properties": {
+          "code": {
+            "default": 200,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreateWorkProjectSessionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "title": "CommonResponse[CreateWorkProjectSessionResponse]",
         "type": "object"
       },
       "CommonResponse_DeleteSandboxContainerResponse_": {
@@ -640,6 +703,32 @@
           }
         },
         "title": "CommonResponse[ListContainerFilesResponse]",
+        "type": "object"
+      },
+      "CommonResponse_ListWorkProjectSessionsResponse_": {
+        "properties": {
+          "code": {
+            "default": 200,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListWorkProjectSessionsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "title": "CommonResponse[ListWorkProjectSessionsResponse]",
         "type": "object"
       },
       "CommonResponse_QuerySandboxContainersResponse_": {
@@ -1232,6 +1321,12 @@
       },
       "CreateWorkProjectRequest": {
         "properties": {
+          "assets_text": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Assets Text",
+            "type": "string"
+          },
           "description": {
             "default": "",
             "maxLength": 2000,
@@ -1244,6 +1339,26 @@
             "title": "Name",
             "type": "string"
           },
+          "owner_user_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "title": "Owner User Ids",
+            "type": "array"
+          },
+          "sandbox_container_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sandbox Container Id"
+          },
           "type": {
             "$ref": "#/components/schemas/WorkProjectType",
             "default": "penetration_test"
@@ -1253,6 +1368,19 @@
           "name"
         ],
         "title": "CreateWorkProjectRequest",
+        "type": "object"
+      },
+      "CreateWorkProjectSessionResponse": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "CreateWorkProjectSessionResponse",
         "type": "object"
       },
       "DeleteSandboxContainerResponse": {
@@ -1510,6 +1638,22 @@
           "files"
         ],
         "title": "ListContainerFilesResponse",
+        "type": "object"
+      },
+      "ListWorkProjectSessionsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionSummarySchema"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ListWorkProjectSessionsResponse",
         "type": "object"
       },
       "QuerySandboxContainersResponse": {
@@ -2313,6 +2457,21 @@
         "title": "TurnBoundaryEvent",
         "type": "object"
       },
+      "UpdateAgentSessionTitleRequest": {
+        "properties": {
+          "title": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "UpdateAgentSessionTitleRequest",
+        "type": "object"
+      },
       "UpdateSystemUserRequest": {
         "properties": {
           "email": {
@@ -2367,6 +2526,57 @@
         "title": "UpdateSystemUserRequest",
         "type": "object"
       },
+      "UpdateWorkProjectMetadataRequest": {
+        "properties": {
+          "assets_text": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Assets Text",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_user_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "title": "Owner User Ids",
+            "type": "array"
+          },
+          "sandbox_container_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sandbox Container Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/WorkProjectType",
+            "default": "penetration_test"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "UpdateWorkProjectMetadataRequest",
+        "type": "object"
+      },
       "UserMessageEvent": {
         "properties": {
           "created_at": {
@@ -2397,8 +2607,158 @@
         "title": "UserMessageEvent",
         "type": "object"
       },
+      "WorkProjectAgentSummaryContentSchema": {
+        "properties": {
+          "blockers": {
+            "description": "Current blockers or unresolved risks.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Blockers",
+            "type": "array"
+          },
+          "decisions": {
+            "description": "Decisions or scope changes made by this agent.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Decisions",
+            "type": "array"
+          },
+          "evidence": {
+            "description": "Evidence references such as commands, files, URLs, logs, or artifacts.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "findings": {
+            "description": "Confirmed findings or valuable negative results.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Findings",
+            "type": "array"
+          },
+          "next_steps": {
+            "description": "Concrete next actions.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Next Steps",
+            "type": "array"
+          },
+          "notes": {
+            "default": "",
+            "description": "Brief extra context that does not fit other fields.",
+            "maxLength": 4000,
+            "title": "Notes",
+            "type": "string"
+          },
+          "progress": {
+            "default": 0,
+            "description": "This agent's subtask progress from 0 to 100 with at most two decimals.",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "number"
+          },
+          "status": {
+            "default": "",
+            "description": "Current live status of this agent's work.",
+            "maxLength": 2000,
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "default": "",
+            "description": "Related WorkProject task id when known.",
+            "maxLength": 64,
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_title": {
+            "default": "",
+            "description": "Related task title when task_id is unavailable.",
+            "maxLength": 255,
+            "title": "Task Title",
+            "type": "string"
+          }
+        },
+        "title": "WorkProjectAgentSummaryContentSchema",
+        "type": "object"
+      },
+      "WorkProjectAgentSummarySchema": {
+        "properties": {
+          "agent_code": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Agent Code",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/WorkProjectAgentSummaryContentSchema"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "agent_code"
+        ],
+        "title": "WorkProjectAgentSummarySchema",
+        "type": "object"
+      },
+      "WorkProjectOwnerSchema": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "role": {
+            "$ref": "#/components/schemas/SystemUserRole"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "username"
+        ],
+        "title": "WorkProjectOwnerSchema",
+        "type": "object"
+      },
       "WorkProjectSchema": {
         "properties": {
+          "agent_summaries": {
+            "items": {
+              "$ref": "#/components/schemas/WorkProjectAgentSummarySchema"
+            },
+            "title": "Agent Summaries",
+            "type": "array"
+          },
+          "assets_text": {
+            "title": "Assets Text",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2416,12 +2776,52 @@
             "title": "Name",
             "type": "string"
           },
-          "session_id": {
-            "title": "Session Id",
-            "type": "string"
+          "owner_user_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Owner User Ids",
+            "type": "array"
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/WorkProjectOwnerSchema"
+            },
+            "title": "Owners",
+            "type": "array"
+          },
+          "progress": {
+            "default": 0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "number"
+          },
+          "sandbox_container_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sandbox Container Id"
+          },
+          "session_count": {
+            "default": 0,
+            "title": "Session Count",
+            "type": "integer"
           },
           "status": {
             "$ref": "#/components/schemas/WorkProjectStatus"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/WorkProjectTaskSchema"
+            },
+            "title": "Tasks",
+            "type": "array"
           },
           "type": {
             "$ref": "#/components/schemas/WorkProjectType"
@@ -2435,8 +2835,12 @@
         "required": [
           "id",
           "name",
-          "session_id",
           "description",
+          "owner_user_ids",
+          "owners",
+          "assets_text",
+          "tasks",
+          "agent_summaries",
           "status",
           "type",
           "created_at",
@@ -2449,10 +2853,69 @@
         "enum": [
           "working",
           "completed",
-          "failed",
           "canceled"
         ],
         "title": "WorkProjectStatus",
+        "type": "string"
+      },
+      "WorkProjectTaskSchema": {
+        "properties": {
+          "assignee": {
+            "default": "",
+            "description": "Agent code or owner responsible for this task.",
+            "maxLength": 128,
+            "title": "Assignee",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable task id.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "progress": {
+            "default": 0,
+            "description": "Task progress from 0 to 100 with at most two decimals.",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "number"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkProjectTaskStatus",
+            "default": "todo",
+            "description": "Task status."
+          },
+          "summary": {
+            "default": "",
+            "description": "Current concise task summary.",
+            "maxLength": 4000,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "description": "Short task title.",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "WorkProjectTaskSchema",
+        "type": "object"
+      },
+      "WorkProjectTaskStatus": {
+        "enum": [
+          "todo",
+          "in_progress",
+          "blocked",
+          "done"
+        ],
+        "title": "WorkProjectTaskStatus",
         "type": "string"
       },
       "WorkProjectType": {
@@ -2474,7 +2937,7 @@
   },
   "info": {
     "title": "Z3r0 - AI + Security Attack Platform",
-    "version": "0.0.1"
+    "version": "0.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2701,6 +3164,83 @@
           }
         ],
         "summary": "List Agent Events Route",
+        "tags": [
+          "agent-sessions"
+        ]
+      }
+    },
+    "/api/agent-sessions/{session_id}/title": {
+      "patch": {
+        "operationId": "update_agent_session_title_route_api_agent_sessions__session_id__title_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentSessionTitleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_AgentSessionSummarySchema_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Agent session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Agent Session Title Route",
         "tags": [
           "agent-sessions"
         ]
@@ -5193,16 +5733,6 @@
             },
             "description": "Unauthorized"
           },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommonResponse_Any_"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
           "422": {
             "content": {
               "application/json": {
@@ -5246,6 +5776,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "401": {
             "content": {
@@ -5364,6 +5904,71 @@
         "tags": [
           "work-projects"
         ]
+      },
+      "get": {
+        "operationId": "get_work_project_route_api_work_projects__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_WorkProjectSchema_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Work project not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Work Project Route",
+        "tags": [
+          "work-projects"
+        ]
       }
     },
     "/api/work-projects/{id}/cancel": {
@@ -5453,6 +6058,103 @@
         ]
       }
     },
+    "/api/work-projects/{id}/metadata": {
+      "patch": {
+        "operationId": "update_work_project_metadata_route_api_work_projects__id__metadata_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkProjectMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_WorkProjectSchema_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Work project not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Work Project Metadata Route",
+        "tags": [
+          "work-projects"
+        ]
+      }
+    },
     "/api/work-projects/{id}/retry": {
       "post": {
         "operationId": "retry_work_project_handler_api_work_projects__id__retry_post",
@@ -5535,6 +6237,224 @@
           }
         ],
         "summary": "Retry Work Project Handler",
+        "tags": [
+          "work-projects"
+        ]
+      }
+    },
+    "/api/work-projects/{id}/sessions": {
+      "get": {
+        "operationId": "list_work_project_sessions_route_api_work_projects__id__sessions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_ListWorkProjectSessionsResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Work project not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Work Project Sessions Route",
+        "tags": [
+          "work-projects"
+        ]
+      },
+      "post": {
+        "operationId": "create_work_project_session_route_api_work_projects__id__sessions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_CreateWorkProjectSessionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Work project not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Work Project Session Route",
+        "tags": [
+          "work-projects"
+        ]
+      }
+    },
+    "/api/work-projects/{id}/sessions/{session_id}": {
+      "delete": {
+        "operationId": "delete_work_project_session_route_api_work_projects__id__sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Work project not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete Work Project Session Route",
         "tags": [
           "work-projects"
         ]

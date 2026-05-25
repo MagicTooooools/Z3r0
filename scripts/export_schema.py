@@ -50,6 +50,7 @@ def export_frontend_contract_constants(schema: dict[str, Any]) -> Path:
         f"export const SYSTEM_USER_ROLES = {_enum_values_ts(schema, 'SystemUserRole')} as const;\n"
         f"export const WORK_PROJECT_TYPES = {_enum_values_ts(schema, 'WorkProjectType')} as const;\n"
         f"export const WORK_PROJECT_STATUSES = {_enum_values_ts(schema, 'WorkProjectStatus')} as const;\n"
+        f"export const WORK_PROJECT_TASK_STATUSES = {_enum_values_ts(schema, 'WorkProjectTaskStatus')} as const;\n"
         f"export const SANDBOX_IMAGE_STATUSES = {_enum_values_ts(schema, 'SandboxImageStatus')} as const;\n"
         f"export const SANDBOX_CONTAINER_STATUSES = {_enum_values_ts(schema, 'SandboxContainerStatus')} as const;\n"
         f"export const SESSION_TYPES = {_enum_values_ts(schema, 'SessionType')} as const;\n\n"

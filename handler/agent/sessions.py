@@ -20,6 +20,7 @@ from schema.agent.sessions import (
     CreateAgentSessionResponse,
     ListAgentEventsResponse,
     ListAgentSessionsResponse,
+    UpdateAgentSessionTitleRequest,
 )
 from schema.common.responses import CommonResponse
 from service.agent import runtime as agent_runtime
@@ -43,6 +44,22 @@ async def delete_agent_session_handler(session_id: str, user: AuthUser) -> Commo
     if not deleted:
         return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="agent session not found")
     return CommonResponse(message="agent session deleted")
+
+
+async def update_agent_session_title_handler(
+    session_id: str,
+    request: UpdateAgentSessionTitleRequest,
+    user: AuthUser,
+) -> CommonResponse:
+    session = await agent_sessions.update_session_title(
+        session_id=session_id,
+        title=request.title,
+        user_id=user.id,
+        user_role=user.role,
+    )
+    if session is None:
+        return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="agent session not found")
+    return CommonResponse(message="agent session title updated", data=session)
 
 
 async def list_agent_sessions_handler(limit: int, user: AuthUser) -> CommonResponse:
@@ -85,8 +102,8 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
     try:
         runtime, runtime_events = await get_agent_pool().subscribe(session_id)
         subscriber = await subscribe_session_events(session_id)
-        runtime_forwarder = asyncio.create_task(_forward_events(websocket, runtime_events, send_lock))
-        subagent_forwarder = asyncio.create_task(_forward_events(websocket, subscriber, send_lock))
+        runtime_forwarder = asyncio.create_task(_forward_events(websocket, runtime_events, send_lock, session_id, user))
+        subagent_forwarder = asyncio.create_task(_forward_events(websocket, subscriber, send_lock, session_id, user))
 
         while True:
             payload = await websocket.receive_json()
@@ -147,6 +164,9 @@ async def _start_turn(
             sandbox_container_id=sandbox_container_id,
             requested_agent_code=requested_agent_code,
         )
+    except agent_runtime.SessionNotRunnableError:
+        await _send_event(websocket, agent_runtime.not_runnable_error(), send_lock)
+        await _send_event(websocket, agent_runtime.done_event(), send_lock)
     except PermissionError:
         await _send_event(websocket, agent_runtime.not_found_error(), send_lock)
         await _send_event(websocket, agent_runtime.done_event(), send_lock)
@@ -211,10 +231,15 @@ async def _forward_events(
     websocket: WebSocket,
     queue: asyncio.Queue[AgentEventSchema],
     send_lock: asyncio.Lock,
+    session_id: str,
+    user: AuthUser,
 ) -> None:
     try:
         while True:
             event = await queue.get()
+            if not await agent_sessions.can_access_session(session_id, user.id, user.role):
+                await _close_silently(websocket, code=ws_status.WS_1008_POLICY_VIOLATION)
+                return
             if not await _send_event(websocket, event, send_lock):
                 return
     except asyncio.CancelledError:
@@ -233,9 +258,9 @@ async def _cancel_task(task: asyncio.Task | None) -> None:
         pass
 
 
-async def _close_silently(websocket: WebSocket) -> None:
+async def _close_silently(websocket: WebSocket, code: int = ws_status.WS_1011_INTERNAL_ERROR) -> None:
     try:
-        await websocket.close(code=ws_status.WS_1011_INTERNAL_ERROR)
+        await websocket.close(code=code)
     except Exception:
         pass
 

@@ -3,9 +3,17 @@ import { clearStoredAccessToken, getStoredAccessToken, storeAccessToken } from "
 
 type AuthContextValue = {
   token: string | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   signIn: (token: string) => void;
   signOut: () => void;
+};
+
+type AuthUser = {
+  id: number;
+  role: "admin" | "user";
+  email: string;
+  username: string;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -32,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       token,
+      user: decodeUser(token),
       isAuthenticated: Boolean(token),
       signIn,
       signOut,
@@ -48,4 +57,31 @@ export function useAuth() {
     throw new Error("useAuth must be used inside AuthProvider");
   }
   return value;
+}
+
+function decodeUser(token: string | null): AuthUser | null {
+  if (!token) return null;
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const parsed = JSON.parse(atob(padded));
+    if (
+      typeof parsed.id === "number"
+      && (parsed.role === "admin" || parsed.role === "user")
+      && typeof parsed.email === "string"
+      && typeof parsed.username === "string"
+    ) {
+      return {
+        id: parsed.id,
+        role: parsed.role,
+        email: parsed.email,
+        username: parsed.username,
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }

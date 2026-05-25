@@ -1,5 +1,6 @@
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -225,13 +226,32 @@ async def resolve_sandbox_container_tool_binding(
     user_id: int,
     user_role: SystemUserRole,
 ) -> SandboxContainerToolBinding | None:
+    return await _resolve_sandbox_container_tool_binding(
+        id=id,
+        can_use=lambda container: (
+            user_role == SystemUserRole.ADMIN
+            or container.owner_id == user_id
+        ),
+    )
+
+
+async def resolve_project_sandbox_container_tool_binding(
+    id: int,
+) -> SandboxContainerToolBinding | None:
+    return await _resolve_sandbox_container_tool_binding(id=id, can_use=lambda _: True)
+
+
+async def _resolve_sandbox_container_tool_binding(
+    id: int,
+    can_use: Callable[[SandboxContainer], bool],
+) -> SandboxContainerToolBinding | None:
     async with get_async_session() as session:
         sandbox_container = await session.get(SandboxContainer, id)
         if sandbox_container is None:
             return None
         if sandbox_container.status != SandboxContainerStatus.RUNNING:
             return None
-        if user_role != SystemUserRole.ADMIN and sandbox_container.owner_id != user_id:
+        if not can_use(sandbox_container):
             return None
         container_hash = sandbox_container.container_hash
         generation = status_generation(sandbox_container)

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useOutletContext } from "react-router-dom";
 import { AuthProvider, useAuth } from "../shared/auth/AuthProvider";
 
 const LandingPage = lazy(() => import("../features/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
@@ -18,6 +18,15 @@ function ProtectedRoute() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
   return <Outlet />;
+}
+
+function AdminOnlyRoute() {
+  const { user } = useAuth();
+  const outletContext = useOutletContext();
+  if (user?.role !== "admin") {
+    return <Navigate to="/playground" replace />;
+  }
+  return <Outlet context={outletContext} />;
 }
 
 function PublicOnlyRoute() {
@@ -41,10 +50,12 @@ export function App() {
             <Route element={<ProtectedRoute />}>
               <Route element={<ProtectedAdminShell />}>
                 <Route path="/playground" element={<PlaygroundPage />} />
-                <Route path="/sandbox-images" element={<SandboxImagesPage />} />
-                <Route path="/sandbox-containers" element={<SandboxContainersPage />} />
-                <Route path="/system-users" element={<SystemUsersPage />} />
-                <Route path="/work-projects" element={<WorkProjectsPage />} />
+                <Route element={<AdminOnlyRoute />}>
+                  <Route path="/work-projects" element={<WorkProjectsPage />} />
+                  <Route path="/sandbox-images" element={<SandboxImagesPage />} />
+                  <Route path="/sandbox-containers" element={<SandboxContainersPage />} />
+                  <Route path="/system-users" element={<SystemUsersPage />} />
+                </Route>
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/playground" replace />} />

@@ -9,7 +9,7 @@ from agents.extensions.models.litellm_model import LitellmModel
 
 from config import AgentConfig, WORKSPACE, get_config
 from core.agent.instructions import build_instructions
-from core.agent.specs import AGENT_SPECS, AgentSpec
+from core.agent.specs import AGENT_SPECS, AgentSpec, ToolMount
 from core.delegation.subagents import build_subagent_tools
 from core.runtime.context import AgentRuntimeContext
 from core.tools.knowledge import find_knowledge, load_knowledge
@@ -30,6 +30,7 @@ class AgentToolSnapshot:
     sandbox_container_id: int | None = None
     sandbox_container_generation: int = 0
     sandbox_skill_metadata: tuple[str, ...] = ()
+    work_project_id: int | None = None
 
     @classmethod
     def from_context(cls, context: AgentRuntimeContext) -> "AgentToolSnapshot":
@@ -38,6 +39,7 @@ class AgentToolSnapshot:
             sandbox_container_id=context.sandbox_container_id,
             sandbox_container_generation=context.sandbox_container_generation,
             sandbox_skill_metadata=context.sandbox_skill_metadata,
+            work_project_id=context.work_project_id,
         )
 
 
@@ -84,11 +86,15 @@ class AgentRegistry:
             include_sandbox_commands=_has_tool(spec, execute_sync_command) or _has_tool(spec, execute_async_command),
             include_sandbox_skills=_has_tool(spec, load_skill),
             include_agent_knowledges=_has_any_tool(spec, (find_knowledge, load_knowledge)),
+            include_work_project_tools=(
+                graph.tool_snapshot.work_project_id is not None
+                and _has_work_project_tool(spec)
+            ),
         )
 
         tools: list[Tool] = [
             mount.tool for mount in spec.tools
-            if not mount.requires_sandbox_container or graph.tool_snapshot.sandbox_container_id is not None
+            if _tool_mount_available(mount, graph.tool_snapshot)
         ]
         for mount in spec.subagents:
             if mount.code == spec.code:
@@ -162,6 +168,18 @@ def _has_tool(spec: AgentSpec, tool: Tool) -> bool:
 
 def _has_any_tool(spec: AgentSpec, tools: tuple[Tool, ...]) -> bool:
     return any(_has_tool(spec, tool) for tool in tools)
+
+
+def _has_work_project_tool(spec: AgentSpec) -> bool:
+    return any(mount.requires_work_project for mount in spec.tools)
+
+
+def _tool_mount_available(mount: ToolMount, snapshot: AgentToolSnapshot) -> bool:
+    if mount.requires_sandbox_container and snapshot.sandbox_container_id is None:
+        return False
+    if mount.requires_work_project and snapshot.work_project_id is None:
+        return False
+    return True
 
 
 def _build_subagent_tools(spec: AgentSpec, graph: SessionAgentGraph) -> list[Tool]:

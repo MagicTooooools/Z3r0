@@ -3,7 +3,8 @@ from logger import get_logger
 from middleware.auth import AuthUser
 from service.agent import sessions as agent_sessions
 from service.system_user.users import query_system_user_by_id
-from service.agent.runtime import build_base_runtime_context
+from service.agent.runtime import build_runtime_context
+from service.work_project.projects import can_run_work_project_session
 
 
 logger = get_logger(__name__)
@@ -28,6 +29,18 @@ async def recover_pending_sessions() -> None:
             )
             continue
         auth_user = AuthUser(id=user.id, role=user.role, email=user.email, username=user.username)
+        if not await can_run_work_project_session(session.session_id, auth_user.id, auth_user.role):
+            await agent_sessions.force_mark_session_stopped(
+                session.session_id,
+                error="WorkProject is not runnable.",
+            )
+            continue
         agent_code = session.runtime_agent_code or session.agent_code
         runtime = await get_agent_pool().get_or_create(session.session_id)
-        await runtime.start_notification_drain(build_base_runtime_context(session.session_id, auth_user, agent_code))
+        context = await build_runtime_context(
+            session.session_id,
+            auth_user,
+            session.runtime_sandbox_container_id,
+            agent_code,
+        )
+        await runtime.start_notification_drain(context)

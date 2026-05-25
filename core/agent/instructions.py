@@ -22,6 +22,21 @@ When calling sandbox command tools, pass `timeout_seconds` explicitly.
 """
 
 
+WORK_PROJECT_INSTRUCTIONS = """# WorkProject
+
+Project state is live shared memory for users and future agents. Keep it current; summaries are checkpoints, not final reports.
+
+- Read only needed state: assets before scope work; tasks/summaries before planning, resuming, delegation, handoff, or reporting. `assets_text` is authoritative scope; do not invent targets.
+- After any material event, update your summary before the next investigation/action tool call when practical. Do not wait for task completion. Material events include confirmed findings, useful negative results, evidence, blockers, failed attempts worth preserving, decisions, scope changes, handoffs, confidence changes, progress changes, and completion.
+- Use `update_work_project_agent_summary` for your own live state only. Replace stale content with concise current fields: `task_id`, `task_title`, `progress`, `status`, `findings`, `decisions`, `blockers`, `next_steps`, `evidence`, `notes`.
+- If nothing material changed, do not rewrite the summary. If material state changed and your next step is another command, subagent, wait, handoff, or user reply, checkpoint first.
+- Summary `progress` is your subtask progress, `0..100` with at most two decimals. Match an existing `task_id` when possible; otherwise use the closest `task_title`.
+- If `update_work_project_tasks` is available, you own the shared task list: create/replan tasks, set active work `in_progress`, blockers `blocked`, completed work `done`, and update task progress after your work or subagent results change global task state. After subagent results, update tasks before reporting or delegating more work.
+- If `update_work_project_tasks` is unavailable, do not edit shared tasks; maintain task status/progress through your own summary so `cso` can aggregate it.
+- Task status values: `todo`, `in_progress`, `blocked`, `done`. Overall project progress is code-calculated from task progress; never write it separately.
+"""
+
+
 def build_instructions(
     soul: str,
     rules: str,
@@ -32,12 +47,15 @@ def build_instructions(
     include_sandbox_commands: bool,
     include_sandbox_skills: bool,
     include_agent_knowledges: bool,
+    include_work_project_tools: bool,
 ) -> str:
     parts = [soul, rules, MARKDOWN_OUTPUT_INSTRUCTIONS]
     if include_sandbox_commands and has_sandbox_container:
         parts.append(SANDBOX_COMMAND_INSTRUCTIONS)
     if include_agent_knowledges:
         parts.append(_build_agent_knowledge_instructions(load_knowledge_metadata(agent_code)))
+    if include_work_project_tools:
+        parts.append(WORK_PROJECT_INSTRUCTIONS)
     if include_sandbox_skills and has_sandbox_container:
         parts.append(_build_sandbox_skill_instructions(sandbox_skill_metadata))
     return "\n\n".join(part.strip() for part in parts if part.strip())

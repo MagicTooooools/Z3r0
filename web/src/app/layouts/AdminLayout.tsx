@@ -7,29 +7,50 @@ import { useAgentSessionContext } from "../../features/playground/AgentSessionPr
 import { useAuth } from "../../shared/auth/AuthProvider";
 import z3r0Logo from "../../assets/z3r0-logo.png";
 
-type AdminLayoutContext = { setHeaderActions: (actions: ReactNode) => void };
+type AdminLayoutContext = {
+  setHeaderActions: (actions: ReactNode) => void;
+  refreshWorkProjects: () => void;
+};
 
 export function useAdminHeaderActions() {
   return useOutletContext<AdminLayoutContext>().setHeaderActions;
 }
 
+export function useRefreshWorkProjects() {
+  return useOutletContext<AdminLayoutContext>().refreshWorkProjects;
+}
+
 const navItems = [
   { path: "/playground", label: "Playground", eyebrow: "Agent Workbench", icon: MessageSquareCode },
-  { path: "/work-projects", label: "Work Projects", eyebrow: "Project Operations", icon: FolderKanban },
-  { path: "/sandbox-images", label: "Sandbox Images", eyebrow: "Execution Baseline", icon: Boxes },
-  { path: "/sandbox-containers", label: "Sandbox Containers", eyebrow: "Runtime Instances", icon: Box },
-  { path: "/system-users", label: "System Users", eyebrow: "Access Control", icon: Users },
+  { path: "/work-projects", label: "Work Projects", eyebrow: "Project Operations", icon: FolderKanban, adminOnly: true },
+  { path: "/sandbox-images", label: "Sandbox Images", eyebrow: "Execution Baseline", icon: Boxes, adminOnly: true },
+  { path: "/sandbox-containers", label: "Sandbox Containers", eyebrow: "Runtime Instances", icon: Box, adminOnly: true },
+  { path: "/system-users", label: "System Users", eyebrow: "Access Control", icon: Users, adminOnly: true },
 ];
 
 export function AdminLayout() {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [headerActions, setHeaderActionsState] = useState<ReactNode>(null);
-  const { sessions, sessionsLoading, activeSessionId, selectSession, deleteSession } = useAgentSessionContext();
+  const [projectListVersion, setProjectListVersion] = useState(0);
+  const {
+    sessions,
+    sessionsLoading,
+    activeSessionId,
+    selectSession,
+    deleteSession,
+    refreshSessions,
+    dropSessionRuntime,
+    ensureSessionRuntime,
+  } = useAgentSessionContext();
 
   const setHeaderActions = useCallback((actions: ReactNode) => {
     setHeaderActionsState(() => actions);
+  }, []);
+
+  const refreshWorkProjects = useCallback(() => {
+    setProjectListVersion((version) => version + 1);
   }, []);
 
   const handleSelectAgentSession = useCallback((sessionId: string) => {
@@ -39,14 +60,16 @@ export function AdminLayout() {
     }
   }, [location.pathname, navigate, selectSession]);
 
-  const outletContext: AdminLayoutContext = { setHeaderActions };
+  const outletContext: AdminLayoutContext = { setHeaderActions, refreshWorkProjects };
 
   const handleSignOut = () => {
     signOut();
     navigate("/login", { replace: true });
   };
 
-  const activeItem = navItems.find((item) => location.pathname.startsWith(item.path));
+  const isAdmin = user?.role === "admin";
+  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const activeItem = visibleNavItems.find((item) => location.pathname.startsWith(item.path));
 
   return (
     <div className="admin-shell">
@@ -70,14 +93,19 @@ export function AdminLayout() {
                 sessions={sessions}
                 loading={sessionsLoading}
                 activeSessionId={activeSessionId}
+                canDeleteProjectSession={isAdmin}
+                projectListVersion={projectListVersion}
                 onSelect={handleSelectAgentSession}
                 onDelete={deleteSession}
+                onRefreshSessions={refreshSessions}
+                onDropRuntime={dropSessionRuntime}
+                onEnsureRuntime={ensureSessionRuntime}
               />
             </div>
           </div>
 
           <nav className="admin-nav admin-nav-bottom" aria-label="Primary navigation">
-            {navItems.slice(1).map((item) => {
+            {visibleNavItems.slice(1).map((item) => {
               const Icon = item.icon;
               return (
                 <NavLink key={item.path} to={item.path} className="admin-nav-link">
@@ -99,7 +127,7 @@ export function AdminLayout() {
           <div className="topbar-actions">
             {headerActions ? <div className="topbar-resource-actions">{headerActions}</div> : null}
             <div className="topbar-session-actions">
-              <Avatar size="small" color="red">A</Avatar>
+              <Avatar size="small" color="red">{user?.username?.[0]?.toUpperCase() || "U"}</Avatar>
               <Button icon={<LogOut size={16} />} theme="borderless" onClick={handleSignOut} aria-label="Sign out" />
             </div>
           </div>

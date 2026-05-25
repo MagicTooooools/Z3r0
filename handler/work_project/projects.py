@@ -4,27 +4,57 @@ from middleware.auth import AuthUser
 from schema.common.responses import CommonResponse
 from schema.work_project.projects import (
     CreateWorkProjectRequest,
+    CreateWorkProjectSessionResponse,
     DeleteWorkProjectResponse,
+    ListWorkProjectSessionsResponse,
     QueryWorkProjectsResponse,
+    UpdateWorkProjectMetadataRequest,
     WorkProjectSchema,
 )
 from service.work_project.projects import (
     cancel_work_project,
     create_work_project,
+    create_work_project_session,
     delete_work_project,
-    query_work_projects,
+    delete_work_project_session,
+    get_work_project_for_user,
+    list_work_project_sessions,
+    query_work_projects_for_user,
     retry_work_project,
+    update_work_project_metadata,
+    validate_work_project_metadata,
+    work_project_exists,
 )
 
 
-async def create_work_project_handler(request: CreateWorkProjectRequest, user: AuthUser) -> CommonResponse:
-    work_project = await create_work_project(
-        name=request.name,
-        owner_id=user.id,
-        description=request.description,
-        type=request.type,
-    )
-    return CommonResponse(data=WorkProjectSchema.model_validate(work_project))
+async def create_work_project_handler(request: CreateWorkProjectRequest) -> CommonResponse:
+    validation_error = await validate_work_project_metadata(request)
+    if validation_error:
+        return CommonResponse(code=HTTPStatus.BAD_REQUEST.value, message=validation_error)
+    project = await create_work_project(request)
+    return CommonResponse(data=project)
+
+
+async def get_work_project_handler(id: int, user: AuthUser) -> CommonResponse:
+    project = await get_work_project_for_user(id, user_id=user.id, user_role=user.role)
+    if project is None:
+        return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project not found")
+    return CommonResponse(data=project)
+
+
+async def update_work_project_metadata_handler(
+    id: int,
+    request: UpdateWorkProjectMetadataRequest,
+) -> CommonResponse:
+    if not await work_project_exists(id):
+        return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project not found")
+    validation_error = await validate_work_project_metadata(request)
+    if validation_error:
+        return CommonResponse(code=HTTPStatus.BAD_REQUEST.value, message=validation_error)
+    project = await update_work_project_metadata(id, request)
+    if project is None:
+        return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project not found")
+    return CommonResponse(message="work project updated", data=project)
 
 
 async def delete_work_project_handler(id: int) -> CommonResponse:
@@ -34,41 +64,74 @@ async def delete_work_project_handler(id: int) -> CommonResponse:
 
 
 async def cancel_work_project_handler(id: int) -> CommonResponse:
-    work_project, canceled = await cancel_work_project(id)
-    if work_project is None:
+    project, canceled = await cancel_work_project(id)
+    if project is None:
         return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project not found")
     if not canceled:
         return CommonResponse(
             code=HTTPStatus.BAD_REQUEST.value,
             message="only working projects can be canceled",
-            data=WorkProjectSchema.model_validate(work_project),
+            data=project,
         )
-    return CommonResponse(
-        message="work project canceled",
-        data=WorkProjectSchema.model_validate(work_project),
-    )
+    return CommonResponse(message="work project canceled", data=project)
 
 
 async def retry_work_project_handler(id: int) -> CommonResponse:
-    work_project, retried = await retry_work_project(id)
-    if work_project is None:
+    project, retried = await retry_work_project(id)
+    if project is None:
         return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project not found")
     if not retried:
         return CommonResponse(
             code=HTTPStatus.BAD_REQUEST.value,
-            message="only failed or canceled projects can be retried",
-            data=WorkProjectSchema.model_validate(work_project),
+            message="only canceled projects can be retried",
+            data=project,
         )
-    return CommonResponse(
-        message="work project restarted",
-        data=WorkProjectSchema.model_validate(work_project),
-    )
+    return CommonResponse(message="work project restarted", data=project)
 
 
-async def query_work_projects_handler(page: int, size: int, keyword: str) -> CommonResponse:
-    work_projects = await query_work_projects(page=page, size=size, keyword=keyword)
-    return CommonResponse(data=QueryWorkProjectsResponse(
+async def query_work_projects_handler(page: int, size: int, keyword: str, user: AuthUser) -> CommonResponse:
+    projects = await query_work_projects_for_user(
         page=page,
         size=size,
-        items=[WorkProjectSchema.model_validate(project) for project in work_projects],
-    ))
+        keyword=keyword,
+        user_id=user.id,
+        user_role=user.role,
+    )
+    return CommonResponse(data=QueryWorkProjectsResponse(page=page, size=size, items=projects))
+
+
+async def create_work_project_session_handler(
+    id: int,
+    user: AuthUser,
+) -> CommonResponse:
+    result = await create_work_project_session(
+        id,
+        owner_id=user.id,
+        user_role=user.role,
+    )
+    if result.not_found:
+        return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project not found")
+    if result.inactive:
+        return CommonResponse(code=HTTPStatus.BAD_REQUEST.value, message="only working projects can create sessions")
+    return CommonResponse(data=CreateWorkProjectSessionResponse(session_id=result.session_id))
+
+
+async def list_work_project_sessions_handler(id: int, user: AuthUser) -> CommonResponse:
+    sessions = await list_work_project_sessions(id, user_id=user.id, user_role=user.role)
+    if sessions is None:
+        return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project not found")
+    return CommonResponse(data=ListWorkProjectSessionsResponse(items=sessions))
+
+
+async def delete_work_project_session_handler(id: int, session_id: str, user: AuthUser) -> CommonResponse:
+    deleted = await delete_work_project_session(
+        project_id=id,
+        session_id=session_id,
+        user_id=user.id,
+        user_role=user.role,
+    )
+    if deleted is None:
+        return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project not found")
+    if not deleted:
+        return CommonResponse(code=HTTPStatus.NOT_FOUND.value, message="work project session not found")
+    return CommonResponse(message="work project session deleted")

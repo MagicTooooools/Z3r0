@@ -1,4 +1,11 @@
-import type { SandboxContainerStatus, SandboxImageStatus, SessionType, SystemUserRole, WorkProjectStatus, WorkProjectType } from "../api/types";
+import type {
+  SandboxContainerStatus,
+  SandboxImageStatus,
+  SystemUserRole,
+  WorkProjectStatus,
+  WorkProjectTaskStatus,
+  WorkProjectType,
+} from "../api/types";
 
 export const SYSTEM_USER_ROLE_LABEL: Record<SystemUserRole, string> = {
   admin: "Admin",
@@ -13,8 +20,14 @@ export const WORK_PROJECT_TYPE_LABEL: Record<WorkProjectType, string> = {
 export const WORK_PROJECT_STATUS_LABEL: Record<WorkProjectStatus, string> = {
   working: "Working",
   completed: "Completed",
-  failed: "Failed",
   canceled: "Canceled",
+};
+
+export const WORK_PROJECT_TASK_STATUS_LABEL: Record<WorkProjectTaskStatus, string> = {
+  todo: "Todo",
+  in_progress: "In Progress",
+  blocked: "Blocked",
+  done: "Done",
 };
 
 export const SANDBOX_IMAGE_STATUS_LABEL: Record<SandboxImageStatus, string> = {
@@ -31,23 +44,24 @@ export const SANDBOX_CONTAINER_STATUS_LABEL: Record<SandboxContainerStatus, stri
   error: "Error",
 };
 
-export const SESSION_TYPE_LABEL: Record<SessionType, string> = {
-  chat: "Chat",
-  project: "Project",
-};
-
 export type SemiTagColor = "amber" | "green" | "red" | "grey" | "blue" | "cyan";
 
 export const WORK_PROJECT_STATUS_COLOR: Record<WorkProjectStatus, SemiTagColor> = {
   working: "amber",
   completed: "green",
-  failed: "red",
   canceled: "grey",
 };
 
 export const WORK_PROJECT_TYPE_COLOR: Record<WorkProjectType, SemiTagColor> = {
   penetration_test: "blue",
   source_code_audit: "cyan",
+};
+
+export const WORK_PROJECT_TASK_STATUS_COLOR: Record<WorkProjectTaskStatus, SemiTagColor> = {
+  todo: "grey",
+  in_progress: "blue",
+  blocked: "amber",
+  done: "green",
 };
 
 export const SANDBOX_IMAGE_STATUS_COLOR: Record<SandboxImageStatus, SemiTagColor> = {
