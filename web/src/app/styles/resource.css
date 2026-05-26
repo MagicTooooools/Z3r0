@@ -588,10 +588,20 @@
 
 .project-info-content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
   gap: 14px;
+  max-height: min(680px, calc(100vh - 220px));
   min-height: 0;
+  overflow: hidden;
   padding-bottom: 18px;
   color: #26344d;
+}
+
+.project-info-main {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .project-info-meta {
@@ -642,6 +652,7 @@
 
 .project-info-panel {
   display: grid;
+  grid-template-rows: max-content minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
   padding: 14px;
@@ -661,12 +672,20 @@
 .project-info-scroll-list {
   display: grid;
   gap: 8px;
-  max-height: min(260px, 32vh);
+  max-height: min(240px, 30vh);
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-color: #b8c6d6 transparent;
   scrollbar-width: thin;
+}
+
+.project-info-summary-panel {
+  min-height: 0;
+}
+
+.project-info-summary-scroll {
+  max-height: none;
 }
 
 .project-info-assets > div,
@@ -985,6 +1004,16 @@
 
   .table-panel {
     overflow-x: auto;
+  }
+
+  .project-info-content {
+    grid-template-columns: 1fr;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .project-info-summary-scroll {
+    max-height: min(260px, 32vh);
   }
 }
 

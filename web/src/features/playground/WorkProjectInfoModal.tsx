@@ -26,69 +26,71 @@ export function WorkProjectInfoModal({ open, loading, project, onClose }: WorkPr
     <Modal
       visible={open}
       title={<ProjectInfoTitle project={project} />}
-      width="min(960px, calc(100vw - 32px))"
+      width="min(1180px, calc(100vw - 32px))"
       footer={null}
       onCancel={onClose}
     >
       <Spin spinning={loading}>
         {project ? (
           <div className="project-info-content">
-            <section className="project-info-meta">
-              <div>
-                <span>Type</span>
-                <WorkProjectTypeTag project={project} />
-              </div>
-              <div>
-                <span>Status</span>
-                <WorkProjectStatusTag project={project} />
-              </div>
-              <div>
-                <span>Owners</span>
-                <strong>{workProjectOwnerNames(project)}</strong>
-              </div>
-              <div>
-                <span>Sandbox</span>
-                <strong>{project.sandbox_container_id ?? "-"}</strong>
-              </div>
-            </section>
+            <div className="project-info-main">
+              <section className="project-info-meta">
+                <div>
+                  <span>Type</span>
+                  <WorkProjectTypeTag project={project} />
+                </div>
+                <div>
+                  <span>Status</span>
+                  <WorkProjectStatusTag project={project} />
+                </div>
+                <div>
+                  <span>Owners</span>
+                  <strong>{workProjectOwnerNames(project)}</strong>
+                </div>
+                <div>
+                  <span>Sandbox</span>
+                  <strong>{project.sandbox_container_id ?? "-"}</strong>
+                </div>
+              </section>
 
-            <section className="project-info-progress">
-              <span>Task Progress</span>
-              <Progress percent={project.progress} size="small" showInfo />
-            </section>
+              <section className="project-info-progress">
+                <span>Task Progress</span>
+                <Progress percent={project.progress} size="small" showInfo />
+              </section>
 
-            <section className="project-info-grid">
-              <WorkProjectPanel
-                title="Target Assets"
-                icon={<FolderKanban size={15} />}
-                empty={!assets.length ? "No data." : ""}
-                className="project-info-panel"
-                emptyClassName="project-info-empty"
-              >
-                <WorkProjectAssets project={project} className="project-info-scroll-list project-info-assets" />
-              </WorkProjectPanel>
+              <section className="project-info-grid">
+                <WorkProjectPanel
+                  title="Target Assets"
+                  icon={<FolderKanban size={15} />}
+                  empty={!assets.length ? "No data." : ""}
+                  className="project-info-panel"
+                  emptyClassName="project-info-empty"
+                >
+                  <WorkProjectAssets project={project} className="project-info-scroll-list project-info-assets" />
+                </WorkProjectPanel>
 
-              <WorkProjectPanel
-                title="Tasks"
-                icon={<ClipboardList size={15} />}
-                empty={!project.tasks.length ? "No data." : ""}
-                className="project-info-panel"
-                emptyClassName="project-info-empty"
-              >
-                <WorkProjectTasks project={project} className="project-info-scroll-list project-info-tasks" rowClassName="project-info-task-row" />
-              </WorkProjectPanel>
-            </section>
+                <WorkProjectPanel
+                  title="Tasks"
+                  icon={<ClipboardList size={15} />}
+                  empty={!project.tasks.length ? "No data." : ""}
+                  className="project-info-panel"
+                  emptyClassName="project-info-empty"
+                >
+                  <WorkProjectTasks project={project} className="project-info-scroll-list project-info-tasks" rowClassName="project-info-task-row" />
+                </WorkProjectPanel>
+              </section>
+            </div>
 
             <WorkProjectPanel
               title="Agent Summaries"
               icon={<UserRound size={15} />}
               empty={!project.agent_summaries.length ? "No data." : ""}
-              className="project-info-panel"
+              className="project-info-panel project-info-summary-panel"
               emptyClassName="project-info-empty"
             >
               <WorkProjectSummaries
                 project={project}
-                className="project-info-scroll-list project-info-summaries"
+                className="project-info-scroll-list project-info-summaries project-info-summary-scroll"
                 rowClassName="project-info-summary"
                 progressClassName="project-info-summary-task"
                 blockClassName="project-info-summary-block"
