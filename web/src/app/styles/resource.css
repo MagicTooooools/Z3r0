@@ -557,7 +557,8 @@
 .project-info-title {
   display: grid;
   min-width: 0;
-  gap: 6px;
+  min-height: 0;
+  gap: 4px;
 }
 
 .project-info-title strong {
@@ -571,16 +572,18 @@
 }
 
 .project-info-description {
-  max-height: 96px;
+  max-height: calc(1.5em * 10);
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
   color: #66758b;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
   scrollbar-color: #b8c6d6 transparent;
   scrollbar-width: thin;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .project-info-content {
