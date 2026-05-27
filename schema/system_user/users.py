@@ -3,6 +3,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from schema.common.responses import PaginatedResponse
+
 
 # canonical system user role; reused by the model and by the public schema
 class SystemUserRole(StrEnum):
@@ -50,10 +52,8 @@ class UpdateSystemUserRequest(BaseModel):
 
 
 # query system users response schema
-class QuerySystemUsersResponse(BaseModel):
-    page: int
-    size: int
-    items: list[SystemUserSchema]
+class QuerySystemUsersResponse(PaginatedResponse[SystemUserSchema]):
+    pass
 
 
 # system user login request schema

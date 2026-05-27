@@ -25,6 +25,7 @@ from service.work_project.projects import (
     validate_work_project_metadata,
     work_project_exists,
 )
+from service.common.pagination import paginated_payload
 
 
 async def create_work_project_handler(request: CreateWorkProjectRequest) -> CommonResponse:
@@ -97,7 +98,7 @@ async def query_work_projects_handler(page: int, size: int, keyword: str, user: 
         user_id=user.id,
         user_role=user.role,
     )
-    return CommonResponse(data=QueryWorkProjectsResponse(page=page, size=size, items=projects))
+    return CommonResponse(data=QueryWorkProjectsResponse(**paginated_payload(projects, projects.items)))
 
 
 async def create_work_project_session_handler(

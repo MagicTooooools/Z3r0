@@ -14,6 +14,7 @@ from logger import get_logger
 from model.sandbox.containers import SandboxContainer
 from model.system_user.users import SystemUser
 from schema.system_user.users import SystemUserRole
+from service.common.pagination import Page, paginate_statement
 
 
 logger = get_logger(__name__)
@@ -149,10 +150,9 @@ async def query_system_user_by_id(user_id: int) -> SystemUser | None:
         return await session.get(SystemUser, user_id)
 
 
-async def query_system_users(page: int = 1, size: int = 100, keyword: str = "") -> list[SystemUser]:
-    offset = (page - 1) * size
-    statement = select(SystemUser).order_by(SystemUser.id).offset(offset).limit(size)
-    
+async def query_system_users(page: int = 1, size: int = 100, keyword: str = "") -> Page[SystemUser]:
+    statement = select(SystemUser).order_by(SystemUser.id)
+
     keyword = keyword.strip()
     if keyword:
         pattern = f"%{keyword}%"
@@ -163,9 +163,7 @@ async def query_system_users(page: int = 1, size: int = 100, keyword: str = "") 
             )
         )
 
-    async with get_async_session() as session:
-        result = await session.exec(statement)
-        return list(result.all())
+    return await paginate_statement(statement, page=page, size=size)
 
 
 async def system_user_login(email: str, password: str) -> str | None:

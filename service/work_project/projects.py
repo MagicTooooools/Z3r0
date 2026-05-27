@@ -25,6 +25,7 @@ from schema.work_project.projects import (
     WorkProjectTaskSchema,
 )
 from service.agent.sessions import cancel_sessions, delete_session, list_sessions
+from service.common.pagination import Page, paginate_statement
 from service.work_project.progress import derive_work_project_status
 from utils.sdk_tables import agent_sessions
 
@@ -219,7 +220,7 @@ async def query_work_projects_for_user(
     keyword: str,
     user_id: int,
     user_role: SystemUserRole,
-) -> list[WorkProjectSchema]:
+) -> Page[WorkProjectSchema]:
     return await _query_work_projects(
         page=page,
         size=size,
@@ -374,7 +375,7 @@ async def _query_work_projects(
     size: int,
     keyword: str,
     owner_user_id: int | None = None,
-) -> list[WorkProjectSchema]:
+) -> Page[WorkProjectSchema]:
     statement = select(WorkProject).order_by(WorkProject.id)
 
     keyword = keyword.strip()
@@ -393,14 +394,14 @@ async def _query_work_projects(
             WorkProjectOwner,
             WorkProjectOwner.project_id == WorkProject.id,
         ).where(WorkProjectOwner.user_id == owner_user_id)
-    statement = statement.offset((page - 1) * size).limit(size)
+    page_result = await paginate_statement(statement, page=page, size=size)
+    projects = page_result.items
 
     async with get_async_session() as session:
-        projects = list((await session.exec(statement)).all())
         counts = await _session_counts(session, [project.id or 0 for project in projects])
         owners = await _owners_by_project(session, [project.id or 0 for project in projects])
 
-        return [
+        items = [
             WorkProjectSchema(**_project_schema_payload(
                 project=project,
                 owners=owners.get(project.id or 0, []),
@@ -408,6 +409,7 @@ async def _query_work_projects(
             ))
             for project in projects
         ]
+    return Page(page=page_result.page, size=page_result.size, total=page_result.total, items=items)
 
 
 def _project_schema_payload(

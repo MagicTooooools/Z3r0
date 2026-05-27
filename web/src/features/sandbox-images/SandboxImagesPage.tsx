@@ -1,14 +1,14 @@
 import { Button, Popconfirm, Tag, Tooltip } from "@douyinfe/semi-ui";
-import { Ban, Boxes, Fingerprint, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
+import { Ban, Boxes, Fingerprint, RotateCcw, Trash2 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { cancelSandboxImage, createSandboxImage, deleteSandboxImage, querySandboxImages, retrySandboxImage } from "../../shared/api/sandboxImages";
-import { showApiError, showApiSuccess } from "../../shared/api/feedback";
 import type { CreateSandboxImageRequest, SandboxImage } from "../../shared/api/types";
 import { ResourcePageShell } from "../../shared/components/ResourcePageShell";
 import { ResourceTable, type ResourceColumn } from "../../shared/components/ResourceTable";
+import { useAdminResourceHeader } from "../../shared/hooks/useAdminResourceHeader";
 import { usePagedResourceList } from "../../shared/hooks/usePagedResourceList";
 import { useResourceAction } from "../../shared/hooks/useResourceAction";
+import { useResourceSubmit } from "../../shared/hooks/useResourceSubmit";
 import { formatDateTime } from "../../shared/lib/date";
 import { formatBytes } from "../../shared/lib/number";
 import { SANDBOX_IMAGE_STATUS_COLOR, SANDBOX_IMAGE_STATUS_LABEL } from "../../shared/lib/labels";
@@ -18,12 +18,10 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export function SandboxImagesPage() {
   const {
-    items: images, page, keyword, loading, loadItems: loadImages,
+    items: images, page, keyword, loading, loadItems: loadImages, total, rangeStart, rangeEnd,
     setKeyword, search, previous, next, canGoBack, canGoNext,
   } = usePagedResourceList<SandboxImage>({ pageSize: DEFAULT_PAGE_SIZE, query: querySandboxImages });
-  const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const setHeaderActions = useAdminHeaderActions();
 
   const { run: cancelImage, busyId: cancelingId } = useResourceAction<SandboxImage>(
     (image) => cancelSandboxImage(image.id), loadImages,
@@ -35,17 +33,22 @@ export function SandboxImagesPage() {
     (image) => deleteSandboxImage(image.id), loadImages,
   );
 
-  useEffect(() => {
-    setHeaderActions(
-      <>
-        <Button icon={<RefreshCw size={16} />} onClick={() => void loadImages()} loading={loading} aria-label="Refresh sandbox images" />
-        <Button icon={<Plus size={16} />} theme="solid" type="danger" onClick={() => setModalOpen(true)}>
-          Create Image
-        </Button>
-      </>,
-    );
-    return () => setHeaderActions(null);
-  }, [loadImages, loading, setHeaderActions]);
+  const openCreateModal = useCallback(() => setModalOpen(true), []);
+  const refreshImages = useCallback(() => void loadImages(), [loadImages]);
+  useAdminResourceHeader({
+    createLabel: "Create Image",
+    refreshLabel: "Refresh sandbox images",
+    loading,
+    onCreate: openCreateModal,
+    onRefresh: refreshImages,
+  });
+
+  const { saving, submit } = useResourceSubmit({
+    onSuccess: async () => {
+      setModalOpen(false);
+      await loadImages();
+    },
+  });
 
   const summary = useMemo(
     () => images.reduce(
@@ -59,19 +62,7 @@ export function SandboxImagesPage() {
     [images],
   );
 
-  const handleCreate = async (payload: CreateSandboxImageRequest) => {
-    setSaving(true);
-    try {
-      const response = await createSandboxImage(payload);
-      showApiSuccess(response);
-      setModalOpen(false);
-      await loadImages();
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleCreate = (payload: CreateSandboxImageRequest) => submit(() => createSandboxImage(payload));
 
   const columns: ResourceColumn<SandboxImage>[] = [
     {
@@ -125,7 +116,7 @@ export function SandboxImagesPage() {
         keyword={keyword}
         loading={loading}
         metrics={[
-          { label: "Total loaded", value: images.length },
+          { label: "Total", value: total },
           { label: "Ready", value: summary.ready },
           { label: "Pulling", value: summary.pulling },
           { label: "Canceled", value: summary.canceled },
@@ -134,6 +125,9 @@ export function SandboxImagesPage() {
         emptyIcon={<Boxes size={42} />}
         emptyTitle="No images found"
         page={page}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        total={total}
         canGoBack={canGoBack}
         canGoNext={canGoNext}
         onKeywordChange={setKeyword}

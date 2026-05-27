@@ -1,4 +1,4 @@
-import { apiRequest, buildAuthenticatedWebSocketUrl } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost, buildAuthenticatedWebSocketUrl } from "./client";
 import type {
   CreateAgentSessionResponse,
   DeleteAgentSessionResponse,
@@ -11,30 +11,29 @@ import type {
 const AGENT_SESSIONS_PATH = "/api/agent-sessions";
 
 export function listAgentSessions(limit = 100) {
-  return apiRequest<ListAgentSessionsResponse>(`${AGENT_SESSIONS_PATH}?limit=${limit}`);
+  return apiGet<ListAgentSessionsResponse>(`${AGENT_SESSIONS_PATH}?limit=${limit}`);
 }
 
 export function createAgentSession() {
-  return apiRequest<CreateAgentSessionResponse>(AGENT_SESSIONS_PATH, { method: "POST" });
+  return apiPost<CreateAgentSessionResponse>(AGENT_SESSIONS_PATH);
 }
 
 export function listAgentEvents(sessionId: string) {
-  return apiRequest<ListAgentEventsResponse>(
+  return apiGet<ListAgentEventsResponse>(
     `${AGENT_SESSIONS_PATH}/${encodeURIComponent(sessionId)}/events`,
   );
 }
 
 export function updateAgentSessionTitle(sessionId: string, payload: UpdateAgentSessionTitleRequest) {
-  return apiRequest<UpdateAgentSessionTitleResponse>(
+  return apiPatch<UpdateAgentSessionTitleResponse>(
     `${AGENT_SESSIONS_PATH}/${encodeURIComponent(sessionId)}/title`,
-    { method: "PATCH", body: payload },
+    payload,
   );
 }
 
 export function deleteAgentSession(sessionId: string) {
-  return apiRequest<DeleteAgentSessionResponse>(
+  return apiDelete<DeleteAgentSessionResponse>(
     `${AGENT_SESSIONS_PATH}/${encodeURIComponent(sessionId)}`,
-    { method: "DELETE" },
   );
 }
 

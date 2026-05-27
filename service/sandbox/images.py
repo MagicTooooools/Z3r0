@@ -13,6 +13,7 @@ from logger import get_logger
 from model.sandbox.containers import SandboxContainer
 from model.sandbox.images import SandboxImage
 from schema.sandbox.images import SandboxImageStatus
+from service.common.pagination import Page, paginate_statement
 
 
 logger = get_logger(__name__)
@@ -273,9 +274,9 @@ async def retry_sandbox_image(id: int) -> tuple[SandboxImage | None, bool]:
     return sandbox_image, True
 
 
-async def query_sandbox_images(page: int = 1, size: int = 100, keyword: str = "") -> list[SandboxImage]:
+async def query_sandbox_images(page: int = 1, size: int = 100, keyword: str = "") -> Page[SandboxImage]:
     """query sandbox images"""
-    statement = select(SandboxImage).order_by(SandboxImage.id).offset((page - 1) * size).limit(size)
+    statement = select(SandboxImage).order_by(SandboxImage.id)
 
     keyword = keyword.strip()
     if keyword:
@@ -288,6 +289,4 @@ async def query_sandbox_images(page: int = 1, size: int = 100, keyword: str = ""
             )
         )
 
-    async with get_async_session() as session:
-        result = await session.exec(statement)
-        return list(result.all())
+    return await paginate_statement(statement, page=page, size=size)

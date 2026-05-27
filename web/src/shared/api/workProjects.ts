@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
 import { buildQuery } from "./query";
 import type {
   CancelWorkProjectPathParams,
@@ -22,58 +22,43 @@ import type {
 const WORK_PROJECTS_PATH = "/api/work-projects";
 
 export function queryWorkProjects(params: QueryWorkProjectsParams) {
-  return apiRequest<QueryWorkProjectsResponse>(`${WORK_PROJECTS_PATH}${buildQuery(params)}`);
+  return apiGet<QueryWorkProjectsResponse>(`${WORK_PROJECTS_PATH}${buildQuery(params)}`);
 }
 
 export function createWorkProject(payload: CreateWorkProjectRequest) {
-  return apiRequest<CreateWorkProjectResponse>(WORK_PROJECTS_PATH, {
-    method: "POST",
-    body: payload,
-  });
+  return apiPost<CreateWorkProjectResponse>(WORK_PROJECTS_PATH, payload);
 }
 
 export function getWorkProject(id: WorkProjectPathParams["id"]) {
-  return apiRequest<GetWorkProjectResponse>(`${WORK_PROJECTS_PATH}/${id}`);
+  return apiGet<GetWorkProjectResponse>(`${WORK_PROJECTS_PATH}/${id}`);
 }
 
 export function updateWorkProjectMetadata(id: WorkProjectPathParams["id"], payload: UpdateWorkProjectMetadataRequest) {
-  return apiRequest<UpdateWorkProjectMetadataResponse>(`${WORK_PROJECTS_PATH}/${id}/metadata`, {
-    method: "PATCH",
-    body: payload,
-  });
+  return apiPatch<UpdateWorkProjectMetadataResponse>(`${WORK_PROJECTS_PATH}/${id}/metadata`, payload);
 }
 
 export function listWorkProjectSessions(id: WorkProjectPathParams["id"]) {
-  return apiRequest<ListWorkProjectSessionsResponse>(`${WORK_PROJECTS_PATH}/${id}/sessions`);
+  return apiGet<ListWorkProjectSessionsResponse>(`${WORK_PROJECTS_PATH}/${id}/sessions`);
 }
 
 export function createWorkProjectSession(id: WorkProjectPathParams["id"]) {
-  return apiRequest<CreateWorkProjectSessionResponse>(`${WORK_PROJECTS_PATH}/${id}/sessions`, {
-    method: "POST",
-  });
+  return apiPost<CreateWorkProjectSessionResponse>(`${WORK_PROJECTS_PATH}/${id}/sessions`);
 }
 
 export function deleteWorkProjectSession(id: WorkProjectPathParams["id"], sessionId: string) {
-  return apiRequest<DeleteWorkProjectSessionResponse>(
+  return apiDelete<DeleteWorkProjectSessionResponse>(
     `${WORK_PROJECTS_PATH}/${id}/sessions/${encodeURIComponent(sessionId)}`,
-    { method: "DELETE" },
   );
 }
 
 export function cancelWorkProject(id: CancelWorkProjectPathParams["id"]) {
-  return apiRequest<CancelWorkProjectResponse>(`${WORK_PROJECTS_PATH}/${id}/cancel`, {
-    method: "POST",
-  });
+  return apiPost<CancelWorkProjectResponse>(`${WORK_PROJECTS_PATH}/${id}/cancel`);
 }
 
 export function retryWorkProject(id: RetryWorkProjectPathParams["id"]) {
-  return apiRequest<RetryWorkProjectResponse>(`${WORK_PROJECTS_PATH}/${id}/retry`, {
-    method: "POST",
-  });
+  return apiPost<RetryWorkProjectResponse>(`${WORK_PROJECTS_PATH}/${id}/retry`);
 }
 
 export function deleteWorkProject(id: WorkProjectPathParams["id"]) {
-  return apiRequest<DeleteWorkProjectResponse>(`${WORK_PROJECTS_PATH}/${id}`, {
-    method: "DELETE",
-  });
+  return apiDelete<DeleteWorkProjectResponse>(`${WORK_PROJECTS_PATH}/${id}`);
 }

@@ -1,20 +1,16 @@
-import { Button, InputNumber, Select, Spin, Switch, TextArea } from "@douyinfe/semi-ui";
-import { Boxes, Plug, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Select, Switch, TextArea } from "@douyinfe/semi-ui";
+import { Boxes } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { generateDefaultSandboxContainerPortMappings } from "../../shared/api/sandboxContainers";
 import { showApiError } from "../../shared/api/feedback";
-import type { CreateSandboxContainerRequest, SandboxContainerPortMapping, SandboxImage } from "../../shared/api/types";
+import type { CreateSandboxContainerRequest, SandboxImage } from "../../shared/api/types";
 import { SANDBOX_CONTAINER_DEFAULT_COMMAND } from "../../shared/api/generated/constants";
 import { ResourceModal } from "../../shared/components/ResourceModal";
-
-type SandboxContainerProtocol = SandboxContainerPortMapping["protocol"];
-
-type PortMappingFormValue = {
-  id: string;
-  container_port: number;
-  host_port: number;
-  protocol: SandboxContainerProtocol;
-};
+import {
+  createEmptyPortMapping,
+  PortMappingEditor,
+  type PortMappingFormValue,
+} from "./PortMappingEditor";
 
 type SandboxContainerFormModalProps = {
   open: boolean;
@@ -25,21 +21,7 @@ type SandboxContainerFormModalProps = {
   onSubmit: (payload: CreateSandboxContainerRequest) => Promise<void>;
 };
 
-const PROTOCOL_OPTIONS = [
-  { label: "TCP", value: "tcp" },
-  { label: "UDP", value: "udp" },
-];
-
 const DEFAULT_NOVNC_PORT = 8000;
-
-function createEmptyMapping(): PortMappingFormValue {
-  return {
-    id: crypto.randomUUID(),
-    container_port: 8080,
-    host_port: 8080,
-    protocol: "tcp",
-  };
-}
 
 export function SandboxContainerFormModal({
   open,
@@ -146,6 +128,14 @@ export function SandboxContainerFormModal({
     )));
   };
 
+  const removeMapping = (id: string) => {
+    setPortMappings((current) => current.filter((item) => item.id !== id));
+  };
+
+  const addMapping = () => {
+    setPortMappings((current) => [...current, createEmptyPortMapping()]);
+  };
+
   const selectImage = (value: unknown) => {
     if (typeof value === "number") setImageId(value);
   };
@@ -216,52 +206,15 @@ export function SandboxContainerFormModal({
         </div>
       </div>
 
-      <div className="port-mapping-fieldset">
-        <div className="port-mapping-heading">
-          <span>Port Mappings</span>
-          <div className="port-mapping-actions">
-            {portMappingsLoading ? <Spin size="small" /> : null}
-            <Button icon={<RefreshCw size={14} />} theme="borderless" disabled={!imageId || portMappingsLoading} onClick={() => imageId !== undefined && void loadDefaultPortMappings(imageId)}>
-              Defaults
-            </Button>
-            <Button icon={<Plus size={14} />} theme="borderless" disabled={portMappingsLoading} onClick={() => setPortMappings((current) => [...current, createEmptyMapping()])}>
-              Add
-            </Button>
-          </div>
-        </div>
-        {portMappings.length === 0 ? (
-          <div className="port-mapping-empty">No exposed ports</div>
-        ) : portMappings.map((mapping) => (
-          <div className="port-mapping-row" key={mapping.id}>
-            <InputNumber
-              prefix={<Plug size={14} />}
-              value={mapping.host_port}
-              min={1}
-              max={65535}
-              onChange={(value) => typeof value === "number" && updateMapping(mapping.id, { host_port: value })}
-            />
-            <span className="port-arrow">to</span>
-            <InputNumber
-              value={mapping.container_port}
-              min={1}
-              max={65535}
-              onChange={(value) => typeof value === "number" && updateMapping(mapping.id, { container_port: value })}
-            />
-            <Select
-              value={mapping.protocol}
-              optionList={PROTOCOL_OPTIONS}
-              onChange={(value) => (value === "tcp" || value === "udp") && updateMapping(mapping.id, { protocol: value })}
-            />
-            <Button
-              icon={<Trash2 size={14} />}
-              theme="borderless"
-              type="danger"
-              aria-label="Remove port mapping"
-              onClick={() => setPortMappings((current) => current.filter((item) => item.id !== mapping.id))}
-            />
-          </div>
-        ))}
-      </div>
+      <PortMappingEditor
+        mappings={portMappings}
+        loading={portMappingsLoading}
+        canLoadDefaults={imageId !== undefined}
+        onAdd={addMapping}
+        onLoadDefaults={() => imageId !== undefined && void loadDefaultPortMappings(imageId)}
+        onRemove={removeMapping}
+        onChange={updateMapping}
+      />
     </ResourceModal>
   );
 }

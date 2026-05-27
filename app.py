@@ -23,6 +23,7 @@ from middleware.response import (
     CommonResponseStatusMiddleware,
     http_exception_handler,
     request_validation_exception_handler,
+    unhandled_exception_handler,
 )
 from router.agent.agents import router as agent_router
 from router.agent.sessions import router as agent_session_router
@@ -123,6 +124,7 @@ def create_app() -> FastAPI:
 
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
+    app.add_exception_handler(Exception, unhandled_exception_handler)
     logger.debug("exception handlers added")
 
     app.add_middleware(CommonResponseStatusMiddleware)

@@ -5,13 +5,11 @@ import {
   ChevronRight,
   Edit3,
   FolderKanban,
-  Plus,
-  RefreshCw,
   RotateCcw,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAdminHeaderActions, useRefreshWorkProjects } from "../../app/layouts/AdminLayout";
+import { useRefreshWorkProjects } from "../../app/layouts/AdminLayout";
 import {
   cancelWorkProject,
   createWorkProject,
@@ -27,7 +25,9 @@ import type {
 } from "../../shared/api/types";
 import { ResourcePageShell } from "../../shared/components/ResourcePageShell";
 import { ResourceTable, type ResourceColumn } from "../../shared/components/ResourceTable";
+import { useAdminResourceHeader } from "../../shared/hooks/useAdminResourceHeader";
 import { usePagedResourceList } from "../../shared/hooks/usePagedResourceList";
+import { useResourceSubmit } from "../../shared/hooks/useResourceSubmit";
 import { formatDateTime } from "../../shared/lib/date";
 import { WorkProjectFormModal } from "./WorkProjectFormModal";
 import {
@@ -46,14 +46,12 @@ type AdminAction = "cancel" | "retry" | "delete";
 
 export function WorkProjectsPage() {
   const {
-    items: projects, page, keyword, loading, loadItems: loadProjects,
+    items: projects, page, keyword, loading, loadItems: loadProjects, total, rangeStart, rangeEnd,
     setKeyword, search, previous, next, canGoBack, canGoNext,
   } = usePagedResourceList<WorkProject>({ pageSize: DEFAULT_PAGE_SIZE, query: queryWorkProjects });
-  const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<WorkProject | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const setHeaderActions = useAdminHeaderActions();
   const refreshProjectSidebar = useRefreshWorkProjects();
   const [adminAction, setAdminAction] = useState<{ id: number; type: AdminAction } | null>(null);
 
@@ -61,17 +59,27 @@ export function WorkProjectsPage() {
     await loadProjects();
   }, [loadProjects]);
 
-  useEffect(() => {
-    setHeaderActions(
-      <>
-        <Button icon={<RefreshCw size={16} />} onClick={() => void refreshAll()} loading={loading} aria-label="Refresh work projects" />
-        <Button icon={<Plus size={16} />} theme="solid" type="danger" onClick={() => { setEditingProject(null); setModalOpen(true); }}>
-          Create Project
-        </Button>
-      </>,
-    );
-    return () => setHeaderActions(null);
-  }, [loading, refreshAll, setHeaderActions]);
+  const openCreateModal = useCallback(() => {
+    setEditingProject(null);
+    setModalOpen(true);
+  }, []);
+  const refreshProjects = useCallback(() => void refreshAll(), [refreshAll]);
+  useAdminResourceHeader({
+    createLabel: "Create Project",
+    refreshLabel: "Refresh work projects",
+    loading,
+    onCreate: openCreateModal,
+    onRefresh: refreshProjects,
+  });
+
+  const { saving, submit } = useResourceSubmit({
+    onSuccess: async () => {
+      setModalOpen(false);
+      setEditingProject(null);
+      await refreshAll();
+      refreshProjectSidebar();
+    },
+  });
 
   const summary = useMemo(
     () => projects.reduce(
@@ -85,23 +93,11 @@ export function WorkProjectsPage() {
     [projects],
   );
 
-  const handleSubmit = async (payload: CreateWorkProjectRequest) => {
-    setSaving(true);
-    try {
-      const response = editingProject
-        ? await updateWorkProjectMetadata(editingProject.id, payload)
-        : await createWorkProject(payload);
-      showApiSuccess(response);
-      setModalOpen(false);
-      setEditingProject(null);
-      await refreshAll();
-      refreshProjectSidebar();
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleSubmit = (payload: CreateWorkProjectRequest) => submit(() => (
+    editingProject
+      ? updateWorkProjectMetadata(editingProject.id, payload)
+      : createWorkProject(payload)
+  ));
 
   const toggleProject = (project: WorkProject) => setExpandedId((current) => (
     current === project.id ? null : project.id
@@ -207,7 +203,7 @@ export function WorkProjectsPage() {
         keyword={keyword}
         loading={loading}
         metrics={[
-          { label: "Total loaded", value: projects.length },
+          { label: "Total", value: total },
           { label: "Working", value: summary.working },
           { label: "Project sessions", value: summary.sessions },
           { label: "Assets", value: summary.assets },
@@ -216,6 +212,9 @@ export function WorkProjectsPage() {
         emptyIcon={<FolderKanban size={42} />}
         emptyTitle="No projects found"
         page={page}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        total={total}
         canGoBack={canGoBack}
         canGoNext={canGoNext}
         onKeywordChange={setKeyword}

@@ -30,6 +30,7 @@ from schema.sandbox.containers import (
     SandboxContainerStatus,
 )
 from schema.system_user.users import SystemUserRole
+from service.common.pagination import paginated_payload
 from service.sandbox.files import (
     ContainerUploadSource,
     copy_container_files,
@@ -151,9 +152,10 @@ async def delete_sandbox_container_handler(id: int) -> CommonResponse:
 async def query_sandbox_containers_handler(page: int, size: int, keyword: str) -> CommonResponse:
     sandbox_containers = await query_sandbox_containers(page=page, size=size, keyword=keyword)
     return CommonResponse(data=QuerySandboxContainersResponse(
-        page=page,
-        size=size,
-        items=[_sandbox_container_schema(record) for record in sandbox_containers],
+        **paginated_payload(
+            sandbox_containers,
+            [_sandbox_container_schema(record) for record in sandbox_containers.items],
+        ),
     ))
 
 
@@ -172,9 +174,10 @@ async def query_available_sandbox_containers_handler(
         user_role=user_role,
     )
     return CommonResponse(data=QuerySandboxContainersResponse(
-        page=page,
-        size=size,
-        items=[_sandbox_container_schema(record) for record in sandbox_containers],
+        **paginated_payload(
+            sandbox_containers,
+            [_sandbox_container_schema(record) for record in sandbox_containers.items],
+        ),
     ))
 
 

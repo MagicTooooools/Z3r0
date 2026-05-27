@@ -1369,6 +1369,8 @@ export interface components {
             page: number;
             /** Size */
             size: number;
+            /** Total */
+            total: number;
         };
         /** QuerySandboxImagesResponse */
         QuerySandboxImagesResponse: {
@@ -1378,6 +1380,8 @@ export interface components {
             page: number;
             /** Size */
             size: number;
+            /** Total */
+            total: number;
         };
         /** QuerySystemUsersResponse */
         QuerySystemUsersResponse: {
@@ -1387,6 +1391,8 @@ export interface components {
             page: number;
             /** Size */
             size: number;
+            /** Total */
+            total: number;
         };
         /** QueryWorkProjectsResponse */
         QueryWorkProjectsResponse: {
@@ -1396,6 +1402,8 @@ export interface components {
             page: number;
             /** Size */
             size: number;
+            /** Total */
+            total: number;
         };
         /** RunStateEvent */
         RunStateEvent: {

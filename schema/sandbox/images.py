@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from schema.common.responses import PaginatedResponse
+
 
 # canonical sandbox image status; reused by the model and by the public schema
 class SandboxImageStatus(StrEnum):
@@ -44,7 +46,5 @@ class DeleteSandboxImageResponse(BaseModel):
 
 
 # query sandbox images response schema
-class QuerySandboxImagesResponse(BaseModel):
-    page: int
-    size: int
-    items: list[SandboxImageSchema]
+class QuerySandboxImagesResponse(PaginatedResponse[SandboxImageSchema]):
+    pass

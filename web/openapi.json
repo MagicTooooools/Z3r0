@@ -1672,11 +1672,16 @@
           "size": {
             "title": "Size",
             "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
           "page",
           "size",
+          "total",
           "items"
         ],
         "title": "QuerySandboxContainersResponse",
@@ -1698,11 +1703,16 @@
           "size": {
             "title": "Size",
             "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
           "page",
           "size",
+          "total",
           "items"
         ],
         "title": "QuerySandboxImagesResponse",
@@ -1724,11 +1734,16 @@
           "size": {
             "title": "Size",
             "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
           "page",
           "size",
+          "total",
           "items"
         ],
         "title": "QuerySystemUsersResponse",
@@ -1750,11 +1765,16 @@
           "size": {
             "title": "Size",
             "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
           "page",
           "size",
+          "total",
           "items"
         ],
         "title": "QueryWorkProjectsResponse",

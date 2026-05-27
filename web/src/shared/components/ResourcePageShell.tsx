@@ -16,6 +16,9 @@ type ResourcePageShellProps = {
   emptyIcon: ReactNode;
   emptyTitle: string;
   page: number;
+  rangeStart: number;
+  rangeEnd: number;
+  total: number;
   canGoBack: boolean;
   canGoNext: boolean;
   children: ReactNode;
@@ -34,6 +37,9 @@ export function ResourcePageShell({
   emptyIcon,
   emptyTitle,
   page,
+  rangeStart,
+  rangeEnd,
+  total,
   canGoBack,
   canGoNext,
   children,
@@ -77,7 +83,9 @@ export function ResourcePageShell({
         </Spin>
 
         <div className="pager-row">
-          <span>Page {page}</span>
+          <span>
+            Page {page} · {rangeStart}-{rangeEnd} of {total}
+          </span>
           <div>
             <Button disabled={!canGoBack || loading} onClick={onPrevious}>Previous</Button>
             <Button disabled={!canGoNext || loading} onClick={onNext}>Next</Button>

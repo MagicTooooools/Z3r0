@@ -110,6 +110,17 @@ export function ContainerFileManager({ containerId, containerHash, containerName
     void loadFiles(path);
   }, [path, loadFiles]);
 
+  const runFileAction = useCallback(async (action: () => Promise<void>) => {
+    setLoading(true);
+    try {
+      await action();
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const handleFileClick = useCallback((file: ContainerFileInfo, event: React.MouseEvent) => {
     if (event.ctrlKey || event.metaKey) {
       setSelectedPaths((prev) => {
@@ -150,8 +161,7 @@ export function ContainerFileManager({ containerId, containerHash, containerName
 
   const handlePaste = useCallback(async () => {
     if (!clipboard) return;
-    setLoading(true);
-    try {
+    await runFileAction(async () => {
       if (clipboard.action === "copy") {
         await copyContainerFiles(containerId, { sources: clipboard.paths, destination: path });
       } else {
@@ -160,26 +170,17 @@ export function ContainerFileManager({ containerId, containerHash, containerName
       }
       Toast.success(`${clipboard.action === "copy" ? "Copied" : "Moved"} ${clipboard.paths.length} item(s)`);
       await loadFiles(path);
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setLoading(false);
-    }
-  }, [clipboard, containerId, path, loadFiles]);
+    });
+  }, [clipboard, containerId, path, loadFiles, runFileAction]);
 
   const handleDelete = useCallback(async () => {
     if (selectedPaths.size === 0) return;
-    setLoading(true);
-    try {
+    await runFileAction(async () => {
       await deleteContainerFiles(containerId, { paths: Array.from(selectedPaths) });
       Toast.success(`${selectedPaths.size} item(s) deleted`);
       await loadFiles(path);
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedPaths, containerId, path, loadFiles]);
+    });
+  }, [selectedPaths, containerId, path, loadFiles, runFileAction]);
 
   const startCreate = useCallback((type: "file" | "dir") => {
     setCreateType(type);
@@ -189,8 +190,7 @@ export function ContainerFileManager({ containerId, containerHash, containerName
   const handleCreateConfirm = useCallback(async (name: string) => {
     if (!name.trim() || !createType) return;
     const itemPath = path.replace(/\/$/, "") + "/" + name.trim();
-    setLoading(true);
-    try {
+    await runFileAction(async () => {
       if (createType === "dir") {
         await createContainerDirectory(containerId, { path: itemPath });
       } else {
@@ -198,13 +198,9 @@ export function ContainerFileManager({ containerId, containerHash, containerName
       }
       Toast.success(createType === "dir" ? "Directory created" : "File created");
       await loadFiles(path);
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setLoading(false);
+    });
       setCreateType(null);
-    }
-  }, [createType, containerId, path, loadFiles]);
+  }, [createType, containerId, path, loadFiles, runFileAction]);
 
   const handleCreateCancel = useCallback(() => {
     setCreateType(null);
@@ -219,35 +215,20 @@ export function ContainerFileManager({ containerId, containerHash, containerName
     event.target.value = "";
     if (uploadFiles.length === 0) return;
 
-    setLoading(true);
-    try {
+    await runFileAction(async () => {
       await uploadContainerFiles(containerId, path, uploadFiles, true);
       Toast.success(`${uploadFiles.length} file(s) uploaded`);
       await loadFiles(path);
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setLoading(false);
-    }
-  }, [containerId, path, loadFiles]);
+    });
+  }, [containerId, path, loadFiles, runFileAction]);
 
   const handleDownload = useCallback(async () => {
     if (selectedPaths.size === 0) return;
-    setLoading(true);
-    try {
+    await runFileAction(async () => {
       const { blob, filename } = await downloadContainerFiles(containerId, { path: Array.from(selectedPaths) });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setLoading(false);
-    }
-  }, [containerId, selectedPaths]);
+      saveBlob(blob, filename);
+    });
+  }, [containerId, selectedPaths, runFileAction]);
 
   const breadcrumbs = useMemo(() => {
     if (path === "/") return [{ label: "/", path: "/" }];
@@ -451,10 +432,11 @@ function FileIconItem({ file, selected, onClick, onDoubleClick }: {
   );
 }
 
-function InlineCreateRow({ type, onConfirm, onCancel }: {
+function InlineCreateInput({ type, onConfirm, onCancel, cancelOnBlur = false }: {
   type: "file" | "dir";
   onConfirm: (name: string) => void;
   onCancel: () => void;
+  cancelOnBlur?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState("");
@@ -469,23 +451,35 @@ function InlineCreateRow({ type, onConfirm, onCancel }: {
   };
 
   return (
+    <input
+      ref={inputRef}
+      className="file-manager-inline-input"
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") onCancel();
+      }}
+      onBlur={cancelOnBlur ? () => onCancel() : undefined}
+      placeholder={type === "dir" ? "New folder" : "New file"}
+    />
+  );
+}
+
+function InlineCreateRow({ type, onConfirm, onCancel }: {
+  type: "file" | "dir";
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+}) {
+
+  return (
     <div
       className="file-manager-list-row file-manager-create-row"
       style={{ gridTemplateColumns: FILE_LIST_HEADER_COLS.map(([, w]) => w).join(" ") }}
     >
       <div className="file-manager-name">
         {type === "dir" ? <Folder size={15} /> : <File size={15} />}
-        <input
-          ref={inputRef}
-          className="file-manager-inline-input"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") onCancel();
-          }}
-          placeholder={type === "dir" ? "New folder name" : "New file name"}
-        />
+        <InlineCreateInput type={type} onConfirm={onConfirm} onCancel={onCancel} />
       </div>
       <div className="file-manager-cell-muted">—</div>
       <div className="file-manager-cell-muted">—</div>
@@ -499,33 +493,19 @@ function InlineCreateIcon({ type, onConfirm, onCancel }: {
   onConfirm: (name: string) => void;
   onCancel: () => void;
 }) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [name, setName] = useState("");
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const commit = () => {
-    if (name.trim()) onConfirm(name);
-    else onCancel();
-  };
-
   return (
     <div className="file-manager-icon-item file-manager-create-row">
       {type === "dir" ? <FolderOpen size={32} /> : <File size={32} />}
-      <input
-        ref={inputRef}
-        className="file-manager-inline-input"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") onCancel();
-        }}
-        onBlur={() => onCancel()}
-        placeholder={type === "dir" ? "New folder" : "New file"}
-      />
+      <InlineCreateInput type={type} onConfirm={onConfirm} onCancel={onCancel} cancelOnBlur />
     </div>
   );
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }

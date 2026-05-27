@@ -1,8 +1,8 @@
 import { Button, Input, Modal, Popconfirm, Spin } from "@douyinfe/semi-ui";
 import { ChevronDown, ChevronRight, Edit3, FolderKanban, Info, MessageCircle, MessageSquarePlus, Play, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import { updateAgentSessionTitle } from "../../shared/api/agentSessions";
-import { showApiError, showApiSuccess } from "../../shared/api/feedback";
+import { showApiError } from "../../shared/api/feedback";
 import {
   createWorkProjectSession,
   deleteWorkProjectSession,
@@ -11,6 +11,7 @@ import {
   queryWorkProjects,
 } from "../../shared/api/workProjects";
 import type { AgentSessionSummary, WorkProject } from "../../shared/api/types";
+import { useResourceSubmit } from "../../shared/hooks/useResourceSubmit";
 import { WorkProjectInfoModal } from "./WorkProjectInfoModal";
 
 const PROJECT_REFRESH_INTERVAL_MS = 5000;
@@ -39,6 +40,21 @@ type ChatSessionRowProps = {
   onSelect: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   onRename: (session: AgentSessionSummary) => void;
+};
+
+type SessionRowProps = {
+  active: boolean;
+  className?: string;
+  deleteConfirm?: {
+    title: string;
+    content: string;
+    onConfirm: () => void;
+  };
+  icon: ReactNode;
+  session: AgentSessionSummary;
+  titleFallback: string;
+  onRename: () => void;
+  onSelect: () => void;
 };
 
 type ProjectGroupProps = {
@@ -81,7 +97,7 @@ export function SessionList({
   const [infoProject, setInfoProject] = useState<WorkProject | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
-  const [renaming, setRenaming] = useState(false);
+  const { saving: renaming, submit } = useResourceSubmit();
 
   const loadProjects = useCallback(async (silent = false) => {
     if (!silent) setProjectsLoading(true);
@@ -142,27 +158,23 @@ export function SessionList({
   };
 
   const createProjectSession = async (project: WorkProject) => {
-    try {
+    await submit(async () => {
       const response = await createWorkProjectSession(project.id);
       const sessionId = response.data?.session_id;
-      if (!sessionId) return;
-      showApiSuccess(response);
+      if (!sessionId) return response;
       await loadProjectSessions(project.id);
       onSelect(sessionId);
-    } catch (error) {
-      showApiError(error);
-    }
+      return response;
+    });
   };
 
   const deleteProjectSession = async (projectId: number, sessionId: string) => {
-    try {
+    await submit(async () => {
       const response = await deleteWorkProjectSession(projectId, sessionId);
-      showApiSuccess(response);
       onDropRuntime(sessionId);
       await loadProjectSessions(projectId);
-    } catch (error) {
-      showApiError(error);
-    }
+      return response;
+    });
   };
 
   const openRename = (target: RenameTarget) => {
@@ -173,10 +185,8 @@ export function SessionList({
   const saveRename = async () => {
     const title = renameTitle.trim();
     if (!renameTarget || !title) return;
-    setRenaming(true);
-    try {
+    await submit(async () => {
       const response = await updateAgentSessionTitle(renameTarget.session.session_id, { title });
-      showApiSuccess(response);
       setRenameTarget(null);
       setRenameTitle("");
       if (renameTarget.projectId) {
@@ -184,11 +194,8 @@ export function SessionList({
       } else {
         await onRefreshSessions();
       }
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setRenaming(false);
-    }
+      return response;
+    });
   };
 
   const showProjectInfo = async (project: WorkProject) => {
@@ -277,35 +284,19 @@ export function SessionList({
 
 function ChatSessionRow({ session, active, onSelect, onDelete, onRename }: ChatSessionRowProps) {
   return (
-    <div className={`session-row${active ? " session-row-active" : ""}`}>
-      <button type="button" className="session-row-main" onClick={() => onSelect(session.session_id)}>
-        <span className="session-row-icon"><MessageCircle size={14} /></span>
-        <span className="session-row-body">
-          <span className="session-row-title">{session.title || "Untitled session"}</span>
-        </span>
-      </button>
-      <Button
-        icon={<Edit3 size={14} />}
-        theme="borderless"
-        size="small"
-        aria-label={`Edit ${session.title || session.session_id}`}
-        onClick={() => onRename(session)}
-      />
-      <Popconfirm
-        title="Delete chat"
-        content="Permanently delete this conversation?"
-        okType="danger"
-        onConfirm={() => onDelete(session.session_id)}
-      >
-        <Button
-          icon={<Trash2 size={14} />}
-          theme="borderless"
-          type="danger"
-          size="small"
-          aria-label={`Delete ${session.title || session.session_id}`}
-        />
-      </Popconfirm>
-    </div>
+    <SessionRow
+      active={active}
+      deleteConfirm={{
+        title: "Delete chat",
+        content: "Permanently delete this conversation?",
+        onConfirm: () => onDelete(session.session_id),
+      }}
+      icon={<MessageCircle size={14} />}
+      session={session}
+      titleFallback="Untitled session"
+      onRename={() => onRename(session)}
+      onSelect={() => onSelect(session.session_id)}
+    />
   );
 }
 
@@ -401,34 +392,63 @@ function ProjectSessionRow({
   onDelete: (projectId: number, sessionId: string) => void;
 }) {
   return (
-    <div className={`session-row session-row-project-session${active ? " session-row-active" : ""}`}>
-      <button type="button" className="session-row-main" onClick={() => onSelect(session.session_id)}>
-        <span className="session-row-icon"><Play size={13} /></span>
+    <SessionRow
+      active={active}
+      className="session-row-project-session"
+      deleteConfirm={canDelete ? {
+        title: "Delete session",
+        content: "Permanently delete this project session?",
+        onConfirm: () => onDelete(projectId, session.session_id),
+      } : undefined}
+      icon={<Play size={13} />}
+      session={session}
+      titleFallback="Project session"
+      onRename={() => onRename(session, projectId)}
+      onSelect={() => onSelect(session.session_id)}
+    />
+  );
+}
+
+function SessionRow({
+  active,
+  className,
+  deleteConfirm,
+  icon,
+  session,
+  titleFallback,
+  onRename,
+  onSelect,
+}: SessionRowProps) {
+  const title = session.title || titleFallback;
+  const rowClassName = ["session-row", className, active ? "session-row-active" : ""].filter(Boolean).join(" ");
+  const deleteButton = (
+    <Button
+      icon={<Trash2 size={14} />}
+      theme="borderless"
+      type="danger"
+      size="small"
+      aria-label={`Delete ${session.title || session.session_id}`}
+    />
+  );
+
+  return (
+    <div className={rowClassName}>
+      <button type="button" className="session-row-main" onClick={onSelect}>
+        <span className="session-row-icon">{icon}</span>
         <span className="session-row-body">
-          <span className="session-row-title">{session.title || "Project session"}</span>
+          <span className="session-row-title">{title}</span>
         </span>
       </button>
       <Button
         icon={<Edit3 size={14} />}
         theme="borderless"
         size="small"
-        aria-label={`Edit ${session.title || session.session_id}`}
-        onClick={() => onRename(session, projectId)}
+      aria-label={`Edit ${session.title || session.session_id}`}
+        onClick={onRename}
       />
-      {canDelete ? (
-        <Popconfirm
-          title="Delete session"
-          content="Permanently delete this project session?"
-          okType="danger"
-          onConfirm={() => onDelete(projectId, session.session_id)}
-        >
-          <Button
-            icon={<Trash2 size={14} />}
-            theme="borderless"
-            type="danger"
-            size="small"
-            aria-label={`Delete ${session.title || session.session_id}`}
-          />
+      {deleteConfirm ? (
+        <Popconfirm {...deleteConfirm} okType="danger">
+          {deleteButton}
         </Popconfirm>
       ) : null}
     </div>

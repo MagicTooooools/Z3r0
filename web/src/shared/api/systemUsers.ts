@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
 import { buildQuery } from "./query";
 import type {
   CreateSystemUserRequest,
@@ -16,33 +16,21 @@ import type {
 const SYSTEM_USERS_PATH = "/api/system-users";
 
 export function login(payload: LoginRequest) {
-  return apiRequest<LoginResponse>(`${SYSTEM_USERS_PATH}/login`, {
-    method: "POST",
-    body: payload,
-    auth: false,
-  });
+  return apiPost<LoginResponse>(`${SYSTEM_USERS_PATH}/login`, payload, false);
 }
 
 export function querySystemUsers(params: QuerySystemUsersParams) {
-  return apiRequest<QuerySystemUsersResponse>(`${SYSTEM_USERS_PATH}${buildQuery(params)}`);
+  return apiGet<QuerySystemUsersResponse>(`${SYSTEM_USERS_PATH}${buildQuery(params)}`);
 }
 
 export function createSystemUser(payload: CreateSystemUserRequest) {
-  return apiRequest<CreateSystemUserResponse>(SYSTEM_USERS_PATH, {
-    method: "POST",
-    body: payload,
-  });
+  return apiPost<CreateSystemUserResponse>(SYSTEM_USERS_PATH, payload);
 }
 
 export function updateSystemUser(id: SystemUserPathParams["id"], payload: UpdateSystemUserRequest) {
-  return apiRequest<UpdateSystemUserResponse>(`${SYSTEM_USERS_PATH}/${id}`, {
-    method: "PATCH",
-    body: payload,
-  });
+  return apiPatch<UpdateSystemUserResponse>(`${SYSTEM_USERS_PATH}/${id}`, payload);
 }
 
 export function deleteSystemUser(id: SystemUserPathParams["id"]) {
-  return apiRequest<DeleteSystemUserResponse>(`${SYSTEM_USERS_PATH}/${id}`, {
-    method: "DELETE",
-  });
+  return apiDelete<DeleteSystemUserResponse>(`${SYSTEM_USERS_PATH}/${id}`);
 }

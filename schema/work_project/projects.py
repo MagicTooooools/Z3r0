@@ -6,6 +6,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schema.agent.sessions import AgentSessionSummarySchema
+from schema.common.responses import PaginatedResponse
 from schema.system_user.users import SystemUserRole
 
 
@@ -175,10 +176,8 @@ class ListWorkProjectSessionsResponse(BaseModel):
 
 
 # query work projects response schema
-class QueryWorkProjectsResponse(BaseModel):
-    page: int
-    size: int
-    items: list[WorkProjectSchema]
+class QueryWorkProjectsResponse(PaginatedResponse[WorkProjectSchema]):
+    pass
 
 
 def _unique_positive_ids(values: list[int]) -> list[int]:

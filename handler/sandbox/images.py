@@ -14,6 +14,7 @@ from service.sandbox.images import (
     query_sandbox_images,
     retry_sandbox_image,
 )
+from service.common.pagination import paginated_payload
 
 
 async def create_sandbox_image_handler(request: CreateSandboxImageRequest) -> CommonResponse:
@@ -68,7 +69,8 @@ async def retry_sandbox_image_handler(id: int) -> CommonResponse:
 async def query_sandbox_images_handler(page: int, size: int, keyword: str) -> CommonResponse:
     sandbox_images = await query_sandbox_images(page=page, size=size, keyword=keyword)
     return CommonResponse(data=QuerySandboxImagesResponse(
-        page=page,
-        size=size,
-        items=[SandboxImageSchema.model_validate(image) for image in sandbox_images],
+        **paginated_payload(
+            sandbox_images,
+            [SandboxImageSchema.model_validate(image) for image in sandbox_images.items],
+        ),
     ))

@@ -17,6 +17,7 @@ from service.system_user.users import (
     system_user_login,
     update_system_user,
 )
+from service.common.pagination import paginated_payload
 
 
 async def create_system_user_handler(request: CreateSystemUserRequest) -> CommonResponse:
@@ -54,9 +55,10 @@ async def update_system_user_handler(id: int, request: UpdateSystemUserRequest) 
 async def query_system_users_handler(page: int, size: int, keyword: str) -> CommonResponse:
     system_users = await query_system_users(page=page, size=size, keyword=keyword)
     return CommonResponse(data=QuerySystemUsersResponse(
-        page=page,
-        size=size,
-        items=[SystemUserSchema.model_validate(user) for user in system_users],
+        **paginated_payload(
+            system_users,
+            [SystemUserSchema.model_validate(user) for user in system_users.items],
+        ),
     ))
 
 

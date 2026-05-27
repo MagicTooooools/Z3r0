@@ -10,6 +10,7 @@ type QueryParams = {
 type QueryResponse<Item> = {
   data?: {
     items: Item[];
+    total: number;
   } | null;
 };
 
@@ -23,6 +24,7 @@ export function usePagedResourceList<Item>({ pageSize, query }: UsePagedResource
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState("");
   const [activeKeyword, setActiveKeyword] = useState("");
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const requestIdRef = useRef(0);
 
@@ -39,6 +41,7 @@ export function usePagedResourceList<Item>({ pageSize, query }: UsePagedResource
         return;
       }
       setItems(nextItems);
+      setTotal(response.data?.total ?? 0);
     } catch (error) {
       if (requestIdRef.current === requestId) {
         showApiError(error);
@@ -70,7 +73,11 @@ export function usePagedResourceList<Item>({ pageSize, query }: UsePagedResource
   return {
     items,
     page,
+    pageSize,
     keyword,
+    total,
+    rangeStart: total === 0 ? 0 : (page - 1) * pageSize + 1,
+    rangeEnd: Math.min(page * pageSize, total),
     loading,
     loadItems,
     setKeyword,
@@ -78,6 +85,6 @@ export function usePagedResourceList<Item>({ pageSize, query }: UsePagedResource
     previous,
     next,
     canGoBack: page > 1,
-    canGoNext: items.length === pageSize,
+    canGoNext: page * pageSize < total,
   };
 }

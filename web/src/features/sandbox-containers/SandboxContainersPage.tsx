@@ -1,15 +1,16 @@
 import { Button, Popconfirm, Tag, Tooltip } from "@douyinfe/semi-ui";
-import { Box, Boxes, Fingerprint, FolderOpen, Monitor, Play, Plus, RefreshCw, Square, SquareTerminal, Trash2, User } from "lucide-react";
+import { Box, Boxes, Fingerprint, FolderOpen, Monitor, Play, Square, SquareTerminal, Trash2, User } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
 import { canOpenContainerNoVNC, createSandboxContainer, deleteSandboxContainer, querySandboxContainers, startSandboxContainer, stopSandboxContainer } from "../../shared/api/sandboxContainers";
 import { querySandboxImages } from "../../shared/api/sandboxImages";
-import { showApiError, showApiSuccess } from "../../shared/api/feedback";
+import { showApiError } from "../../shared/api/feedback";
 import type { CreateSandboxContainerRequest, SandboxContainer, SandboxImage } from "../../shared/api/types";
 import { ResourcePageShell } from "../../shared/components/ResourcePageShell";
 import { ResourceTable, type ResourceColumn } from "../../shared/components/ResourceTable";
+import { useAdminResourceHeader } from "../../shared/hooks/useAdminResourceHeader";
 import { usePagedResourceList } from "../../shared/hooks/usePagedResourceList";
 import { useResourceAction } from "../../shared/hooks/useResourceAction";
+import { useResourceSubmit } from "../../shared/hooks/useResourceSubmit";
 import { formatDateTime } from "../../shared/lib/date";
 import { SANDBOX_CONTAINER_STATUS_COLOR, SANDBOX_CONTAINER_STATUS_LABEL } from "../../shared/lib/labels";
 import { useContainerShell } from "../container-shell/ContainerShellProvider";
@@ -19,14 +20,12 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export function SandboxContainersPage() {
   const {
-    items: containers, page, keyword, loading, loadItems: loadContainers,
+    items: containers, page, keyword, loading, loadItems: loadContainers, total, rangeStart, rangeEnd,
     setKeyword, search, previous, next, canGoBack, canGoNext,
   } = usePagedResourceList<SandboxContainer>({ pageSize: DEFAULT_PAGE_SIZE, query: querySandboxContainers });
-  const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [images, setImages] = useState<SandboxImage[]>([]);
   const [imagesLoading, setImagesLoading] = useState(false);
-  const setHeaderActions = useAdminHeaderActions();
   const { openFileManager, openNoVNC, openShell } = useContainerShell();
 
   const loadReadyImages = useCallback(async () => {
@@ -60,17 +59,22 @@ export function SandboxContainersPage() {
     void loadReadyImages();
   }, [loadReadyImages]);
 
-  useEffect(() => {
-    setHeaderActions(
-      <>
-        <Button icon={<RefreshCw size={16} />} onClick={() => void refreshAll()} loading={loading || imagesLoading} aria-label="Refresh sandbox containers" />
-        <Button icon={<Plus size={16} />} theme="solid" type="danger" onClick={() => setModalOpen(true)}>
-          Create Container
-        </Button>
-      </>,
-    );
-    return () => setHeaderActions(null);
-  }, [imagesLoading, loading, refreshAll, setHeaderActions]);
+  const openCreateModal = useCallback(() => setModalOpen(true), []);
+  const refreshContainers = useCallback(() => void refreshAll(), [refreshAll]);
+  useAdminResourceHeader({
+    createLabel: "Create Container",
+    refreshLabel: "Refresh sandbox containers",
+    loading: loading || imagesLoading,
+    onCreate: openCreateModal,
+    onRefresh: refreshContainers,
+  });
+
+  const { saving, submit } = useResourceSubmit({
+    onSuccess: async () => {
+      setModalOpen(false);
+      await loadContainers();
+    },
+  });
 
   const summary = useMemo(
     () => containers.reduce(
@@ -84,19 +88,7 @@ export function SandboxContainersPage() {
     [containers],
   );
 
-  const handleCreate = async (payload: CreateSandboxContainerRequest) => {
-    setSaving(true);
-    try {
-      const response = await createSandboxContainer(payload);
-      showApiSuccess(response);
-      setModalOpen(false);
-      await loadContainers();
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleCreate = (payload: CreateSandboxContainerRequest) => submit(() => createSandboxContainer(payload));
 
   const columns: ResourceColumn<SandboxContainer>[] = [
     {
@@ -172,7 +164,7 @@ export function SandboxContainersPage() {
         keyword={keyword}
         loading={loading}
         metrics={[
-          { label: "Total loaded", value: containers.length },
+          { label: "Total", value: total },
           { label: "Running", value: summary.running },
           { label: "Created", value: summary.created },
           { label: "Stopped", value: summary.stopped },
@@ -181,6 +173,9 @@ export function SandboxContainersPage() {
         emptyIcon={<Boxes size={42} />}
         emptyTitle="No containers found"
         page={page}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        total={total}
         canGoBack={canGoBack}
         canGoNext={canGoNext}
         onKeywordChange={setKeyword}

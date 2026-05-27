@@ -32,6 +32,7 @@ import {
   streamReduce,
   type ChatState,
 } from "./playgroundReducer";
+import { bufferLiveEvent, waitOpen } from "./agentStream";
 
 type ConnectionStatus = "idle" | "connecting" | "open" | "closed";
 
@@ -51,8 +52,6 @@ const DEFAULT_RUNTIME: SessionRuntime = {
 };
 
 const IDLE_CLOSE_MS = 5 * 60 * 1000;
-const CONNECT_TIMEOUT_MS = 15 * 1000;
-const MAX_BUFFERED_LIVE_EVENTS = 1000;
 
 type AgentSessionContextValue = {
   sessions: AgentSessionSummary[];
@@ -574,50 +573,4 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   ]);
 
   return <AgentSessionContext.Provider value={value}>{children}</AgentSessionContext.Provider>;
-}
-
-function bufferLiveEvent(
-  sessionId: string,
-  event: AgentStreamEvent,
-  target: Map<string, AgentStreamEvent[]>,
-) {
-  const events = target.get(sessionId);
-  if (events) {
-    events.push(event);
-    if (events.length > MAX_BUFFERED_LIVE_EVENTS) {
-      events.splice(0, events.length - MAX_BUFFERED_LIVE_EVENTS);
-    }
-    return;
-  }
-  target.set(sessionId, [event]);
-}
-
-function waitOpen(socket: WebSocket): Promise<void> {
-  if (socket.readyState === WebSocket.OPEN) return Promise.resolve();
-  if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
-    return Promise.reject(new Error("websocket connection closed"));
-  }
-  return new Promise((resolve, reject) => {
-    if (socket.readyState === WebSocket.OPEN) {
-      resolve();
-      return;
-    }
-    if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
-      reject(new Error("websocket connection closed"));
-      return;
-    }
-    const cleanup = () => {
-      window.clearTimeout(timer);
-      socket.removeEventListener("open", onOpen);
-      socket.removeEventListener("error", onError);
-      socket.removeEventListener("close", onClose);
-    };
-    const onOpen = () => { cleanup(); resolve(); };
-    const onError = () => { cleanup(); reject(new Error("websocket connection failed")); };
-    const onClose = () => { cleanup(); reject(new Error("websocket connection closed")); };
-    const timer = window.setTimeout(() => { cleanup(); reject(new Error("websocket connection timed out")); }, CONNECT_TIMEOUT_MS);
-    socket.addEventListener("open", onOpen);
-    socket.addEventListener("error", onError);
-    socket.addEventListener("close", onClose);
-  });
 }

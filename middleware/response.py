@@ -1,4 +1,5 @@
 import json
+from http import HTTPStatus
 
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -6,7 +7,11 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from logger import get_logger
 from schema.common.responses import CommonResponse
+
+
+logger = get_logger(__name__)
 
 
 class CommonResponseStatusMiddleware:
@@ -120,4 +125,21 @@ async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSO
             message=str(exc.detail),
         ).model_dump(),
         headers=exc.headers,
+    )
+
+
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """log unexpected API failures and return the public CommonResponse shape"""
+    logger.error(
+        "unhandled request failed: %s %s",
+        request.method,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JSONResponse(
+        status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+        content=CommonResponse(
+            code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+            message="internal server error",
+        ).model_dump(),
     )

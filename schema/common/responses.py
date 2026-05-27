@@ -14,3 +14,10 @@ class CommonResponse(BaseModel, Generic[T]):
     code: int = http_status.HTTP_200_OK
     message: str = "success"
     data: T | None = None
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    page: int
+    size: int
+    total: int
+    items: list[T]

@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from schema.common.responses import PaginatedResponse
+
 
 DEFAULT_SANDBOX_CONTAINER_COMMAND = "trap 'exit 0' TERM INT; while :; do sleep 3600; done"
 
@@ -96,10 +98,8 @@ class DeleteSandboxContainerResponse(BaseModel):
 
 
 # query sandbox containers response schema
-class QuerySandboxContainersResponse(BaseModel):
-    page: int
-    size: int
-    items: list[SandboxContainerSchema]
+class QuerySandboxContainersResponse(PaginatedResponse[SandboxContainerSchema]):
+    pass
 
 
 # default sandbox container port mappings generated from image metadata

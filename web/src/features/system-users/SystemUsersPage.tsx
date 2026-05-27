@@ -1,14 +1,14 @@
 import { Button, Popconfirm, Tag } from "@douyinfe/semi-ui";
-import { Pencil, Plus, RefreshCw, Trash2, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
+import { Pencil, Trash2, Users } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { createSystemUser, deleteSystemUser, querySystemUsers, updateSystemUser } from "../../shared/api/systemUsers";
-import { showApiError, showApiSuccess } from "../../shared/api/feedback";
-import type { CommonResponsePayload, CreateSystemUserRequest, SystemUser, UpdateSystemUserRequest } from "../../shared/api/types";
+import type { CreateSystemUserRequest, SystemUser, UpdateSystemUserRequest } from "../../shared/api/types";
 import { ResourcePageShell } from "../../shared/components/ResourcePageShell";
 import { ResourceTable, type ResourceColumn } from "../../shared/components/ResourceTable";
+import { useAdminResourceHeader } from "../../shared/hooks/useAdminResourceHeader";
 import { usePagedResourceList } from "../../shared/hooks/usePagedResourceList";
 import { useResourceAction } from "../../shared/hooks/useResourceAction";
+import { useResourceSubmit } from "../../shared/hooks/useResourceSubmit";
 import { formatDateTime } from "../../shared/lib/date";
 import { SYSTEM_USER_ROLE_LABEL } from "../../shared/lib/labels";
 import { UserFormModal } from "./UserFormModal";
@@ -19,28 +19,31 @@ type ModalState = { mode: "create" } | { mode: "edit"; user: SystemUser } | null
 
 export function SystemUsersPage() {
   const {
-    items: users, page, keyword, loading, loadItems: loadUsers,
+    items: users, page, keyword, loading, loadItems: loadUsers, total, rangeStart, rangeEnd,
     setKeyword, search, previous, next, canGoBack, canGoNext,
   } = usePagedResourceList<SystemUser>({ pageSize: DEFAULT_PAGE_SIZE, query: querySystemUsers });
-  const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
-  const setHeaderActions = useAdminHeaderActions();
   const { run: deleteUser, busyId: deletingUserId } = useResourceAction<SystemUser>(
     (user) => deleteSystemUser(user.id),
     loadUsers,
   );
 
-  useEffect(() => {
-    setHeaderActions(
-      <>
-        <Button icon={<RefreshCw size={16} />} onClick={() => void loadUsers()} loading={loading} aria-label="Refresh users" />
-        <Button icon={<Plus size={16} />} theme="solid" type="danger" onClick={() => setModal({ mode: "create" })}>
-          Create User
-        </Button>
-      </>,
-    );
-    return () => setHeaderActions(null);
-  }, [loadUsers, loading, setHeaderActions]);
+  const openCreateModal = useCallback(() => setModal({ mode: "create" }), []);
+  const refreshUsers = useCallback(() => void loadUsers(), [loadUsers]);
+  useAdminResourceHeader({
+    createLabel: "Create User",
+    refreshLabel: "Refresh users",
+    loading,
+    onCreate: openCreateModal,
+    onRefresh: refreshUsers,
+  });
+
+  const { saving, submit } = useResourceSubmit({
+    onSuccess: async () => {
+      setModal(null);
+      await loadUsers();
+    },
+  });
 
   const summary = useMemo(
     () => users.reduce(
@@ -52,20 +55,6 @@ export function SystemUsersPage() {
     ),
     [users],
   );
-
-  const submit = async (action: () => Promise<CommonResponsePayload>) => {
-    setSaving(true);
-    try {
-      const response = await action();
-      showApiSuccess(response);
-      setModal(null);
-      await loadUsers();
-    } catch (error) {
-      showApiError(error);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const columns: ResourceColumn<SystemUser>[] = [
     {
@@ -110,7 +99,7 @@ export function SystemUsersPage() {
         keyword={keyword}
         loading={loading}
         metrics={[
-          { label: "Total loaded", value: users.length },
+          { label: "Total", value: total },
           { label: "Admins", value: summary.admin },
           { label: "Users", value: summary.user },
         ]}
@@ -118,6 +107,9 @@ export function SystemUsersPage() {
         emptyIcon={<Users size={42} />}
         emptyTitle="No users found"
         page={page}
+        rangeStart={rangeStart}
+        rangeEnd={rangeEnd}
+        total={total}
         canGoBack={canGoBack}
         canGoNext={canGoNext}
         onKeywordChange={setKeyword}
