@@ -10,7 +10,7 @@ from core.sandbox.command_jobs import cancel_async_sandbox_command, start_async_
 from schema.sandbox.async_jobs import SandboxAsyncJobSnapshot
 from schema.common.tool_results import ToolResultSchema, ToolResultStatusSchema, ToolResultTypeSchema
 from service.sandbox import async_jobs as sandbox_async_jobs
-from service.sandbox.commands import execute_sandbox_container_command
+from service.sandbox.commands import SandboxContainerCommandTimeoutError, execute_sandbox_container_command
 from utils.markdown import markdown_body_without_front_matter
 
 
@@ -21,6 +21,7 @@ _COMMAND_OUTPUT_CHUNK_LINE_COUNT = 200
 _COMMAND_OUTPUT_DIR = "/tmp/shell-command-output"
 _SYNC_COMMAND_TIMEOUT_SECONDS = 30
 _ASYNC_COMMAND_TIMEOUT_SECONDS = 300
+_COMMAND_TIMEOUT_ERROR = "Command execution timed out."
 _ASYNC_JOB_TOOL_OUTPUT_EXCLUDE = {
     "session_id",
     "agent_code",
@@ -183,6 +184,12 @@ async def execute_sync_command(
         )
     except asyncio.CancelledError:
         raise
+    except SandboxContainerCommandTimeoutError:
+        return ToolResultSchema(
+            status=ToolResultStatusSchema.ERROR,
+            type=ToolResultTypeSchema.COMMAND_EXECUTION,
+            output=_COMMAND_TIMEOUT_ERROR,
+        ).model_dump_json()
     except Exception as exc:
         return ToolResultSchema(
             status=ToolResultStatusSchema.ERROR,
@@ -369,6 +376,12 @@ async def load_skill(ctx: RunContextWrapper[AgentRuntimeContext], name: str) -> 
         )
     except asyncio.CancelledError:
         raise
+    except SandboxContainerCommandTimeoutError:
+        return ToolResultSchema(
+            status=ToolResultStatusSchema.ERROR,
+            type=ToolResultTypeSchema.SKILL_DETAIL,
+            output=_COMMAND_TIMEOUT_ERROR,
+        ).model_dump_json()
     except Exception as exc:
         return ToolResultSchema(
             status=ToolResultStatusSchema.ERROR,

@@ -9,11 +9,12 @@ from dataclasses import dataclass
 from core.runtime.context import AgentRuntimeContext
 from logger import get_logger
 from service.sandbox import async_jobs as sandbox_async_jobs
-from service.sandbox.commands import execute_sandbox_container_command
+from service.sandbox.commands import SandboxContainerCommandTimeoutError, execute_sandbox_container_command
 
 
 logger = get_logger(__name__)
 _OUTPUT_STAT_TIMEOUT_SECONDS = 30
+_COMMAND_TIMEOUT_ERROR = "Command execution timed out."
 
 
 @dataclass
@@ -150,6 +151,8 @@ async def _run_async_sandbox_command(
     except asyncio.CancelledError:
         await sandbox_async_jobs.cancel_async_job(run_id, "Sandbox async job canceled.")
         raise
+    except SandboxContainerCommandTimeoutError:
+        await sandbox_async_jobs.fail_async_job(run_id, _COMMAND_TIMEOUT_ERROR)
     except Exception as exc:
         logger.exception("async sandbox command execution failed: %s", run_id)
         await sandbox_async_jobs.fail_async_job(run_id, str(exc) or "Sandbox async job failed.")
