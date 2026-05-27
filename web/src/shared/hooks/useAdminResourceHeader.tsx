@@ -5,12 +5,14 @@ import { useAdminHeaderActions } from "../../app/layouts/AdminLayout";
 
 
 type AdminResourceHeaderOptions = {
-  createLabel: string;
+  createLabel?: string;
   refreshLabel: string;
   loading: boolean;
-  onCreate: () => void;
+  onCreate?: () => void;
   onRefresh: () => void;
+  createIcon?: ReactNode;
   extraActions?: ReactNode;
+  appendExtraActions?: boolean;
 };
 
 export function useAdminResourceHeader({
@@ -19,20 +21,40 @@ export function useAdminResourceHeader({
   loading,
   onCreate,
   onRefresh,
+  createIcon,
   extraActions,
+  appendExtraActions = false,
 }: AdminResourceHeaderOptions) {
   const setHeaderActions = useAdminHeaderActions();
 
   useEffect(() => {
+    const refreshButton = (
+      <Button icon={<RefreshCw size={16} />} onClick={onRefresh} loading={loading} aria-label={refreshLabel} />
+    );
+    const createButton = createLabel && onCreate ? (
+      <Button icon={createIcon ?? <Plus size={16} />} theme="solid" type="danger" onClick={onCreate}>
+        {createLabel}
+      </Button>
+    ) : null;
+
     setHeaderActions(
       <>
-        {extraActions}
-        <Button icon={<RefreshCw size={16} />} onClick={onRefresh} loading={loading} aria-label={refreshLabel} />
-        <Button icon={<Plus size={16} />} theme="solid" type="danger" onClick={onCreate}>
-          {createLabel}
-        </Button>
+        {appendExtraActions ? null : extraActions}
+        {refreshButton}
+        {createButton}
+        {appendExtraActions ? extraActions : null}
       </>,
     );
     return () => setHeaderActions(null);
-  }, [createLabel, extraActions, loading, onCreate, onRefresh, refreshLabel, setHeaderActions]);
+  }, [
+    appendExtraActions,
+    createIcon,
+    createLabel,
+    extraActions,
+    loading,
+    onCreate,
+    onRefresh,
+    refreshLabel,
+    setHeaderActions,
+  ]);
 }

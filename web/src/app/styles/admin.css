@@ -1,7 +1,8 @@
 .admin-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
+  overflow: hidden;
   background: #f4f7fb;
 }
 
@@ -105,6 +106,10 @@
 
 .admin-main {
   min-width: 0;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 78px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .admin-topbar {
@@ -156,8 +161,8 @@
 
 .admin-content {
   position: relative;
-  overflow: hidden;
-  min-height: calc(100vh - 78px);
+  overflow: auto;
+  min-height: 0;
   padding: 24px 30px 30px;
   background:
     linear-gradient(115deg, rgba(217, 45, 58, 0.08), transparent 28%),
@@ -221,7 +226,16 @@
 
 @media (max-width: 900px) {
   .admin-shell {
+    height: 100vh;
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .admin-main {
+    height: 100%;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
   }
 
   .admin-sidebar {
@@ -277,6 +291,8 @@
   }
 
   .admin-content {
+    overflow: auto;
+    min-height: 0;
     padding: 18px;
   }
 }

@@ -9,6 +9,7 @@ const PlaygroundPage = lazy(() => import("../features/playground/PlaygroundPage"
 const SandboxContainersPage = lazy(() => import("../features/sandbox-containers/SandboxContainersPage").then((module) => ({ default: module.SandboxContainersPage })));
 const SandboxImagesPage = lazy(() => import("../features/sandbox-images/SandboxImagesPage").then((module) => ({ default: module.SandboxImagesPage })));
 const SystemUsersPage = lazy(() => import("../features/system-users/SystemUsersPage").then((module) => ({ default: module.SystemUsersPage })));
+const SystemConfigPage = lazy(() => import("../features/system-config/SystemConfigPage").then((module) => ({ default: module.SystemConfigPage })));
 const WorkProjectsPage = lazy(() => import("../features/work-projects/WorkProjectsPage").then((module) => ({ default: module.WorkProjectsPage })));
 
 function ProtectedRoute() {
@@ -55,6 +56,7 @@ export function App() {
                   <Route path="/sandbox-images" element={<SandboxImagesPage />} />
                   <Route path="/sandbox-containers" element={<SandboxContainersPage />} />
                   <Route path="/system-users" element={<SystemUsersPage />} />
+                  <Route path="/system-config" element={<SystemConfigPage />} />
                 </Route>
               </Route>
             </Route>

@@ -635,6 +635,12 @@ def get_agent_pool() -> AgentSessionPool:
     return _pool
 
 
+def replace_agent_pool(pool: AgentSessionPool | None = None) -> AgentSessionPool:
+    global _pool
+    _pool = pool or AgentSessionPool()
+    return _pool
+
+
 def get_agent_registry() -> AgentRegistry:
     return get_agent_pool().registry
 

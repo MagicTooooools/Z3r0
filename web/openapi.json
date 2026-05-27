@@ -1,6 +1,49 @@
 {
   "components": {
     "schemas": {
+      "AgentConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "default": "",
+            "title": "Api Key",
+            "type": "string"
+          },
+          "base_url": {
+            "default": "",
+            "title": "Base Url",
+            "type": "string"
+          },
+          "code": {
+            "default": "",
+            "title": "Code",
+            "type": "string"
+          },
+          "context_window": {
+            "default": 1000000,
+            "minimum": 0.0,
+            "title": "Context Window",
+            "type": "integer"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "AgentConfig",
+        "type": "object"
+      },
       "AgentEventSchema": {
         "discriminator": {
           "mapping": {
@@ -126,6 +169,107 @@
           "name"
         ],
         "title": "AgentInfoSchema",
+        "type": "object"
+      },
+      "AgentPoolConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "max_size": {
+            "default": 256,
+            "minimum": 1.0,
+            "title": "Max Size",
+            "type": "integer"
+          },
+          "sweep_interval_seconds": {
+            "default": 60,
+            "minimum": 1.0,
+            "title": "Sweep Interval Seconds",
+            "type": "integer"
+          },
+          "ttl_seconds": {
+            "default": 1800,
+            "minimum": 0.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "AgentPoolConfig",
+        "type": "object"
+      },
+      "AgentRuntimeConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "context_compression_enabled": {
+            "default": true,
+            "title": "Context Compression Enabled",
+            "type": "boolean"
+          },
+          "context_compression_hard_stop_ratio": {
+            "default": 0.98,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Context Compression Hard Stop Ratio",
+            "type": "number"
+          },
+          "context_compression_min_items": {
+            "default": 12,
+            "minimum": 1.0,
+            "title": "Context Compression Min Items",
+            "type": "integer"
+          },
+          "context_compression_preserve_recent_items": {
+            "default": 20,
+            "minimum": 1.0,
+            "title": "Context Compression Preserve Recent Items",
+            "type": "integer"
+          },
+          "context_compression_preserve_recent_ratio": {
+            "default": 0.25,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Context Compression Preserve Recent Ratio",
+            "type": "number"
+          },
+          "context_compression_summary_max_tokens": {
+            "default": 8000,
+            "minimum": 512.0,
+            "title": "Context Compression Summary Max Tokens",
+            "type": "integer"
+          },
+          "context_compression_target_ratio": {
+            "default": 0.2,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Context Compression Target Ratio",
+            "type": "number"
+          },
+          "context_compression_trigger_ratio": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Context Compression Trigger Ratio",
+            "type": "number"
+          },
+          "main_max_turns": {
+            "default": 1000,
+            "minimum": 1.0,
+            "title": "Main Max Turns",
+            "type": "integer"
+          },
+          "model_stream_idle_timeout_seconds": {
+            "default": 300,
+            "minimum": 30.0,
+            "title": "Model Stream Idle Timeout Seconds",
+            "type": "integer"
+          },
+          "subordinate_max_turns": {
+            "default": 1000,
+            "minimum": 1.0,
+            "title": "Subordinate Max Turns",
+            "type": "integer"
+          }
+        },
+        "title": "AgentRuntimeConfig",
         "type": "object"
       },
       "AgentSessionSummarySchema": {
@@ -688,6 +832,32 @@
         "title": "CommonResponse[DeleteWorkProjectResponse]",
         "type": "object"
       },
+      "CommonResponse_InstanceConfigSchema_": {
+        "properties": {
+          "code": {
+            "default": 200,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstanceConfigSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "title": "CommonResponse[InstanceConfigSchema]",
+        "type": "object"
+      },
       "CommonResponse_ListAgentEventsResponse_": {
         "properties": {
           "code": {
@@ -1050,6 +1220,32 @@
           }
         },
         "title": "CommonResponse[SystemUserSchema]",
+        "type": "object"
+      },
+      "CommonResponse_UpdateInstanceConfigResponse_": {
+        "properties": {
+          "code": {
+            "default": 200,
+            "title": "Code",
+            "type": "integer"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateInstanceConfigResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "default": "success",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "title": "CommonResponse[UpdateInstanceConfigResponse]",
         "type": "object"
       },
       "CommonResponse_WorkProjectSchema_": {
@@ -1600,6 +1796,26 @@
           "message"
         ],
         "title": "ErrorEvent",
+        "type": "object"
+      },
+      "InstanceConfigSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_pool": {
+            "$ref": "#/components/schemas/AgentPoolConfig"
+          },
+          "agent_runtime": {
+            "$ref": "#/components/schemas/AgentRuntimeConfig"
+          },
+          "agents": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AgentConfig"
+            },
+            "title": "Agents",
+            "type": "object"
+          }
+        },
+        "title": "InstanceConfigSchema",
         "type": "object"
       },
       "ListAgentEventsResponse": {
@@ -2564,6 +2780,47 @@
         "title": "TurnBoundaryEvent",
         "type": "object"
       },
+      "UpdateAgentConfigRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "context_window": {
+            "minimum": 0.0,
+            "title": "Context Window",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "base_url",
+          "api_key",
+          "model",
+          "context_window"
+        ],
+        "title": "UpdateAgentConfigRequest",
+        "type": "object"
+      },
       "UpdateAgentSessionTitleRequest": {
         "properties": {
           "title": {
@@ -2577,6 +2834,48 @@
           "title"
         ],
         "title": "UpdateAgentSessionTitleRequest",
+        "type": "object"
+      },
+      "UpdateInstanceConfigRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_pool": {
+            "$ref": "#/components/schemas/AgentPoolConfig"
+          },
+          "agent_runtime": {
+            "$ref": "#/components/schemas/AgentRuntimeConfig"
+          },
+          "agents": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/UpdateAgentConfigRequest"
+            },
+            "title": "Agents",
+            "type": "object"
+          }
+        },
+        "required": [
+          "agents",
+          "agent_pool",
+          "agent_runtime"
+        ],
+        "title": "UpdateInstanceConfigRequest",
+        "type": "object"
+      },
+      "UpdateInstanceConfigResponse": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/InstanceConfigSchema"
+          },
+          "restarted": {
+            "title": "Restarted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "config",
+          "restarted"
+        ],
+        "title": "UpdateInstanceConfigResponse",
         "type": "object"
       },
       "UpdateSystemUserRequest": {
@@ -5438,6 +5737,136 @@
         "summary": "Retry Sandbox Image Handler",
         "tags": [
           "sandbox-images"
+        ]
+      }
+    },
+    "/api/system-config/instance": {
+      "get": {
+        "operationId": "get_instance_config_handler_api_system_config_instance_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_InstanceConfigSchema_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Instance Config Handler",
+        "tags": [
+          "system-config"
+        ]
+      },
+      "patch": {
+        "operationId": "update_instance_config_handler_api_system_config_instance_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInstanceConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_UpdateInstanceConfigResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommonResponse_Any_"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Instance Config Handler",
+        "tags": [
+          "system-config"
         ]
       }
     },

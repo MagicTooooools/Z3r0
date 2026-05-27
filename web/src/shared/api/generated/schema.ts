@@ -415,6 +415,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system-config/instance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Instance Config Handler */
+        get: operations["get_instance_config_handler_api_system_config_instance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Instance Config Handler */
+        patch: operations["update_instance_config_handler_api_system_config_instance_patch"];
+        trace?: never;
+    };
     "/api/system-users": {
         parameters: {
             query?: never;
@@ -594,6 +612,44 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentConfig */
+        AgentConfig: {
+            /**
+             * Api Key
+             * @default
+             */
+            api_key: string;
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Code
+             * @default
+             */
+            code: string;
+            /**
+             * Context Window
+             * @default 1000000
+             */
+            context_window: number;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+        };
         AgentEventSchema: components["schemas"]["UserMessageEvent"] | components["schemas"]["TurnBoundaryEvent"] | components["schemas"]["RunStateEvent"] | components["schemas"]["TextDeltaEvent"] | components["schemas"]["TextCompleteEvent"] | components["schemas"]["ThinkingDeltaEvent"] | components["schemas"]["ThinkingCompleteEvent"] | components["schemas"]["ToolCallEvent"] | components["schemas"]["ToolResultEvent"] | components["schemas"]["SubagentTaskEvent"] | components["schemas"]["DoneEvent"] | components["schemas"]["ErrorEvent"];
         /**
          * AgentImageDetailSchema
@@ -629,6 +685,82 @@ export interface components {
             description: string;
             /** Name */
             name: string;
+        };
+        /** AgentPoolConfig */
+        AgentPoolConfig: {
+            /**
+             * Max Size
+             * @default 256
+             */
+            max_size: number;
+            /**
+             * Sweep Interval Seconds
+             * @default 60
+             */
+            sweep_interval_seconds: number;
+            /**
+             * Ttl Seconds
+             * @default 1800
+             */
+            ttl_seconds: number;
+        };
+        /** AgentRuntimeConfig */
+        AgentRuntimeConfig: {
+            /**
+             * Context Compression Enabled
+             * @default true
+             */
+            context_compression_enabled: boolean;
+            /**
+             * Context Compression Hard Stop Ratio
+             * @default 0.98
+             */
+            context_compression_hard_stop_ratio: number;
+            /**
+             * Context Compression Min Items
+             * @default 12
+             */
+            context_compression_min_items: number;
+            /**
+             * Context Compression Preserve Recent Items
+             * @default 20
+             */
+            context_compression_preserve_recent_items: number;
+            /**
+             * Context Compression Preserve Recent Ratio
+             * @default 0.25
+             */
+            context_compression_preserve_recent_ratio: number;
+            /**
+             * Context Compression Summary Max Tokens
+             * @default 8000
+             */
+            context_compression_summary_max_tokens: number;
+            /**
+             * Context Compression Target Ratio
+             * @default 0.2
+             */
+            context_compression_target_ratio: number;
+            /**
+             * Context Compression Trigger Ratio
+             * @default 0.95
+             */
+            context_compression_trigger_ratio: number;
+            /**
+             * Main Max Turns
+             * @default 1000
+             */
+            main_max_turns: number;
+            /**
+             * Model Stream Idle Timeout Seconds
+             * @default 300
+             */
+            model_stream_idle_timeout_seconds: number;
+            /**
+             * Subordinate Max Turns
+             * @default 1000
+             */
+            subordinate_max_turns: number;
         };
         /** AgentSessionSummarySchema */
         AgentSessionSummarySchema: {
@@ -919,6 +1051,20 @@ export interface components {
              */
             message: string;
         };
+        /** CommonResponse[InstanceConfigSchema] */
+        CommonResponse_InstanceConfigSchema_: {
+            /**
+             * Code
+             * @default 200
+             */
+            code: number;
+            data?: components["schemas"]["InstanceConfigSchema"] | null;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+        };
         /** CommonResponse[ListAgentEventsResponse] */
         CommonResponse_ListAgentEventsResponse_: {
             /**
@@ -1109,6 +1255,20 @@ export interface components {
              */
             code: number;
             data?: components["schemas"]["SystemUserSchema"] | null;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+        };
+        /** CommonResponse[UpdateInstanceConfigResponse] */
+        CommonResponse_UpdateInstanceConfigResponse_: {
+            /**
+             * Code
+             * @default 200
+             */
+            code: number;
+            data?: components["schemas"]["UpdateInstanceConfigResponse"] | null;
             /**
              * Message
              * @default success
@@ -1362,6 +1522,15 @@ export interface components {
              * @enum {string}
              */
             type: "error";
+        };
+        /** InstanceConfigSchema */
+        InstanceConfigSchema: {
+            agent_pool?: components["schemas"]["AgentPoolConfig"];
+            agent_runtime?: components["schemas"]["AgentRuntimeConfig"];
+            /** Agents */
+            agents?: {
+                [key: string]: components["schemas"]["AgentConfig"];
+            };
         };
         /** ListAgentEventsResponse */
         ListAgentEventsResponse: {
@@ -1871,10 +2040,40 @@ export interface components {
              */
             type: "turn_boundary";
         };
+        /** UpdateAgentConfigRequest */
+        UpdateAgentConfigRequest: {
+            /** Api Key */
+            api_key: string;
+            /** Base Url */
+            base_url: string;
+            /** Context Window */
+            context_window: number;
+            /** Description */
+            description: string;
+            /** Model */
+            model: string;
+            /** Name */
+            name: string;
+        };
         /** UpdateAgentSessionTitleRequest */
         UpdateAgentSessionTitleRequest: {
             /** Title */
             title: string;
+        };
+        /** UpdateInstanceConfigRequest */
+        UpdateInstanceConfigRequest: {
+            agent_pool: components["schemas"]["AgentPoolConfig"];
+            agent_runtime: components["schemas"]["AgentRuntimeConfig"];
+            /** Agents */
+            agents: {
+                [key: string]: components["schemas"]["UpdateAgentConfigRequest"];
+            };
+        };
+        /** UpdateInstanceConfigResponse */
+        UpdateInstanceConfigResponse: {
+            config: components["schemas"]["InstanceConfigSchema"];
+            /** Restarted */
+            restarted: boolean;
         };
         /** UpdateSystemUserRequest */
         UpdateSystemUserRequest: {
@@ -3813,6 +4012,113 @@ export interface operations {
             };
             /** @description Sandbox image not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    get_instance_config_handler_api_system_config_instance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_InstanceConfigSchema_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+        };
+    };
+    update_instance_config_handler_api_system_config_instance_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateInstanceConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_UpdateInstanceConfigResponse_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonResponse_Any_"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

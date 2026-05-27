@@ -1,5 +1,5 @@
 import { Avatar, Button } from "@douyinfe/semi-ui";
-import { Box, Boxes, FolderKanban, LogOut, MessageSquareCode, Users } from "lucide-react";
+import { Box, Boxes, FolderKanban, LogOut, MessageSquareCode, Settings, Users } from "lucide-react";
 import { ReactNode, Suspense, useCallback, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { SessionList } from "../../features/playground/SessionList";
@@ -26,6 +26,7 @@ const navItems = [
   { path: "/sandbox-images", label: "Sandbox Images", eyebrow: "Execution Baseline", icon: Boxes, adminOnly: true },
   { path: "/sandbox-containers", label: "Sandbox Containers", eyebrow: "Runtime Instances", icon: Box, adminOnly: true },
   { path: "/system-users", label: "System Users", eyebrow: "Access Control", icon: Users, adminOnly: true },
+  { path: "/system-config", label: "System Config", eyebrow: "Runtime Configuration", icon: Settings, adminOnly: true },
 ];
 
 export function AdminLayout() {

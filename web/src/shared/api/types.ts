@@ -40,6 +40,14 @@ export type UpdateSystemUserRequest = JsonRequestBody<paths["/api/system-users/{
 export type UpdateSystemUserResponse = JsonResponse<paths["/api/system-users/{id}"]["patch"]>;
 export type DeleteSystemUserResponse = JsonResponse<paths["/api/system-users/{id}"]["delete"]>;
 
+export type InstanceConfig = components["schemas"]["InstanceConfigSchema"];
+export type AgentConfig = components["schemas"]["AgentConfig"];
+export type AgentPoolConfig = components["schemas"]["AgentPoolConfig"];
+export type AgentRuntimeConfig = components["schemas"]["AgentRuntimeConfig"];
+export type GetInstanceConfigResponse = JsonResponse<paths["/api/system-config/instance"]["get"]>;
+export type UpdateInstanceConfigRequest = JsonRequestBody<paths["/api/system-config/instance"]["patch"]>;
+export type UpdateInstanceConfigResponse = JsonResponse<paths["/api/system-config/instance"]["patch"]>;
+
 export type QuerySandboxImagesParams = QueryParameters<paths["/api/sandbox-images"]["get"]>;
 export type QuerySandboxImagesResponse = JsonResponse<paths["/api/sandbox-images"]["get"]>;
 export type QuerySandboxImagesData = NonNullable<QuerySandboxImagesResponse["data"]>;

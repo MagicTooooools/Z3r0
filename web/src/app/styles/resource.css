@@ -258,6 +258,168 @@
   gap: 14px;
 }
 
+.system-config-page {
+  display: grid;
+  gap: 18px;
+  animation: contentFadeUp 260ms var(--ease-emphasized) both;
+}
+
+.system-config-spin {
+  min-height: 320px;
+}
+
+.system-config-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.config-panel {
+  background: #ffffff;
+  border: 1px solid #e4ebf3;
+  border-radius: 8px;
+  box-shadow: 0 18px 45px rgba(31, 45, 61, 0.06);
+  overflow: hidden;
+}
+
+.config-panel-header {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 18px;
+  border-bottom: 1px solid #e8eef5;
+  background: #f9fbfd;
+}
+
+.config-panel-header > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  color: #26344d;
+}
+
+.config-panel-header h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 14px;
+  padding: 18px;
+}
+
+.config-grid.compact {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: #26344d;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.field > span {
+  color: #52627a;
+}
+
+.field.full {
+  grid-column: 1 / -1;
+}
+
+.field .semi-input-wrapper,
+.field .semi-input-number,
+.field .semi-input-number .semi-input-wrapper,
+.field .semi-textarea-wrapper {
+  width: 100%;
+}
+
+.switch-field {
+  align-content: start;
+}
+
+.switch-field .semi-switch {
+  margin-top: 5px;
+}
+
+.agent-config-list {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.agent-config-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e4ebf3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.agent-config-card-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.agent-config-card-header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #162033;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-config-card-header span {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-form-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(180px, 1fr) minmax(160px, 0.9fr) minmax(180px, 1fr) 132px;
+  gap: 10px;
+}
+
+.agent-form-grid .field.full {
+  grid-column: 1 / -1;
+}
+
+.agent-config-card .field {
+  gap: 5px;
+  font-size: 12px;
+}
+
+.agent-config-card .field .semi-input,
+.agent-config-card .field .semi-input-number .semi-input {
+  font-size: 12px;
+}
+
+.agent-config-card .field .semi-input-wrapper,
+.agent-config-card .field .semi-input-number {
+  min-height: 30px;
+}
+
+.agent-config-card .field .semi-textarea-wrapper textarea {
+  font-size: 12px;
+}
+
 .project-sandbox-option,
 .project-user-option {
   display: grid;
@@ -1027,8 +1189,20 @@
     overflow: visible;
   }
 
+  .config-grid,
+  .config-grid.compact,
+  .agent-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .project-info-summary-scroll {
     max-height: min(260px, 32vh);
+  }
+}
+
+@media (max-width: 1280px) and (min-width: 901px) {
+  .agent-form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1038,6 +1212,9 @@
   }
 
   .project-form-grid,
+  .config-grid,
+  .config-grid.compact,
+  .agent-form-grid,
   .work-project-meta,
   .work-project-detail-grid,
   .project-info-meta,

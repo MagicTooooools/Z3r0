@@ -1,12 +1,15 @@
 import json
 import secrets
+import tempfile
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ROOT_PATH = Path(__file__).resolve().parent
 WORKSPACE = ROOT_PATH / ".z3r0"
+CONFIG_FILE = WORKSPACE / "config.json"
 
 
 # strict type config base model
@@ -96,11 +99,7 @@ def load_config():
     """load config from json file"""
     global _cfg
 
-    config_file = WORKSPACE / "config.json"
-    with open(config_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    next_cfg = GlobalConfig.model_validate(data)
+    next_cfg = read_config_file()
     for field_name in type(_cfg).model_fields:
         setattr(_cfg, field_name, getattr(next_cfg, field_name))
 
@@ -109,3 +108,31 @@ def get_config():
     """get config instance"""
     global _cfg
     return _cfg
+
+
+def read_config_file() -> GlobalConfig:
+    """read and validate config.json without mutating global state"""
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return GlobalConfig.model_validate(data)
+
+
+def write_config_file(cfg: GlobalConfig) -> None:
+    """atomically write a validated config.json"""
+    WORKSPACE.mkdir(parents=True, exist_ok=True)
+    data: dict[str, Any] = cfg.model_dump(mode="json")
+    payload = json.dumps(data, ensure_ascii=False, indent=4)
+
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=WORKSPACE,
+        prefix=".config.",
+        suffix=".json.tmp",
+        delete=False,
+    ) as f:
+        temp_path = Path(f.name)
+        f.write(payload)
+        f.write("\n")
+
+    temp_path.replace(CONFIG_FILE)
