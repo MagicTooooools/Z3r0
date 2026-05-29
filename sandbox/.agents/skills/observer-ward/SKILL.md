@@ -1,11 +1,13 @@
 ---
-name: observer_ward
+name: observer-ward
 description: Use observer_ward for authorized web application and service fingerprint identification against in-scope HTTP targets.
 ---
 
 # observer_ward
 
 Use `observer_ward` for authorized service and web application fingerprint identification. It is useful for identifying exposed applications, middleware, services, versions, CPE-style product context, and fingerprints from community probe data.
+
+Skill name is `observer-ward`; the installed CLI command is `observer_ward`.
 
 ## Use When
 
