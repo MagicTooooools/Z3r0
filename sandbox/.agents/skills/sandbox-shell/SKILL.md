@@ -53,12 +53,20 @@ At most 3 async commands may run for one agent instance.
 - Use a new bounded command only when file-side filtering/counting is more efficient than reading chunks.
 - Keep generated files and installed packages scoped to the task.
 
+## Python Packages
+
+- Prefer `uv` for Python environments, package installs, and temporary tool execution.
+- Use `uv run`, `uvx`, or `uv pip` inside a task-scoped virtual environment.
+- Do not use global `pip install` or assume `pip3` is available in the sandbox.
+
 ## Available Tools
 
 - Archives: `7z`, `unzip`
-- Shell/runtime: `python3`, `pip3`, `uv`, `node`, `npm`, `nc`
-- Network: `curl`, `wget`, `nmap`, `sqlmap`
-- Android/reversing: `jadx`, `analyzeHeadless`
+- Shell/runtime: `python3`, `uv`, `node`, `npm`, `nc`, `jq`, `rg`, `git`
+- Network: `curl`, `wget`, `dig`, `nslookup`, `whois`, `openssl`, `httpx`, `nmap`, `sqlmap`
+- Fingerprinting: `observer_ward`
+- Android/reversing: `jadx`, `apktool`, `analyzeHeadless`
+- File/firmware: `file`, `binwalk`
 - Browser: `agent-browser-cli`
 
 ## Custom Scripts

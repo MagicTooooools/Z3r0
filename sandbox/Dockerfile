@@ -2,6 +2,8 @@ ARG AGENT_BROWSER_VERSION=0.3.4
 ARG GHIDRA_VERSION=12.1
 ARG GHIDRA_BUILD=20260513
 ARG JADX_VERSION=1.5.5
+ARG OBSERVER_WARD_VERSION=2026.4.8
+ARG HTTPX_VERSION=1.9.0
 
 # Build the small HTTP/WebSocket proxy used by the sandbox runtime.
 FROM golang:1.26-trixie AS proxy-builder
@@ -132,6 +134,8 @@ ENV HOME=/root \
     PATH=/opt/jadx/bin:/opt/ghidra:/opt/ghidra/support:/usr/lib/jvm/java-21-openjdk-amd64/bin:$PATH
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG OBSERVER_WARD_VERSION
+ARG HTTPX_VERSION
 
 RUN set -eux; \
     printf '%s\n' \
@@ -145,31 +149,48 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       7zip \
+      apktool \
       ca-certificates \
       binutils \
+      binwalk \
       chromium \
       curl \
+      dnsutils \
       file \
       fonts-droid-fallback \
       g++ \
       gcc \
+      git \
+      jq \
       libc6-dev \
       make \
       netcat-openbsd \
       nmap \
       nodejs \
       novnc \
+      openssl \
       openjdk-21-jdk \
       npm \
       pkg-config \
       python3 \
-      python3-pip \
+      ripgrep \
       supervisor \
       unzip \
       websockify \
       wget \
+      whois \
       x11vnc \
       xvfb; \
+    observer_ward_deb="/tmp/observer-ward.deb"; \
+    curl -fsSL "https://github.com/emo-crab/observer_ward/releases/download/v${OBSERVER_WARD_VERSION}/observer-ward_v${OBSERVER_WARD_VERSION}_x86_64-unknown-linux-musl.deb" -o "$observer_ward_deb"; \
+    apt-get install -y --no-install-recommends "$observer_ward_deb"; \
+    rm -f "$observer_ward_deb"; \
+    observer_ward -u; \
+    httpx_zip="/tmp/httpx.zip"; \
+    curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/v${HTTPX_VERSION}/httpx_${HTTPX_VERSION}_linux_amd64.zip" -o "$httpx_zip"; \
+    unzip -q "$httpx_zip" -d /tmp/httpx; \
+    install -m 755 /tmp/httpx/httpx /usr/local/bin/httpx; \
+    rm -rf "$httpx_zip" /tmp/httpx; \
     ln -sf vnc.html /usr/share/novnc/index.html; \
     mkdir -p /data; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/* /var/tmp/*
@@ -192,19 +213,28 @@ RUN set -eux; \
 
 RUN set -eux; \
     7z i >/dev/null; \
+    apktool --version; \
+    binwalk --help >/dev/null; \
+    dig -v; \
     g++ --version; \
     gcc --version; \
+    git --version; \
+    httpx -version; \
     java -version; \
     jadx --version; \
+    jq --version; \
     nmap --version; \
     node --version; \
     npm --version; \
-    pip3 --version; \
+    observer_ward --help >/dev/null; \
+    openssl version; \
     pkg-config --version; \
     python3 --version; \
     sqlmap --version; \
     supervisord --version; \
     unzip -v >/dev/null; \
+    rg --version; \
+    whois --version; \
     x11vnc -version; \
     chromium --version; \
     agent-browser-cli --help >/dev/null; \
