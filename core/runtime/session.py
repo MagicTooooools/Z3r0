@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from uuid import uuid4
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -227,6 +228,7 @@ class AgentSession:
             context.agent_instance_id = main_agent_instance_id(context.session_id, context.user.id, agent_code)
         agent = graph.get(agent_code)
         display_text = display_text_from_content(content)
+        turn_scope = _next_turn_scope(context)
         if emit_user_message:
             yield UserMessageEvent(
                 created_at=datetime.now(),
@@ -267,7 +269,11 @@ class AgentSession:
                     max_turns=max_turns,
                 )
                 result_holder["result"] = stream
-                async for event in iter_normalized_stream_events(stream, current_agent_name=agent.name):
+                async for event in iter_normalized_stream_events(
+                    stream,
+                    current_agent_name=agent.name,
+                    segment_scope=turn_scope,
+                ):
                     queue.put_nowait(event)
             except asyncio.CancelledError:
                 raise
@@ -691,6 +697,20 @@ def _tag_notification_event(event: AgentEventSchema, context: AgentRuntimeContex
         "nested_for": context.nested_for_agent_code,
         "nested_call_id": context.nested_call_id,
     })
+
+
+def _next_turn_scope(context: AgentRuntimeContext) -> str:
+    owner = context.agent_instance_id or main_agent_instance_id(
+        context.session_id,
+        context.user.id,
+        context.agent_code,
+    )
+    return f"turn_{_safe_segment_part(owner)}_{uuid4().hex}"
+
+
+def _safe_segment_part(value: str) -> str:
+    normalized = "".join(ch if ch.isalnum() else "_" for ch in value.strip())
+    return normalized.strip("_") or "agent"
 
 
 async def _mark_session_running(

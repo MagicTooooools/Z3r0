@@ -342,19 +342,18 @@ async def replay_session_events_page(
     limit: int,
 ) -> tuple[list[AgentContentEventSchema], bool, int | None] | None:
     # nested-call items are tagged so the UI re-attaches them to the parent ToolCard
-    fetch_limit = max(1, limit) + 1
+    limit = max(1, limit)
+    fetch_limit = limit + 1
     async with get_async_session() as session:
         if not await _can_access_session(session, session_id, user_id, user_role):
             return None
-        stored_items = await fetch_stored_items(
+        stored_items, has_more, next_before_id = await _fetch_replay_turn_page(
             session,
             session_id,
             before_id=before_id,
-            limit=fetch_limit,
+            limit=limit,
+            fetch_limit=fetch_limit,
         )
-        has_more = len(stored_items) > limit
-        if has_more:
-            stored_items = _trim_replay_page_to_turn(stored_items[-limit:])
         sub_tasks = list((await session.exec(
             select(AgentSubordinateTask)
             .where(AgentSubordinateTask.session_id == session_id)
@@ -404,8 +403,45 @@ async def replay_session_events_page(
         task_events_by_call_id,
         include_orphans=not has_more,
     ))
-    next_before_id = stored_items[0].message_id if has_more and stored_items else None
     return events, has_more, next_before_id
+
+
+async def _fetch_replay_turn_page(
+    session: AsyncSession,
+    session_id: str,
+    *,
+    before_id: int | None,
+    limit: int,
+    fetch_limit: int,
+) -> tuple[list[StoredItem], bool, int | None]:
+    window = await fetch_stored_items(
+        session,
+        session_id,
+        before_id=before_id,
+        limit=fetch_limit,
+    )
+    has_more = len(window) > limit
+    if not has_more:
+        return window, False, None
+
+    window = window[-limit:]
+    while True:
+        turn_start = _top_level_user_index(window)
+        if turn_start != -1:
+            page = window[turn_start:]
+            return page, True, page[0].message_id if page else None
+        older = await fetch_stored_items(
+            session,
+            session_id,
+            before_id=window[0].message_id if window else before_id,
+            limit=fetch_limit,
+        )
+        if not older:
+            return window, False, None
+        older_has_more = len(older) > limit
+        window = (older[-limit:] if older_has_more else older) + window
+        if not older_has_more:
+            return _trim_replay_page_to_turn(window), False, None
 
 
 def _attach_nested_replay_events(
@@ -433,10 +469,15 @@ def _attach_nested_replay_events(
 
 
 def _trim_replay_page_to_turn(stored_items: list[StoredItem]) -> list[StoredItem]:
+    index = _top_level_user_index(stored_items)
+    return stored_items[index:] if index != -1 else stored_items
+
+
+def _top_level_user_index(stored_items: list[StoredItem]) -> int:
     for index, stored in enumerate(stored_items):
         if _is_top_level_user_item(stored):
-            return stored_items[index:]
-    return stored_items
+            return index
+    return -1
 
 
 def _is_top_level_user_item(stored: StoredItem) -> bool:
@@ -447,93 +488,114 @@ def _is_top_level_user_item(stored: StoredItem) -> bool:
 
 def _normalize_replay_events(events: list[AgentContentEventSchema]) -> list[AgentContentEventSchema]:
     """Collapse duplicate persisted facts before the UI rebuilds transcript state."""
-    normalized: list[AgentContentEventSchema] = []
-    turn_seen_text: set[tuple[str, str, str, str]] = set()
-    tool_indexes: dict[tuple[str, str, str], int] = {}
-    tool_result_indexes: dict[tuple[str, str, str], int] = {}
-    tool_semantic_indexes: dict[tuple[str, str, str, str], int] = {}
-    tool_call_aliases: dict[tuple[str, str, str], str] = {}
-    subagent_indexes: dict[str, int] = {}
+    return _ReplayEventNormalizer().normalize(events)
 
-    for event in events:
-        event = _normalize_tool_call_id(event, tool_call_aliases)
+
+class _ReplayEventNormalizer:
+    def __init__(self) -> None:
+        self.normalized: list[AgentContentEventSchema] = []
+        self.turn_seen_text: set[tuple[str, str, str, str]] = set()
+        self.tool_indexes: dict[tuple[str, str, str], int] = {}
+        self.tool_result_indexes: dict[tuple[str, str, str], int] = {}
+        self.tool_semantic_indexes: dict[tuple[str, str, str, str], int] = {}
+        self.tool_call_aliases: dict[tuple[str, str, str], str] = {}
+        self.subagent_indexes: dict[str, int] = {}
+
+    def normalize(self, events: list[AgentContentEventSchema]) -> list[AgentContentEventSchema]:
+        for event in events:
+            self._append(event)
+        return self.normalized
+
+    def _append(self, event: AgentContentEventSchema) -> None:
+        event = _normalize_tool_call_id(event, self.tool_call_aliases)
         event_type = str(getattr(event, "type", ""))
         if event_type in {"user_message", "turn_boundary"} and not getattr(event, "nested_call_id", ""):
-            turn_seen_text.clear()
-            tool_indexes.clear()
-            tool_result_indexes.clear()
-            tool_semantic_indexes.clear()
-            tool_call_aliases.clear()
-            subagent_indexes.clear()
-            normalized.append(event)
-            continue
-
+            self._reset_turn()
+            self.normalized.append(event)
+            return
         if event_type in {"text_complete", "thinking_complete"}:
-            key = (
-                event_type,
-                getattr(event, "nested_for", ""),
-                getattr(event, "nested_call_id", ""),
-                getattr(event, "text", ""),
-            )
-            if key in turn_seen_text:
-                continue
-            turn_seen_text.add(key)
-            normalized.append(event)
-            continue
-
+            self._append_text_complete(event, event_type)
+            return
         if event_type == "tool_call":
-            key = _tool_event_key(event)
-            semantic_key = _tool_semantic_key(event)
-            existing_index = tool_indexes.get(key)
-            if existing_index is None:
-                existing_index = tool_semantic_indexes.get(semantic_key)
-            if existing_index is None:
-                tool_indexes[key] = len(normalized)
-                tool_semantic_indexes[semantic_key] = len(normalized)
-                normalized.append(event)
-            else:
-                existing = normalized[existing_index]
-                existing_call_id = getattr(existing, "call_id", "")
-                incoming_call_id = getattr(event, "call_id", "")
-                if existing_call_id and incoming_call_id and existing_call_id != incoming_call_id:
-                    tool_call_aliases[key] = existing_call_id
-                normalized[existing_index] = _merge_tool_call(existing, event, call_id=existing_call_id)
-            continue
-
+            self._append_tool_call(event)
+            return
         if event_type == "tool_result":
-            key = _tool_event_key(event)
-            existing_index = tool_result_indexes.get(key)
-            if existing_index is None:
-                tool_result_indexes[key] = len(normalized)
-                normalized.append(event)
-            else:
-                normalized[existing_index] = event
-            continue
-
+            self._append_tool_result(event)
+            return
         if event_type == "subagent_task":
-            run_id = getattr(event, "run_id", "")
-            existing_index = subagent_indexes.get(run_id)
-            if run_id and existing_index is not None:
-                normalized[existing_index] = event
-            else:
-                if run_id:
-                    subagent_indexes[run_id] = len(normalized)
-                normalized.append(event)
-            continue
+            self._append_subagent_task(event)
+            return
+        self.normalized.append(event)
 
-        normalized.append(event)
+    def _reset_turn(self) -> None:
+        self.turn_seen_text.clear()
+        self.tool_indexes.clear()
+        self.tool_result_indexes.clear()
+        self.tool_semantic_indexes.clear()
+        self.tool_call_aliases.clear()
+        self.subagent_indexes.clear()
 
-    return normalized
+    def _append_text_complete(self, event: AgentContentEventSchema, event_type: str) -> None:
+        key = (
+            event_type,
+            getattr(event, "nested_for", ""),
+            getattr(event, "nested_call_id", ""),
+            getattr(event, "text", ""),
+        )
+        if key in self.turn_seen_text:
+            return
+        self.turn_seen_text.add(key)
+        self.normalized.append(event)
+
+    def _append_tool_call(self, event: AgentContentEventSchema) -> None:
+        key = _tool_event_key(event)
+        semantic_key = _tool_semantic_key(event)
+        existing_index = self.tool_indexes.get(key)
+        if existing_index is None:
+            existing_index = self.tool_semantic_indexes.get(semantic_key)
+        if existing_index is None:
+            self.tool_indexes[key] = len(self.normalized)
+            self.tool_semantic_indexes[semantic_key] = len(self.normalized)
+            self.normalized.append(event)
+            return
+
+        existing = self.normalized[existing_index]
+        existing_call_id = getattr(existing, "call_id", "")
+        incoming_call_id = getattr(event, "call_id", "")
+        if existing_call_id and incoming_call_id and existing_call_id != incoming_call_id:
+            self.tool_call_aliases[key] = existing_call_id
+        self.normalized[existing_index] = _merge_tool_call(existing, event, call_id=existing_call_id)
+
+    def _append_tool_result(self, event: AgentContentEventSchema) -> None:
+        key = _tool_event_key(event)
+        existing_index = self.tool_result_indexes.get(key)
+        if existing_index is None:
+            self.tool_result_indexes[key] = len(self.normalized)
+            self.normalized.append(event)
+            return
+        self.normalized[existing_index] = event
+
+    def _append_subagent_task(self, event: AgentContentEventSchema) -> None:
+        run_id = getattr(event, "run_id", "")
+        existing_index = self.subagent_indexes.get(run_id)
+        if run_id and existing_index is not None:
+            self.normalized[existing_index] = event
+            return
+        if run_id:
+            self.subagent_indexes[run_id] = len(self.normalized)
+        self.normalized.append(event)
 
 
 def _merge_tool_call(
     existing: AgentContentEventSchema,
     incoming: AgentContentEventSchema,
     *,
-    call_id: str,
+    call_id: str = "",
 ) -> AgentContentEventSchema:
     if getattr(incoming, "name", "") or getattr(incoming, "arguments", None):
-        return incoming.model_copy(update={"call_id": call_id}) if call_id else incoming
+        if call_id and getattr(incoming, "call_id", "") != call_id:
+            return incoming.model_copy(update={"call_id": call_id})
+        return incoming
     return existing
 
 
@@ -541,27 +603,21 @@ def _normalize_tool_call_id(
     event: AgentContentEventSchema,
     aliases: dict[tuple[str, str, str], str],
 ) -> AgentContentEventSchema:
-    if str(getattr(event, "type", "")) not in {"tool_call", "tool_result"}:
+    event_type = str(getattr(event, "type", ""))
+    if event_type not in {"tool_call", "tool_result"}:
         return event
-    alias = aliases.get(_tool_event_key(event))
+    key = _tool_event_key(event)
+    alias = aliases.get(key)
     if not alias or getattr(event, "call_id", "") == alias:
         return event
     return event.model_copy(update={"call_id": alias})
 
 
 def _tool_event_key(event: AgentContentEventSchema) -> tuple[str, str, str]:
-    call_id = getattr(event, "call_id", "")
-    if call_id:
-        identity = call_id
-    else:
-        identity = ":".join((
-            getattr(event, "name", ""),
-            _stable_json(getattr(event, "arguments", {})),
-        ))
     return (
         getattr(event, "nested_for", ""),
         getattr(event, "nested_call_id", ""),
-        identity,
+        getattr(event, "call_id", ""),
     )
 
 
@@ -570,7 +626,7 @@ def _tool_semantic_key(event: AgentContentEventSchema) -> tuple[str, str, str, s
         getattr(event, "nested_for", ""),
         getattr(event, "nested_call_id", ""),
         getattr(event, "name", ""),
-        _stable_json(getattr(event, "arguments", {})),
+        _stable_json(getattr(event, "arguments", None)),
     )
 
 

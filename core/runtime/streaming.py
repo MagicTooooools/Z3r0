@@ -27,8 +27,9 @@ async def iter_normalized_stream_events(
     stream: Any,
     *,
     current_agent_name: str,
+    segment_scope: str = "",
 ) -> AsyncIterator[AgentEventSchema]:
-    normalizer = SdkStreamEventNormalizer()
+    normalizer = SdkStreamEventNormalizer(segment_scope=segment_scope)
     sdk_events = stream.stream_events().__aiter__()
     pending_tool_calls = 0
 

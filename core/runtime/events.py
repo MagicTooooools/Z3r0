@@ -83,11 +83,12 @@ class _StreamSegment:
 class SdkStreamEventNormalizer:
     """Map SDK stream events to the public app-level event contract."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, segment_scope: str = "") -> None:
         self._segments: dict[_StreamSegmentKey, _StreamSegment] = {}
         self._next_segment_index = 1
         self._response_index = 0
         self._response_open = False
+        self._segment_scope = segment_scope.strip()
 
     def event_from_sdk_stream(self, sdk_event: Any, current_agent: str) -> AgentEventSchema | None:
         created_at = datetime.now()
@@ -111,12 +112,20 @@ class SdkStreamEventNormalizer:
     def segment_id(self, key: _StreamSegmentKey, *, complete: bool) -> str:
         segment = self._segments.get(key)
         if segment is None or (segment.complete and not complete):
-            segment = _StreamSegment(segment_id=f"{key.kind}_{self._next_segment_index}")
+            segment = _StreamSegment(segment_id=self._segment_id(key))
             self._segments[key] = segment
             self._next_segment_index += 1
         if complete:
             segment.complete = True
         return segment.segment_id
+
+    def _segment_id(self, key: _StreamSegmentKey) -> str:
+        return self._scoped_segment_id(key.kind, self._next_segment_index)
+
+    def _scoped_segment_id(self, kind: str, index: int) -> str:
+        if not self._segment_scope:
+            return f"{kind}_{index}"
+        return f"{self._segment_scope}_{kind}_{index}"
 
     def _handle_response_lifecycle(self, data: Any) -> bool:
         if isinstance(data, ResponseCreatedEvent):

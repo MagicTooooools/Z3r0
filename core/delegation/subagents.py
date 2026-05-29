@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from agents import Agent, RunContextWrapper, Runner, Tool, function_tool
 
@@ -26,8 +27,9 @@ from core.runtime.live_projection import LiveEventProjection
 from core.runtime.partial_context import DeltaBuffer, flush_partial_context, track_delta
 from core.runtime.streaming import StreamIdleTimeout, iter_normalized_stream_events
 from core.sandbox.command_jobs import cancel_agent_async_sandbox_commands
-from core.conversation.store import Z3r0Session
-from database import get_engine
+from core import extract_message_text
+from core.conversation.store import Z3r0Session, fetch_stored_items
+from database import get_async_session, get_engine
 from logger import get_logger
 from schema.agent.events import (
     AgentEventSchema,
@@ -71,6 +73,7 @@ _subscribers_lock = asyncio.Lock()
 
 _SUBSCRIBER_QUEUE_SIZE = 256
 _NOTIFICATION_POLL_SECONDS = 1.0
+_SUBAGENT_RESULT_MAX_CHARS = 20000
 
 
 class _SubagentNotificationReady(Exception):
@@ -528,7 +531,6 @@ async def _run_subagent_task(
         nested_for_agent_code=snapshot.parent_agent_code,
         nested_call_id=snapshot.nested_call_id,
     )
-    result: Any = None
     buffers: dict[str, DeltaBuffer] = {}
     try:
         max_turns = get_config().agent_runtime.subordinate_max_turns
@@ -539,7 +541,7 @@ async def _run_subagent_task(
                 agent_config=agent_config,
                 incoming_items=[build_user_message_item(brief_content)],
             )
-        result = await _run_subagent_until_idle(
+        await _run_subagent_until_idle(
             initial_content=text_input_content(snapshot.brief),
             snapshot=snapshot,
             child_agent=child_agent,
@@ -548,7 +550,10 @@ async def _run_subagent_task(
             max_turns=max_turns,
             buffers=buffers,
         )
-        completed = await agent_subordinates.complete_subagent_task(snapshot.run_id, _final_text(result))
+        completed = await agent_subordinates.complete_subagent_task(
+            snapshot.run_id,
+            await _subagent_assistant_output(snapshot),
+        )
         if completed is not None:
             await _queue_parent_notification(completed, context)
             await _publish_task_snapshot(completed)
@@ -621,6 +626,7 @@ async def _run_subagent_turn(
         context=context,
         max_turns=max_turns,
     )
+    segment_scope = _next_subagent_segment_scope(context)
     try:
         events = (
             _iter_subagent_events_until_notification(
@@ -628,9 +634,14 @@ async def _run_subagent_turn(
                 session_id=snapshot.session_id,
                 current_agent_name=child_agent.name,
                 target_agent_instance_id=context.agent_instance_id,
+                segment_scope=segment_scope,
             )
             if preempt_on_notification
-            else iter_normalized_stream_events(stream, current_agent_name=child_agent.name)
+            else iter_normalized_stream_events(
+                stream,
+                current_agent_name=child_agent.name,
+                segment_scope=segment_scope,
+            )
         )
         async for event in events:
             track_delta(buffers, event)
@@ -659,8 +670,13 @@ async def _iter_subagent_events_until_notification(
     session_id: str,
     current_agent_name: str,
     target_agent_instance_id: str,
+    segment_scope: str,
 ):
-    events = iter_normalized_stream_events(stream, current_agent_name=current_agent_name)
+    events = iter_normalized_stream_events(
+        stream,
+        current_agent_name=current_agent_name,
+        segment_scope=segment_scope,
+    )
     event_task = asyncio.create_task(anext(events), name=f"subagent-stream-next-{target_agent_instance_id}")
     if await agent_notifications.has_pending_notification(
         session_id=session_id,
@@ -794,6 +810,16 @@ async def _subagent_has_running_background_work(session_id: str, agent_instance_
         session_id=session_id,
         parent_agent_instance_id=agent_instance_id,
     )
+
+
+def _next_subagent_segment_scope(context: AgentRuntimeContext) -> str:
+    owner = context.agent_instance_id or context.agent_code or "subagent"
+    return f"turn_{_safe_segment_part(owner)}_{uuid4().hex}"
+
+
+def _safe_segment_part(value: str) -> str:
+    normalized = "".join(ch if ch.isalnum() else "_" for ch in value.strip())
+    return normalized.strip("_") or "agent"
 
 
 async def _cancel_child_subagent_runs(session_id: str, parent_agent_instance_id: str, error: str) -> None:
@@ -973,8 +999,34 @@ def _subagent_context(
     )
 
 
-def _final_text(result: Any) -> str:
-    output = getattr(result, "final_output", None)
-    if output is None:
-        return ""
-    return output if isinstance(output, str) else str(output)
+async def _subagent_assistant_output(snapshot: AgentSubordinateTaskSnapshot) -> str:
+    async with get_async_session() as sess:
+        stored_items = await fetch_stored_items(sess, snapshot.session_id)
+
+    sections: list[str] = []
+    for stored in stored_items:
+        if (
+            stored.owner_code != snapshot.agent_code
+            or stored.nested_for != snapshot.parent_agent_code
+            or stored.nested_call_id != snapshot.nested_call_id
+        ):
+            continue
+        text = _assistant_message_text(stored.item)
+        if text:
+            sections.append(text)
+    return _truncate_subagent_result("\n\n".join(sections).strip())
+
+
+def _assistant_message_text(item: dict[str, Any]) -> str:
+    if item.get("type") == "message" and item.get("role") == "assistant":
+        return extract_message_text(item.get("content")).strip()
+    return ""
+
+
+def _truncate_subagent_result(text: str) -> str:
+    if len(text) <= _SUBAGENT_RESULT_MAX_CHARS:
+        return text
+    return (
+        text[:_SUBAGENT_RESULT_MAX_CHARS].rstrip()
+        + "\n\n[Subagent result truncated; view the session transcript for the full output.]"
+    )

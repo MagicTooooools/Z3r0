@@ -2,92 +2,44 @@ import type {
   AgentContentEvent,
   AgentInputPart,
   AgentStreamEvent,
-  SubagentTaskEvent,
-  TextCompleteEvent,
-  ThinkingCompleteEvent,
-  ToolCallEvent,
-  ToolResultEvent,
 } from "../../shared/api/types";
-import { stableJson } from "../../shared/lib/json";
+import {
+  contentSignature,
+  findToolBlockIndex,
+  hasToolCall,
+  transcriptHasEvent,
+} from "./transcriptIdentity";
+import {
+  applyEventToTranscript,
+  cloneTranscript,
+  createTranscript,
+  subagentExecutionItemFromEvent,
+} from "./transcriptReducer";
+import type {
+  AgentTranscript,
+  ChatNode,
+  ChatState,
+  ToolExecutionItem,
+} from "./transcriptTypes";
 
-export type ThinkingItem = {
-  kind: "thinking";
-  id: string;
-  segmentId: ThinkingCompleteEvent["segment_id"];
-  text: ThinkingCompleteEvent["text"];
-  complete: boolean;
-};
-
-export type TextItem = {
-  kind: "text";
-  id: string;
-  segmentId: TextCompleteEvent["segment_id"];
-  text: TextCompleteEvent["text"];
-  complete: boolean;
-};
-
-export type ToolExecutionItem = {
-  kind: "tool";
-  id: string;
-  callId: ToolCallEvent["call_id"];
-  name: ToolCallEvent["name"];
-  arguments: NonNullable<ToolCallEvent["arguments"]>;
-  output: ToolResultEvent["output"];
-  isError: ToolResultEvent["is_error"];
-  resolved: boolean;
-  nested?: NestedTranscript;
-  subagentTask?: SubagentExecutionItem;
-};
-
-export type SubagentExecutionItem = {
-  kind: "subagent";
-  id: SubagentTaskEvent["run_id"];
-  createdAt: SubagentTaskEvent["created_at"];
-  runId: SubagentTaskEvent["run_id"];
-  parentAgentCode: SubagentTaskEvent["parent_agent_code"];
-  parentAgentInstanceId: SubagentTaskEvent["parent_agent_instance_id"];
-  agentCode: SubagentTaskEvent["agent_code"];
-  nestedCallId: SubagentTaskEvent["nested_call_id"];
-  status: SubagentTaskEvent["status"];
-  result: SubagentTaskEvent["result"];
-  error: SubagentTaskEvent["error"];
-  progress: SubagentTaskEvent["progress"];
-};
-
-export type ErrorItem = { kind: "error"; id: string; message: string };
-export type ExecutionItem = ToolExecutionItem | SubagentExecutionItem;
-export type TranscriptBlock = ThinkingItem | TextItem | ExecutionItem | ErrorItem;
-
-export type AgentTranscript = {
-  createdAt: AgentContentEvent["created_at"] | "";
-  agentName: string;
-  blocks: TranscriptBlock[];
-};
-
-export type NestedTranscript = AgentTranscript;
-
-export type ChatNode =
-  | {
-      kind: "user";
-      id: string;
-      createdAt: AgentContentEvent["created_at"];
-      content: AgentInputPart[];
-      displayText: string;
-      targetAgentCode: string;
-    }
-  | ({ kind: "agent"; id: string } & AgentTranscript);
-
-export type ChatState = {
-  nodes: ChatNode[];
-  streaming: boolean;
-  pendingNested: Record<string, AgentContentEvent[]>;
-  liveFrom: number | null;
-};
+export type {
+  AgentTranscript,
+  ChatNode,
+  ChatState,
+  ErrorItem,
+  ExecutionItem,
+  NestedTranscript,
+  StreamingItem,
+  SubagentExecutionItem,
+  TextItem,
+  ThinkingItem,
+  ToolExecutionItem,
+  TranscriptBlock,
+} from "./transcriptTypes";
 
 export const initialChatState: ChatState = { nodes: [], streaming: false, pendingNested: {}, liveFrom: null };
 
 type AgentNode = Extract<ChatNode, { kind: "agent" }>;
-type StreamingItem = ThinkingItem | TextItem;
 
 function newId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -336,81 +288,6 @@ function prunePendingNested(state: ChatState): ChatState["pendingNested"] {
   return pendingNested;
 }
 
-function hasToolCall(nodes: ChatNode[], callId: string): boolean {
-  return nodes.some((node) => node.kind === "agent" && findToolBlockIndex(node.blocks, callId) !== -1);
-}
-
-function applyEventToTranscript(transcript: AgentTranscript, event: AgentContentEvent): boolean {
-  switch (event.type) {
-    case "user_message":
-    case "turn_boundary":
-      return false;
-    case "thinking_delta":
-      setAgentName(transcript, event.agent_name);
-      upsertStreamingBlock(transcript.blocks, "thinking", event.segment_id, { delta: event.delta });
-      return false;
-    case "thinking_complete":
-      setAgentName(transcript, event.agent_name);
-      upsertStreamingBlock(transcript.blocks, "thinking", event.segment_id, { text: event.text, complete: true });
-      return false;
-    case "text_delta":
-      setAgentName(transcript, event.agent_name);
-      upsertStreamingBlock(transcript.blocks, "text", event.segment_id, { delta: event.delta });
-      return false;
-    case "text_complete":
-      setAgentName(transcript, event.agent_name);
-      upsertStreamingBlock(transcript.blocks, "text", event.segment_id, { text: event.text, complete: true });
-      return false;
-    case "tool_call":
-      setAgentName(transcript, event.agent_name);
-      upsertToolCall(transcript.blocks, event.call_id, event.name, event.arguments ?? {});
-      return false;
-    case "tool_result":
-      setAgentName(transcript, event.agent_name);
-      upsertToolResult(transcript.blocks, event.call_id, event.output, event.is_error);
-      return false;
-    case "subagent_task":
-      setAgentName(transcript, event.agent_name);
-      upsertSubagentTask(transcript.blocks, subagentExecutionItemFromEvent(event));
-      return false;
-    case "error":
-      setAgentName(transcript, event.agent_name);
-      transcript.blocks.push({ kind: "error", id: newId(), message: event.message || "agent run failed" });
-      return true;
-  }
-}
-
-function transcriptHasEvent(transcript: AgentTranscript, event: AgentContentEvent): boolean {
-  switch (event.type) {
-    case "thinking_delta":
-      return hasCoveredCompletedText(transcript.blocks, "thinking", event.delta);
-    case "thinking_complete":
-      return hasCoveredCompletedText(transcript.blocks, "thinking", event.text);
-    case "text_delta":
-      return hasCoveredCompletedText(transcript.blocks, "text", event.delta);
-    case "text_complete":
-      return hasCoveredCompletedText(transcript.blocks, "text", event.text);
-    case "tool_call":
-      return findToolBlockIndex(transcript.blocks, event.call_id, event.name, event.arguments ?? {}) !== -1;
-    case "tool_result": {
-      const index = findToolBlockIndex(transcript.blocks, event.call_id);
-      const block = index === -1 ? null : transcript.blocks[index];
-      return Boolean(block?.kind === "tool" && block.resolved && block.output === event.output && block.isError === event.is_error);
-    }
-    case "subagent_task":
-      return transcript.blocks.some((block) => (
-        block.kind === "subagent"
-        && block.runId === event.run_id
-        && block.status === event.status
-        && block.progress === event.progress
-        && block.result === event.result
-        && block.error === event.error
-      ));
-    default:
-      return false;
-  }
-}
-
 function stateHasContentEvent(state: ChatState, event: AgentContentEvent): boolean {
   if (event.type === "user_message") {
     const signature = contentSignature(event.content);
@@ -449,146 +326,6 @@ function createAgentNode(createdAt: AgentContentEvent["created_at"]): AgentNode 
   return { kind: "agent", id: newId(), ...createTranscript(createdAt) };
 }
 
-function createTranscript(createdAt: AgentContentEvent["created_at"] | "" = ""): AgentTranscript {
-  return { createdAt, agentName: "", blocks: [] };
-}
-
 function cloneAgentNode(node: AgentNode): AgentNode {
   return { ...node, ...cloneTranscript(node) };
-}
-
-function cloneTranscript(transcript: AgentTranscript): AgentTranscript {
-  return { createdAt: transcript.createdAt, agentName: transcript.agentName, blocks: transcript.blocks.slice() };
-}
-
-function setAgentName(transcript: AgentTranscript, name: string) {
-  if (name && !transcript.agentName) transcript.agentName = name;
-}
-
-function upsertStreamingBlock(
-  blocks: TranscriptBlock[],
-  kind: StreamingItem["kind"],
-  segmentId: string,
-  patch: { delta?: string; text?: string; complete?: boolean },
-) {
-  const index = findStreamingBlockIndex(blocks, kind, segmentId);
-  if (index === -1) {
-    const text = patch.text ?? patch.delta ?? "";
-    if (hasCoveredCompletedText(blocks, kind, text)) return;
-    blocks.push({ kind, id: `${kind}:${segmentId}`, segmentId, text, complete: Boolean(patch.complete) } as StreamingItem);
-    return;
-  }
-  const existing = blocks[index] as StreamingItem;
-  if (patch.delta !== undefined) {
-    if (existing.complete) return;
-    if (patch.delta === existing.text || existing.text.endsWith(patch.delta)) return;
-    if (patch.delta.startsWith(existing.text)) {
-      blocks[index] = { ...existing, text: patch.delta };
-      return;
-    }
-  }
-  if (patch.text !== undefined) {
-    const duplicateIndex = findCompletedTextIndex(blocks, kind, patch.text, index);
-    if (duplicateIndex !== -1) {
-      blocks.splice(index, 1);
-      return;
-    }
-    if (existing.complete && existing.text === patch.text) return;
-  }
-  blocks[index] = {
-    ...existing,
-    text: patch.text ?? existing.text + (patch.delta ?? ""),
-    complete: patch.complete ?? existing.complete,
-  };
-}
-
-function hasCoveredCompletedText(blocks: TranscriptBlock[], kind: StreamingItem["kind"], text: string): boolean {
-  if (!text) return false;
-  return blocks.some((block) => (
-    block.kind === kind && block.complete && (block.text === text || block.text.startsWith(text))
-  ));
-}
-
-function findCompletedTextIndex(blocks: TranscriptBlock[], kind: StreamingItem["kind"], text: string, exceptIndex = -1): number {
-  if (!text) return -1;
-  return blocks.findIndex((block, index) => (
-    index !== exceptIndex && block.kind === kind && block.complete && block.text === text
-  ));
-}
-
-function findStreamingBlockIndex(blocks: TranscriptBlock[], kind: StreamingItem["kind"], segmentId: string): number {
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
-    if (block.kind === kind && block.segmentId === segmentId) return index;
-  }
-  return -1;
-}
-
-function upsertToolCall(blocks: TranscriptBlock[], callId: string, name: string, argumentsValue: Record<string, unknown>) {
-  const index = findToolBlockIndex(blocks, callId, name, argumentsValue);
-  if (index === -1) {
-    blocks.push({ kind: "tool", id: callId || newId(), callId, name, arguments: argumentsValue, output: "", isError: false, resolved: false });
-    return;
-  }
-  const existing = blocks[index] as ToolExecutionItem;
-  blocks[index] = { ...existing, callId: existing.callId || callId, name, arguments: argumentsValue };
-}
-
-function upsertToolResult(blocks: TranscriptBlock[], callId: string, output: string, isError: boolean) {
-  const index = findToolBlockIndex(blocks, callId);
-  if (index === -1) {
-    blocks.push({ kind: "tool", id: callId || newId(), callId, name: "", arguments: {}, output, isError, resolved: true });
-    return;
-  }
-  const existing = blocks[index] as ToolExecutionItem;
-  blocks[index] = { ...existing, output, isError, resolved: true };
-}
-
-function upsertSubagentTask(blocks: TranscriptBlock[], nextItem: SubagentExecutionItem) {
-  const index = blocks.findIndex((block) => block.kind === "subagent" && block.runId === nextItem.runId);
-  if (index === -1) {
-    blocks.push(nextItem);
-    return;
-  }
-  blocks[index] = nextItem;
-}
-
-function subagentExecutionItemFromEvent(event: SubagentTaskEvent): SubagentExecutionItem {
-  return {
-    kind: "subagent",
-    id: event.run_id,
-    createdAt: event.created_at,
-    runId: event.run_id,
-    parentAgentCode: event.parent_agent_code,
-    parentAgentInstanceId: event.parent_agent_instance_id,
-    agentCode: event.agent_code,
-    nestedCallId: event.nested_call_id,
-    status: event.status,
-    result: event.result,
-    error: event.error,
-    progress: event.progress,
-  };
-}
-
-function findToolBlockIndex(
-  blocks: TranscriptBlock[],
-  callId: string,
-  name = "",
-  argumentsValue: Record<string, unknown> | null = null,
-): number {
-  const byCallId = blocks.findIndex((block) => block.kind === "tool" && block.callId === callId);
-  if (byCallId !== -1 || !name || argumentsValue === null) return byCallId;
-  const signature = toolSignature(name, argumentsValue);
-  return blocks.findIndex((block) => block.kind === "tool" && toolSignature(block.name, block.arguments) === signature);
-}
-
-function contentSignature(content: AgentInputPart[]): string {
-  return content.map((part) => {
-    if (part.type === "text") return `text:${part.text}`;
-    return `image:${part.media_type}:${part.data.length}:${part.data.slice(0, 64)}`;
-  }).join("\n");
-}
-
-function toolSignature(name: string, argumentsValue: Record<string, unknown>): string {
-  return `${name}\u001f${stableJson(argumentsValue)}`;
 }
