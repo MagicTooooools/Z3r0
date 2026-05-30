@@ -2,8 +2,7 @@
 
 import asyncio
 import time
-from uuid import uuid4
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -14,24 +13,24 @@ from config import get_config
 from core.agent.registry import AgentRegistry, AgentToolSnapshot, SessionAgentGraph
 from core.runtime import put_nowait_drop_oldest
 from core.runtime.context import AgentRuntimeContext, main_agent_instance_id
-from core.runtime.input_items import build_user_message_item, display_text_from_content, text_input_content
+from core.runtime.input_items import build_user_message_item, display_text_from_content
 from core.runtime.live_projection import LiveEventProjection
 from core.runtime.partial_context import DeltaBuffer, flush_partial_context, track_delta
-from core.runtime.streaming import StreamIdleTimeout, iter_normalized_stream_events
+from core.runtime.streaming import StreamIdleTimeout, next_segment_scope
+from core.task_runtime import InterruptSignal, iter_interruptible_events, run_until_idle
 from core.conversation.store import Z3r0Session
 from core.delegation.subagents import cancel_sandbox_subagent_runs, cancel_session_subagent_runs
 from core.sandbox.command_jobs import cancel_sandbox_async_commands, cancel_session_async_sandbox_commands
-from core.delegation.notifications import notification_prompt
 from database import get_engine
 from logger import get_logger
 from schema.agent.events import (
     AgentEventSchema,
+    AgentInputPart,
     DoneEvent,
     ErrorEvent,
     RunStateEvent,
     UserMessageEvent,
 )
-from schema.agent.events import AgentInputPart
 from schema.agent.notifications import AgentNotificationSnapshot
 from service.agent import notifications as agent_notifications
 
@@ -66,9 +65,8 @@ class AgentSession:
         include: Callable[[AgentEventSchema], bool] | None = None,
     ) -> asyncio.Queue[AgentEventSchema]:
         queue: asyncio.Queue[AgentEventSchema] = asyncio.Queue(maxsize=_SUBSCRIBER_QUEUE_SIZE)
-        if self.is_running():
-            for event in self._live_projection.snapshot(include):
-                put_nowait_drop_oldest(queue, event)
+        for event in self._live_projection.snapshot(include):
+            put_nowait_drop_oldest(queue, event)
         self._subscribers.add(queue)
         return queue
 
@@ -85,23 +83,25 @@ class AgentSession:
                 sandbox_container_id=context.sandbox_container_id,
                 sandbox_container_generation=context.sandbox_container_generation,
             )
-            self._begin_live_projection()
+            self._publish_run_state(True)
             task = asyncio.create_task(
                 self._run_background_turn(content, agent_code, context),
                 name=f"agent-turn-{self.session_id}",
             )
             self._current_task = task
 
-    async def start_notification_drain(
-        self,
-        context: AgentRuntimeContext,
-        *,
-        target_agent_instance_id: str | None = None,
-    ) -> bool:
+    async def start_notification_recovery(self, context: AgentRuntimeContext) -> bool:
+        """Start processing pending notifications after a server restart.
+
+        Unlike ``start_turn``, this does not run an initial model turn; it
+        goes directly to the notification consumption loop via ``run_until_idle``.
+        """
         async with self._start_lock:
             if self.is_running():
                 return False
-            if not await self.has_pending_notification(target_agent_instance_id=target_agent_instance_id):
+            if not await agent_notifications.has_pending_main_agent_notification(
+                session_id=self.session_id,
+            ):
                 return False
             await _mark_session_running(
                 self.session_id,
@@ -109,61 +109,57 @@ class AgentSession:
                 sandbox_container_id=context.sandbox_container_id,
                 sandbox_container_generation=context.sandbox_container_generation,
             )
-            self._begin_live_projection()
+            self._publish_run_state(True)
             task = asyncio.create_task(
-                self._run_background_notifications(context, target_agent_instance_id=target_agent_instance_id),
-                name=f"agent-notifications-{self.session_id}",
+                self._run_background_recovery(context),
+                name=f"agent-recovery-{self.session_id}",
             )
             self._current_task = task
             return True
 
-    async def _claim_and_run_notification(
-        self,
-        context: AgentRuntimeContext,
-        *,
-        target_agent_instance_id: str | None = None,
-    ) -> AsyncIterator[AgentEventSchema]:
-        notification = await agent_notifications.claim_next_pending_notification(
-            session_id=self.session_id,
-            target_agent_instance_id=target_agent_instance_id,
-        )
-        if notification is None:
-            return
-        agent_code = notification.target_agent_code
-        notification_context = _context_for_notification(context, notification)
-        saw_error = False
-        try:
-            async for event in self._run_turn(
-                text_input_content(notification_prompt(notification)),
-                agent_code,
-                notification_context,
-                emit_user_message=False,
-            ):
-                if isinstance(event, ErrorEvent):
-                    saw_error = True
-                yield _tag_notification_event(event, notification_context)
-        except asyncio.CancelledError:
-            await agent_notifications.release_notification(notification.id)
-            raise
-        except GeneratorExit:
-            await agent_notifications.release_notification(notification.id)
-            raise
-        except Exception as exc:
-            await agent_notifications.fail_notification(notification.id, str(exc) or "notification handling failed")
-            raise
-        else:
-            if saw_error:
-                await agent_notifications.fail_notification(notification.id, "notification handling produced an error")
-            else:
-                await agent_notifications.complete_notification(notification.id)
+    async def _run_background_recovery(self, context: AgentRuntimeContext) -> None:
+        async with self._turn_lock:
+            task = asyncio.current_task()
+            self._current_task = task
+            try:
+                context.agent_code = context.agent_code or ""
+                if not context.agent_instance_id:
+                    context.agent_instance_id = main_agent_instance_id(
+                        context.session_id, context.user.id, context.agent_code,
+                    )
 
-    async def has_pending_notification(self, *, target_agent_instance_id: str | None = None) -> bool:
-        if target_agent_instance_id is None:
-            return await agent_notifications.has_pending_main_agent_notification(session_id=self.session_id)
-        return await agent_notifications.has_pending_notification(
-            session_id=self.session_id,
-            target_agent_instance_id=target_agent_instance_id,
-        )
+                async def _run_turn(
+                    turn_content: list[AgentInputPart],
+                    notification: AgentNotificationSnapshot | None,
+                ) -> Any:
+                    return await self._execute_turn(
+                        turn_content, context.agent_code, context,
+                        notification=notification,
+                        emit_user_message=False,
+                    )
+
+                async def _has_background() -> bool:
+                    return await _has_active_session_runtime(self.session_id)
+
+                await run_until_idle(
+                    session_id=self.session_id,
+                    agent_instance_id=context.agent_instance_id,
+                    initial_content=None,
+                    run_turn=_run_turn,
+                    has_background_work=_has_background,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("agent notification recovery failed session=%s", self.session_id)
+                await _force_mark_session_stopped(self.session_id, error=str(exc) or "notification recovery failed")
+                await self._publish(ErrorEvent(created_at=datetime.now(), message=str(exc) or "notification recovery failed"))
+                await self._publish(DoneEvent(created_at=datetime.now()))
+            finally:
+                await _mark_session_stopped(self.session_id)
+                if self._current_task is task:
+                    self._current_task = None
+                await self._publish_idle_if_inactive()
 
     async def interrupt(self) -> bool:
         task = self._current_task
@@ -196,7 +192,7 @@ class AgentSession:
             "Agent session tasks canceled by user.",
         )
         await _force_mark_session_stopped(self.session_id)
-        await self._publish_run_state(False)
+        self._publish_run_state(False)
         return canceled_subagents or canceled_commands or bool(canceled_notifications)
 
     async def shutdown(self) -> None:
@@ -214,125 +210,103 @@ class AgentSession:
         self._tool_snapshot = None
         await self._dispose_agent_graph()
 
-    async def _run_turn(
+    async def _execute_turn(
         self,
         content: list[AgentInputPart],
         agent_code: str,
         context: AgentRuntimeContext,
         *,
+        notification: AgentNotificationSnapshot | None = None,
         emit_user_message: bool = True,
-    ) -> AsyncIterator[AgentEventSchema]:
-        graph = await self._ensure_agent_graph(agent_code, context)
-        context.agent_code = agent_code
-        if not context.agent_instance_id:
-            context.agent_instance_id = main_agent_instance_id(context.session_id, context.user.id, agent_code)
-        agent = graph.get(agent_code)
-        display_text = display_text_from_content(content)
-        turn_scope = _next_turn_scope(context)
+    ) -> Any:
+        """Run a single agent turn, publishing events directly.
+
+        Returns the SDK stream result on normal completion.
+        Raises ``InterruptSignal`` when preempted by a pending notification.
+        """
+        if notification is not None:
+            turn_context = _context_for_notification(context, notification)
+            turn_agent_code = notification.target_agent_code
+        else:
+            turn_context = context
+            turn_agent_code = agent_code
+
+        graph = await self._ensure_agent_graph(turn_agent_code, turn_context)
+        agent = graph.get(turn_agent_code)
+        turn_scope = _next_turn_scope(turn_context)
+
         if emit_user_message:
-            yield UserMessageEvent(
+            await self._publish(UserMessageEvent(
                 created_at=datetime.now(),
                 content=content,
-                display_text=display_text,
-                target_agent_code=agent_code,
-            )
+                display_text=display_text_from_content(content),
+                target_agent_code=turn_agent_code,
+            ))
 
         memory_session = Z3r0Session(
             session_id=self.session_id,
             engine=get_engine(),
-            viewing_agent_code=agent_code,
+            viewing_agent_code=turn_agent_code,
             agent_code_to_name=graph.code_to_name(),
-            nested_for_agent_code=context.nested_for_agent_code,
-            nested_call_id=context.nested_call_id,
+            nested_for_agent_code=turn_context.nested_for_agent_code,
+            nested_call_id=turn_context.nested_call_id,
         )
-        # SDK stream events converge into one queue for this turn
-        queue: asyncio.Queue[AgentEventSchema | None] = asyncio.Queue()
 
-        result_holder: dict[str, Any] = {"result": None, "flush_partial": False}
+        user_input = [build_user_message_item(content)]
+        if emit_user_message:
+            agent_config = get_config().agents.get(turn_agent_code)
+            if agent_config is not None:
+                await memory_session.compact_if_needed(
+                    agent_config=agent_config,
+                    incoming_items=user_input,
+                )
+
+        stream = Runner.run_streamed(
+            starting_agent=agent,
+            session=memory_session,
+            input=user_input,
+            context=turn_context,
+            max_turns=get_config().agent_runtime.main_max_turns,
+        )
+
+        def _tag(event: AgentEventSchema) -> AgentEventSchema:
+            return _tag_notification_event(event, turn_context) if notification else event
+
         buffers: dict[str, DeltaBuffer] = {}
-
-        async def _consume_main() -> None:
-            try:
-                max_turns = get_config().agent_runtime.main_max_turns
-                user_input = [build_user_message_item(content)]
-                agent_config = get_config().agents.get(agent_code)
-                if agent_config is not None:
-                    await memory_session.compact_if_needed(
-                        agent_config=agent_config,
-                        incoming_items=user_input,
-                    )
-                stream = Runner.run_streamed(
-                    starting_agent=agent,
-                    session=memory_session,
-                    input=user_input,
-                    context=context,
-                    max_turns=max_turns,
-                )
-                result_holder["result"] = stream
-                async for event in iter_normalized_stream_events(
-                    stream,
-                    current_agent_name=agent.name,
-                    segment_scope=turn_scope,
-                ):
-                    queue.put_nowait(event)
-            except asyncio.CancelledError:
-                raise
-            except StreamIdleTimeout as exc:
-                result_holder["flush_partial"] = True
-                message = str(exc)
-                logger.warning(
-                    "agent stream idle timeout session=%s agent=%s phase=%s timeout=%d",
-                    self.session_id,
-                    agent_code,
-                    exc.phase,
-                    exc.timeout_seconds,
-                )
-                queue.put_nowait(ErrorEvent(created_at=datetime.now(), agent_name=agent.name, message=message))
-            except Exception as exc:
-                result_holder["flush_partial"] = True
-                logger.exception("agent stream failed: %s", exc)
-                queue.put_nowait(ErrorEvent(created_at=datetime.now(), agent_name=agent.name, message=str(exc)))
-            finally:
-                queue.put_nowait(None)
-
-        main_task = asyncio.create_task(_consume_main(), name="agent-main-stream")
-
-        flush_partial = False
-        stream_finished = False
+        stream_error: ErrorEvent | None = None
         try:
-            while True:
-                event = await queue.get()
-                if event is None:
-                    stream_finished = True
-                    break
+            async for event in iter_interruptible_events(
+                stream,
+                session_id=self.session_id,
+                agent_instance_id=turn_context.agent_instance_id,
+                current_agent_name=agent.name,
+                segment_scope=turn_scope,
+            ):
                 track_delta(buffers, event)
-                yield event
+                await self._publish(_tag(event))
             buffers.clear()
-            if not main_task.done():
-                try:
-                    await main_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-            yield DoneEvent(created_at=datetime.now(), agent_name=agent.name)
-        except asyncio.CancelledError:
-            flush_partial = True
-            if not main_task.done():
-                main_task.cancel()
+        except InterruptSignal:
+            await flush_partial_context(stream, memory_session, buffers, log_label="agent")
             raise
-        finally:
-            if not stream_finished and not main_task.done():
-                main_task.cancel()
-                try:
-                    await main_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-            if flush_partial or result_holder["flush_partial"]:
-                await flush_partial_context(
-                    result_holder["result"],
-                    memory_session,
-                    buffers,
-                    log_label="agent",
-                )
+        except asyncio.CancelledError:
+            await flush_partial_context(stream, memory_session, buffers, log_label="agent")
+            raise
+        except StreamIdleTimeout as exc:
+            await flush_partial_context(stream, memory_session, buffers, log_label="agent")
+            logger.warning(
+                "agent stream idle timeout session=%s agent=%s phase=%s timeout=%d",
+                self.session_id, turn_agent_code, exc.phase, exc.timeout_seconds,
+            )
+            stream_error = ErrorEvent(created_at=datetime.now(), agent_name=agent.name, message=str(exc))
+        except Exception as exc:
+            await flush_partial_context(stream, memory_session, buffers, log_label="agent")
+            logger.exception("agent stream failed session=%s: %s", self.session_id, exc)
+            stream_error = ErrorEvent(created_at=datetime.now(), agent_name=agent.name, message=str(exc))
+
+        if stream_error is not None:
+            await self._publish(_tag(stream_error))
+        await self._publish(_tag(DoneEvent(created_at=datetime.now(), agent_name=agent.name)))
+        return stream
 
     async def _ensure_agent_graph(self, agent_code: str, context: AgentRuntimeContext) -> SessionAgentGraph:
         tool_snapshot = AgentToolSnapshot.from_context(context)
@@ -368,18 +342,42 @@ class AgentSession:
         agent_code: str,
         context: AgentRuntimeContext,
     ) -> None:
-        should_drain_notifications = False
         async with self._turn_lock:
             task = asyncio.current_task()
             self._current_task = task
-            saw_done = False
             canceled = False
             try:
-                async for event in self._run_turn(content, agent_code, context):
-                    if isinstance(event, DoneEvent):
-                        saw_done = True
-                    await self._publish(event)
-                should_drain_notifications = True
+                context.agent_code = agent_code
+                if not context.agent_instance_id:
+                    context.agent_instance_id = main_agent_instance_id(
+                        context.session_id, context.user.id, agent_code,
+                    )
+
+                is_initial = True
+
+                async def _run_turn(
+                    turn_content: list[AgentInputPart],
+                    notification: AgentNotificationSnapshot | None,
+                ) -> Any:
+                    nonlocal is_initial
+                    emit = is_initial and notification is None
+                    is_initial = False
+                    return await self._execute_turn(
+                        turn_content, agent_code, context,
+                        notification=notification,
+                        emit_user_message=emit,
+                    )
+
+                async def _has_background() -> bool:
+                    return await _has_active_session_runtime(self.session_id)
+
+                await run_until_idle(
+                    session_id=self.session_id,
+                    agent_instance_id=context.agent_instance_id,
+                    initial_content=content,
+                    run_turn=_run_turn,
+                    has_background_work=_has_background,
+                )
             except asyncio.CancelledError:
                 canceled = True
                 raise
@@ -387,64 +385,16 @@ class AgentSession:
                 logger.exception("agent background turn failed session=%s", self.session_id)
                 await _force_mark_session_stopped(self.session_id, error=str(exc) or "agent turn failed")
                 await self._publish(ErrorEvent(created_at=datetime.now(), message=str(exc) or "agent turn failed"))
+                await self._publish(DoneEvent(created_at=datetime.now()))
             finally:
-                if not saw_done and not canceled:
-                    await self._publish(DoneEvent(created_at=datetime.now()))
-                if saw_done:
+                if not canceled:
                     await _mark_session_stopped(self.session_id)
                 if self._current_task is task:
                     self._current_task = None
                 if not canceled:
                     await self._publish_idle_if_inactive()
-        if should_drain_notifications:
-            await self.start_notification_drain(context)
 
-    async def _run_background_notifications(
-        self,
-        context: AgentRuntimeContext,
-        *,
-        target_agent_instance_id: str | None = None,
-    ) -> None:
-        async with self._turn_lock:
-            task = asyncio.current_task()
-            self._current_task = task
-            failed = False
-            try:
-                while True:
-                    if not await self.has_pending_notification(target_agent_instance_id=target_agent_instance_id):
-                        break
-                    saw_done = False
-                    async for event in self._claim_and_run_notification(
-                        context,
-                        target_agent_instance_id=target_agent_instance_id,
-                    ):
-                        if isinstance(event, DoneEvent):
-                            saw_done = True
-                        await self._publish(event)
-                    if not saw_done:
-                        await self._publish(DoneEvent(created_at=datetime.now()))
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                failed = True
-                logger.exception("agent notification drain failed session=%s", self.session_id)
-                await _force_mark_session_stopped(self.session_id, error="agent notification handling failed")
-                await self._publish(ErrorEvent(created_at=datetime.now(), message="agent notification handling failed"))
-                await self._publish(DoneEvent(created_at=datetime.now()))
-            finally:
-                if not failed:
-                    await _mark_session_stopped(self.session_id)
-                if self._current_task is task:
-                    self._current_task = None
-                await self._publish_idle_if_inactive()
-
-    def _begin_live_projection(self) -> None:
-        event = RunStateEvent(created_at=datetime.now(), running=True)
-        self._live_projection.reset(event)
-        for queue in tuple(self._subscribers):
-            put_nowait_drop_oldest(queue, event)
-
-    async def _publish_run_state(self, running: bool) -> None:
+    def _publish_run_state(self, running: bool) -> None:
         event = RunStateEvent(created_at=datetime.now(), running=running)
         if running:
             self._live_projection.reset(event)
@@ -458,9 +408,18 @@ class AgentSession:
     async def _publish_idle_if_inactive(self) -> None:
         if self.is_running() or await _has_active_session_runtime(self.session_id):
             return
-        await self._publish_run_state(False)
+        self._publish_run_state(False)
 
     async def _publish(self, event: AgentEventSchema) -> None:
+        self.publish_external(event)
+
+    def publish_external(self, event: AgentEventSchema) -> None:
+        """Inject an event into the session's unified event bus.
+
+        Used internally by ``_publish`` and externally via ``AgentSessionPool.publish``.
+        Synchronous: projection.apply and put_nowait are non-blocking, and
+        asyncio's single-threaded model guarantees atomicity.
+        """
         self._live_projection.apply(event)
         for queue in tuple(self._subscribers):
             put_nowait_drop_oldest(queue, event)
@@ -554,15 +513,30 @@ class AgentSessionPool:
         session = await self.get_or_create(session_id)
         return session, await session.subscribe(include)
 
-    async def drain_notifications(
-        self,
-        session_id: str,
-        context: AgentRuntimeContext,
-        *,
-        target_agent_instance_id: str | None = None,
-    ) -> bool:
-        session = await self.get_or_create(session_id)
-        return await session.start_notification_drain(context, target_agent_instance_id=target_agent_instance_id)
+    def publish(self, session_id: str, event: AgentEventSchema) -> None:
+        """Route an external event to the session's unified event bus.
+
+        Lock-free: dict.get and attribute assignment are atomic in asyncio's
+        single-threaded model.  If no pool entry exists (no active subscriber),
+        the event is silently dropped — it lives in the DB via the caller's
+        Z3r0Session persistence.
+        """
+        entry = self._pool.get(session_id)
+        if entry is None:
+            return
+        entry.last_used_at = time.monotonic()
+        entry.session.publish_external(event)
+
+    async def notify_idle(self, session_id: str) -> None:
+        """Signal that external work (e.g., sub-agent tasks) may have finished.
+
+        Delegates to ``AgentSession._publish_idle_if_inactive`` which checks
+        ``is_running()`` and ``has_active_session_runtime()`` before publishing
+        ``RunStateEvent(running=False)`` and resetting the projection.
+        """
+        entry = self._pool.get(session_id)
+        if entry is not None:
+            await entry.session._publish_idle_if_inactive()
 
     async def cancel_all(self, session_id: str) -> bool:
         async with self._lock:
@@ -705,12 +679,7 @@ def _next_turn_scope(context: AgentRuntimeContext) -> str:
         context.user.id,
         context.agent_code,
     )
-    return f"turn_{_safe_segment_part(owner)}_{uuid4().hex}"
-
-
-def _safe_segment_part(value: str) -> str:
-    normalized = "".join(ch if ch.isalnum() else "_" for ch in value.strip())
-    return normalized.strip("_") or "agent"
+    return next_segment_scope(owner)
 
 
 async def _mark_session_running(

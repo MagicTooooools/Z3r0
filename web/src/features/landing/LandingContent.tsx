@@ -88,11 +88,11 @@ const architectureNodes: ArchitectureNode[] = [
     id: "runtime",
     label: "Agent Runtime",
     role: "Orchestration Layer",
-    detail: "The runtime coordinates session lifecycle, context projection, event normalization, cancellation, and compaction.",
+    detail: "The runtime coordinates session lifecycle, interrupt-driven task execution, context projection, event normalization, and compaction.",
     points: [
       "Creates or resumes sessions through AgentSessionPool and persists turn state.",
-      "Projects shared history into role-specific views before model execution.",
-      "Normalizes SDK events into stable application events and handles interruption or cleanup.",
+      "Uses run_until_idle and iter_interruptible_events to race SDK streams against notification signals, raising InterruptSignal with CPU-interrupt-style atomicity that defers preemption until pending tool calls complete.",
+      "Projects shared history into role-specific views and normalizes SDK events into stable application events.",
     ],
     icon: Workflow,
   },
@@ -258,8 +258,9 @@ const runtimeSteps = [
 ];
 
 const highlights = [
+  ["Interrupt-driven Task Runtime", "A unified execution loop races SDK streams against notifications, preempting turns with CPU-interrupt-style atomicity while preserving tool-call safety."],
   ["Session-level Agent Graph", "Roles, tools, knowledge, and subagents are bound dynamically for each assessment session."],
-  ["Persistent Delegation Jobs", "Specialist work can run in the background, recover from stale state, and notify the coordinator."],
+  ["Persistent Delegation Jobs", "Specialist work runs via the same executor, recovers from stale state, and signals the coordinator for immediate preemptive resume."],
   ["Viewer-specific Projection", "Agents share persisted history while receiving context scoped to their responsibility."],
   ["Long-context Compaction", "Earlier history is summarized while recent context and durable facts remain available."],
   ["Stable Streaming Contract", "Frontend event schemas stay independent from model SDK internals."],

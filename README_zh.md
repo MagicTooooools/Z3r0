@@ -102,23 +102,32 @@ sequenceDiagram
   participant U as User
   participant W as WebSocket
   participant P as AgentSessionPool
-  participant R as AgentRuntime
+  participant S as AgentSession
+  participant TR as TaskRuntime
   participant A as Agent
   participant DB as PostgreSQL
 
   U->>W: send(text, agent_code, sandbox_id)
   W->>P: get_or_create(session_id)
-  P->>R: start_turn()
-  R->>DB: load projected history
-  R->>A: Runner.run_streamed()
-  A-->>R: SDK stream events
-  R-->>W: normalized events
-  R->>DB: persist messages + metadata
+  P->>S: start_turn(content)
+  S->>TR: run_until_idle(initial_content)
+  TR->>DB: load projected history
+  TR->>A: Runner.run_streamed()
+  A-->>TR: iter_interruptible_events()
+  TR-->>S: normalized events
+  S-->>W: publish to subscribers
+  TR->>DB: persist messages + metadata
   W-->>U: thinking / text / tool / done
+
+  Note over TR,A: 通知到达，触发中断
+  TR->>TR: InterruptSignal（工具执行中则延迟）
+  TR->>DB: flush_partial_context
+  TR->>TR: 领取通知 → 新 turn
 ```
 
 关键运行边界：
 
+- **中断驱动的任务运行时**：`run_until_idle` 管理 Agent turn 的完整生命周期；`iter_interruptible_events` 将 SDK 事件流与通知信号竞赛，在安全点（待处理工具调用完成后）抛出 `InterruptSignal`，参考 CPU 中断屏蔽机制保证同步工具的原子性。
 - **事件归一化**：模型和 Agent SDK 的原始事件被转换为稳定的 `thinking_delta`、`text_delta`、`tool_call`、`tool_result`、`subagent_task` 等前端事件。
 - **会话池**：`AgentSessionPool` 维护活跃会话，支持中断、取消、空闲回收和工具绑定失效。
 - **历史投影**：`Z3r0Session` 在 SDK 消息外补充 owner、nested call 等元数据，使不同 Agent 获得适合自身角色的共享上下文视图。
@@ -132,19 +141,19 @@ sequenceDiagram
   participant D as Delegation Tools
   participant SJ as Subagent Runtime
   participant Child as Specialist Agent
-  participant N as Notification Queue
+  participant N as Notification Signal
 
   CSO->>D: start_subagent_task(agent_code, brief)
   D->>SJ: create persistent job
-  SJ-->>CSO: run_id
-  SJ->>Child: run brief in background
+  SJ-->>CSO: run_id（CSO 结束当前 turn）
+  SJ->>Child: run_until_idle(brief)
   Child-->>SJ: stream progress / final output
-  SJ->>N: enqueue completion notification
-  N->>CSO: drain notification
+  SJ->>N: signal_target_notifications(parent)
+  N-->>CSO: InterruptSignal → 恢复 turn
   CSO-->>CSO: integrate result
 ```
 
-专业 Agent 可以作为持久化后台任务运行。任务状态、进度、结果和错误会写入 PostgreSQL 并实时推送到前端；当委派任务进入终态后，主控 Agent 会收到运行时通知，并将结果纳入主评估流程。
+专业 Agent 通过统一的 `run_until_idle` 执行器作为持久化后台任务运行。任务状态、进度、结果和错误会写入 PostgreSQL 并实时推送到前端。当委派任务进入终态后，运行时信号主控 Agent 的通知通道；主控 Agent 的 `iter_interruptible_events` 抛出 `InterruptSignal` 抢占当前 turn（或 `run_until_idle` 从空闲等待中唤醒），主控 Agent 将结果纳入主评估流程。
 
 ## 沙箱工具
 
@@ -170,8 +179,9 @@ flowchart LR
 
 ## 技术特性
 
+- **中断驱动的任务运行时**：`run_until_idle` 为主/子 Agent 提供统一的执行循环；`iter_interruptible_events` 将 SDK 事件流与通知信号竞赛，以 CPU 中断屏蔽式的原子性在待处理工具调用完成后抛出 `InterruptSignal`，实现抢占式通知处理。
 - **会话级 Agent Graph**：角色配置、工具、知识库和子 Agent 按会话状态动态绑定。
-- **持久化委派任务**：子 Agent 后台运行、可取消、可从陈旧运行状态恢复，并在完成后通知主控 Agent。
+- **持久化委派任务**：子 Agent 通过同一 `run_until_idle` 执行器后台运行、可取消、可从陈旧状态恢复，并在完成后信号主控 Agent 立即恢复处理。
 - **多视角上下文投影**：不同 Agent 共享同一份持久化历史，但只接收符合自身角色的上下文视图，降低工具私有信息互相污染的风险。
 - **长上下文压缩**：基于模型窗口生成摘要，保留长周期复核中的关键事实和近期状态。
 - **稳定流式协议**：前端与模型 SDK 解耦，只消费应用级事件模型。
@@ -180,7 +190,7 @@ flowchart LR
 ## 代码结构
 
 ```text
-core/        Agent 规格、运行时、委派、上下文、工具
+core/        Agent 规格、运行时、任务运行时、委派、上下文、工具
 service/     业务服务：Agent、沙箱、用户、工作项目
 router/      FastAPI 路由定义
 handler/     HTTP/WebSocket 请求处理

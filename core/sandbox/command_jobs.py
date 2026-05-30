@@ -7,12 +7,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from core.runtime.context import AgentRuntimeContext
-from core.runtime.notification_dispatch import (
-    drain_main_agent_notifications_from_session,
-    is_main_agent_instance,
-    signal_target_notifications,
-)
+from core.runtime.notification_dispatch import signal_target_notifications
+from core.sandbox.command_output import COMMAND_TIMEOUT_ERROR
 from logger import get_logger
+from schema.sandbox.async_jobs import SandboxAsyncJobSnapshot
 from service.agent import notifications as agent_notifications
 from service.sandbox import async_jobs as sandbox_async_jobs
 from service.sandbox.commands import SandboxContainerCommandTimeoutError, execute_sandbox_container_command
@@ -20,7 +18,6 @@ from service.sandbox.commands import SandboxContainerCommandTimeoutError, execut
 
 logger = get_logger(__name__)
 _OUTPUT_STAT_TIMEOUT_SECONDS = 30
-_COMMAND_TIMEOUT_ERROR = "Command execution timed out."
 
 
 @dataclass
@@ -192,7 +189,7 @@ async def _run_async_sandbox_command(
         output_bytes, output_lines = await _stat_output_file(context.sandbox_container_id, stat_command)
         snapshot = await sandbox_async_jobs.fail_async_job(
             run_id,
-            _COMMAND_TIMEOUT_ERROR,
+            COMMAND_TIMEOUT_ERROR,
             output_bytes=output_bytes,
             output_lines=output_lines,
         )
@@ -242,15 +239,6 @@ def _finish_async_sandbox_command(run_id: str, task: asyncio.Task[None]) -> None
         logger.exception("async sandbox command task failed: %s", run_id)
 
 
-async def _ensure_agent_capacity(session_id: str, agent_instance_id: str) -> None:
-    running = await sandbox_async_jobs.count_running_async_jobs_for_agent(
-        session_id=session_id,
-        agent_instance_id=agent_instance_id,
-    )
-    if running >= 3:
-        raise RuntimeError("sandbox async command limit reached; at most 3 commands may run concurrently")
-
-
 async def _create_job_record(
     *,
     run_id: str,
@@ -258,7 +246,6 @@ async def _create_job_record(
     command: str,
     output_file: str,
 ) -> None:
-    await _ensure_agent_capacity(context.session_id, context.agent_instance_id)
     await sandbox_async_jobs.create_async_job(
         run_id=run_id,
         session_id=context.session_id,
@@ -274,39 +261,17 @@ async def _create_job_record(
     )
 
 
-async def _queue_completion_notification(snapshot) -> None:
+async def _queue_completion_notification(snapshot: SandboxAsyncJobSnapshot | None) -> None:
     if snapshot is None:
         return
     try:
-        snapshot = await sandbox_async_jobs.claim_async_job_result_for_notification(snapshot)
-        if snapshot is None:
-            return
         notification = await agent_notifications.enqueue_sandbox_async_job_finished_notification(snapshot)
         if notification is not None:
             await signal_target_notifications(snapshot.agent_instance_id)
-            if is_main_agent_instance(snapshot.agent_instance_id):
-                asyncio.create_task(
-                    _try_start_notification_drain(snapshot),
-                    name=f"sandbox-async-notify-{snapshot.run_id}",
-                )
     except Exception:
         logger.exception("failed to queue sandbox async job notification: %s", snapshot.run_id)
 
 
-async def _queue_completion_notifications(snapshots) -> None:
+async def _queue_completion_notifications(snapshots: list[SandboxAsyncJobSnapshot]) -> None:
     for snapshot in snapshots:
         await _queue_completion_notification(snapshot)
-
-
-async def _try_start_notification_drain(snapshot) -> None:
-    try:
-        await drain_main_agent_notifications_from_session(
-            session_id=snapshot.session_id,
-            target_agent_instance_id=snapshot.agent_instance_id,
-            agent_code=snapshot.agent_code,
-            sandbox_container_id=snapshot.sandbox_container_id,
-            nested_for_agent_code=snapshot.nested_for_agent_code,
-            nested_call_id=snapshot.nested_call_id,
-        )
-    except Exception:
-        logger.exception("failed to start sandbox async notification drain: %s", snapshot.run_id)

@@ -118,7 +118,7 @@ function chatReduce(state: ChatState, event: AgentContentEvent): ChatState {
 }
 
 export function streamReduce(state: ChatState, event: AgentStreamEvent): ChatState {
-  if (event.type === "done") return finishChatTurn(state);
+  if (event.type === "done") return event.nested_call_id ? state : finishChatTurn(state);
   if (event.type === "run_state") return event.running ? startChatTurn(state) : finishChatTurn(state);
   if (stateHasContentEvent(state, event)) return state;
   return applyContentEvent(state, event);

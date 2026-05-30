@@ -35,7 +35,6 @@ import {
   type ChatState,
 } from "./chatState";
 import { bufferLiveEvent, waitOpen } from "./agentStream";
-import { filterOverlappingEvents } from "./eventKeys";
 
 type ConnectionStatus = "idle" | "connecting" | "open" | "closed";
 
@@ -388,9 +387,8 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
         if (deletedSessionsRef.current.has(sessionId)) return;
         const events = response.data?.items ?? [];
         const data = response.data;
-        const buffered = pendingLiveEventsRef.current.get(sessionId) ?? [];
-        const bufferedEvents = filterOverlappingEvents(events, buffered);
-        const bufferedIdle = buffered.some((event) => event.type === "run_state" && !event.running);
+        const bufferedEvents = pendingLiveEventsRef.current.get(sessionId) ?? [];
+        const bufferedIdle = bufferedEvents.some((event) => event.type === "run_state" && !event.running);
         pendingLiveEventsRef.current.delete(sessionId);
         if (markEnsured) ensuredRef.current.add(sessionId);
         historyReadyRef.current.add(sessionId);

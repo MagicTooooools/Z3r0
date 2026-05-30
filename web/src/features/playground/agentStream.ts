@@ -1,6 +1,5 @@
 import type { AgentStreamEvent } from "../../shared/api/types";
 
-
 const CONNECT_TIMEOUT_MS = 15 * 1000;
 
 const MAX_BUFFERED_LIVE_EVENTS = 1000;

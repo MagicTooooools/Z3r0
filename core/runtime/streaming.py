@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
+from uuid import uuid4
 
 from agents.stream_events import AgentUpdatedStreamEvent, RunItemStreamEvent
 
@@ -69,3 +70,10 @@ def _next_pending_tool_calls(current: int, sdk_event: Any) -> int:
     if sdk_event.name == "tool_output" and current > 0:
         return current - 1
     return current
+
+
+def next_segment_scope(owner: str) -> str:
+    """Generate a unique segment scope identifier from an owner string."""
+    normalized = "".join(ch if ch.isalnum() else "_" for ch in owner.strip())
+    safe = normalized.strip("_") or "agent"
+    return f"turn_{safe}_{uuid4().hex}"

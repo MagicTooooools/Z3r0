@@ -7,8 +7,8 @@ class SandboxCommandResultMetadata(BaseModel):
     status: SandboxAsyncJobStatus
     exit_code: int | None = None
     output_file: str | None = None
-    output_bytes: int = Field(ge=0)
-    output_lines: int = Field(ge=0)
+    output_bytes: int = Field(default=0, ge=0)
+    output_lines: int = Field(default=0, ge=0)
     run_id: str | None = None
     error: str | None = None
 
@@ -20,15 +20,5 @@ class SandboxCommandOutputChunk(BaseModel):
     content: str = ""
 
 
-class SandboxAsyncJobToolResult(BaseModel):
-    run_id: str
-    status: SandboxAsyncJobStatus
-    output_file: str = ""
-    output_bytes: int = Field(ge=0)
-    output_lines: int = Field(ge=0)
-    exit_code: int | None = None
-    error: str | None = None
-
-
-class SandboxAsyncJobListToolResult(BaseModel):
-    jobs: list[SandboxAsyncJobToolResult] = Field(default_factory=list)
+class SandboxCommandResultList(BaseModel):
+    jobs: list[SandboxCommandResultMetadata] = Field(default_factory=list)

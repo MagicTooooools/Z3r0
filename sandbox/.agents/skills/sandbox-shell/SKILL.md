@@ -9,12 +9,11 @@ Use sandbox command tools for authorized task work inside the selected sandbox c
 
 ## Tool Contract
 
-Command tools return compact JSON metadata instead of inline command output:
+Command tools return compact JSON metadata; raw output is captured to `output_file`:
 
-- Common fields: `status`, `output_file`, `output_bytes`, `output_lines`, optional `exit_code`, optional `run_id`, optional `error`.
+- Fields: `status`, `output_file`, `output_bytes`, `output_lines`, optional `exit_code`, `run_id`, `error`.
 - Status values: `running`, `completed`, `failed`, `canceled`.
-- Read command output with `read_sandbox_command_output`, not `cat`.
-- Output chunks should start at `start_line: 1` and use at most 200 lines per read.
+- Read output with `read_sandbox_command_output` using `output_file` and `start_line: 1`, at most 200 lines per call. Do not use `cat`.
 
 ## Choosing Execution
 
@@ -29,16 +28,14 @@ Use `execute_async_command` for anything slow, remote, stateful, or externally d
 - loops around network, browser, install, build, scan, or other external resources
 - consolidated scripts that run several slow checks and write structured output
 
-Always pass timing arguments explicitly. Sync and async command tools use `timeout_seconds`; `wait_sandbox_async_job` uses `wait_seconds`.
+Always pass timing arguments explicitly via `timeout_seconds`.
 
 ## Async Jobs
 
 After `execute_async_command`, keep the returned `run_id` and `output_file`.
 
-- Prefer doing useful independent work while the async job runs.
-- If the next step depends on one known job, call `wait_sandbox_async_job` once with `wait_seconds` between 0 and 60.
-- If that wait returns `running`, do not wait again just to pass time.
-- If there is no independent work and no reason to actively wait, end the turn; the runtime resumes the agent automatically when the job reaches a terminal state.
+- Continue independent work while the async job runs.
+- The runtime automatically resumes the agent with completion context when the job finishes; no polling or waiting is needed.
 - Use `list_sandbox_async_jobs` only for inspection or capacity checks.
 - Use `cancel_sandbox_async_job` only when cancellation is requested or the job is no longer useful.
 - Never use `sleep`, shell wait loops, repeated status polling, or filler progress messages.

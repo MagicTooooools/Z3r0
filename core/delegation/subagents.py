@@ -8,24 +8,19 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from uuid import uuid4
 
 from agents import Agent, RunContextWrapper, Runner, Tool, function_tool
 
 from config import get_config
-from core.runtime import put_nowait_drop_oldest
 from core.runtime.context import AgentRuntimeContext, subagent_instance_id
-from core.delegation.notifications import notification_prompt
 from core.runtime.notification_dispatch import (
-    dispatch_target_notifications,
     forget_target_notifications,
-    target_notification_version,
-    wait_for_target_notifications,
+    signal_target_notifications,
 )
 from core.runtime.input_items import build_user_message_item, text_input_content
-from core.runtime.live_projection import LiveEventProjection
 from core.runtime.partial_context import DeltaBuffer, flush_partial_context, track_delta
-from core.runtime.streaming import StreamIdleTimeout, iter_normalized_stream_events
+from core.runtime.streaming import StreamIdleTimeout, next_segment_scope
+from core.task_runtime import InterruptSignal, iter_interruptible_events, run_until_idle
 from core.sandbox.command_jobs import cancel_agent_async_sandbox_commands
 from core import extract_message_text
 from core.conversation.store import Z3r0Session, fetch_stored_items
@@ -34,9 +29,7 @@ from logger import get_logger
 from schema.agent.events import (
     AgentEventSchema,
     AgentInputPart,
-    DoneEvent,
     ErrorEvent,
-    RunStateEvent,
     SubagentTaskEvent,
     TextCompleteEvent,
     ThinkingCompleteEvent,
@@ -49,6 +42,7 @@ from schema.agent.subordinates import (
     AgentSubordinateTaskToolItem,
     AgentSubordinateTaskToolResult,
 )
+from schema.agent.notifications import AgentNotificationSnapshot
 from service.agent import notifications as agent_notifications
 from service.agent.subordinates import TERMINAL_SUBAGENT_STATUSES as _TERMINAL_SUBAGENT_STATUSES
 from service.agent import subordinates as agent_subordinates
@@ -56,6 +50,8 @@ from service.sandbox import async_jobs as sandbox_async_jobs
 
 
 logger = get_logger(__name__)
+
+
 @dataclass
 class _SubagentJob:
     task: asyncio.Task[None]
@@ -66,19 +62,9 @@ class _SubagentJob:
 
 _jobs: dict[str, _SubagentJob] = {}
 _session_starters: dict[str, set[asyncio.Task[AgentSubordinateTaskSnapshot]]] = defaultdict(set)
-_subscribers: dict[str, set[asyncio.Queue[AgentEventSchema]]] = defaultdict(set)
-_live_projections: dict[str, LiveEventProjection] = {}
 _jobs_lock = asyncio.Lock()
-_subscribers_lock = asyncio.Lock()
 
-_SUBSCRIBER_QUEUE_SIZE = 256
-_NOTIFICATION_POLL_SECONDS = 1.0
 _SUBAGENT_RESULT_MAX_CHARS = 20000
-
-
-class _SubagentNotificationReady(Exception):
-    """Raised internally to preempt a subagent turn when its notification is ready."""
-
 
 _CANCEL_MESSAGE = "Subagent task canceled."
 
@@ -90,7 +76,7 @@ def build_subagent_tools(
     get_child_agent: Callable[[str], Agent],
     get_code_to_name: Callable[[], dict[str, str]],
 ) -> list[Tool]:
-    allowed = {code: code for code in mounted_codes}
+    allowed = frozenset(mounted_codes)
     allowed_codes = ", ".join(sorted(allowed))
 
     async def start_subagent_task(ctx: RunContextWrapper[AgentRuntimeContext], agent_code: str, brief: str) -> str:
@@ -360,13 +346,13 @@ async def cancel_sandbox_subagent_runs(container_id: int) -> bool:
 
 async def cancel_session_subagent_runs(session_id: str) -> bool:
     starter_tasks = await _cancel_session_starters(session_id)
-    job_tasks = await _cancel_session_jobs(session_id)
+    early_jobs = await _cancel_session_jobs(session_id)
     if starter_tasks:
         await asyncio.gather(*starter_tasks, return_exceptions=True)
-
-    job_tasks.extend(await _cancel_session_jobs(session_id))
-    if job_tasks:
-        await asyncio.gather(*job_tasks, return_exceptions=True)
+    late_jobs = await _cancel_session_jobs(session_id)
+    all_jobs = early_jobs + late_jobs
+    if all_jobs:
+        await asyncio.gather(*all_jobs, return_exceptions=True)
 
     snapshots = await agent_subordinates.cancel_running_subagent_tasks_for_session(
         session_id,
@@ -375,7 +361,7 @@ async def cancel_session_subagent_runs(session_id: str) -> bool:
     for snapshot in snapshots:
         await _publish_task_snapshot(snapshot)
 
-    return bool(starter_tasks or job_tasks or snapshots)
+    return bool(starter_tasks or all_jobs or snapshots)
 
 
 async def _track_subagent_starter(session_id: str, task: asyncio.Task[AgentSubordinateTaskSnapshot]) -> None:
@@ -449,71 +435,17 @@ async def stop_subagent_runtime() -> None:
         await _publish_task_snapshot(snapshot)
 
 
-async def subscribe_session_events(
-    session_id: str,
-    include: Callable[[AgentEventSchema], bool] | None = None,
-) -> asyncio.Queue[AgentEventSchema]:
-    queue: asyncio.Queue[AgentEventSchema] = asyncio.Queue(maxsize=_SUBSCRIBER_QUEUE_SIZE)
-    async with _subscribers_lock:
-        projection = _live_projections.get(session_id)
-        if projection is not None:
-            for event in projection.snapshot(include):
-                put_nowait_drop_oldest(queue, event)
-        _subscribers[session_id].add(queue)
-    return queue
+def _publish_event(session_id: str, event: AgentEventSchema) -> None:
+    """Publish an event through the unified session event bus."""
+    from core.runtime.session import get_agent_pool
 
-
-async def unsubscribe_session_events(session_id: str, queue: asyncio.Queue[AgentEventSchema]) -> None:
-    async with _subscribers_lock:
-        queues = _subscribers.get(session_id)
-        if queues is None:
-            return
-        queues.discard(queue)
-        if not queues:
-            _subscribers.pop(session_id, None)
-
-
-async def publish_subagent_event(session_id: str, event: AgentEventSchema) -> None:
-    if not session_id:
-        return
-    async with _subscribers_lock:
-        projection = _live_projection(session_id)
-        projection.apply(event)
-        if _is_nested_turn_done(event):
-            projection.clear()
-        targets = list(_subscribers.get(session_id, ()))
-    for queue in targets:
-        put_nowait_drop_oldest(queue, event)
+    get_agent_pool().publish(session_id, event)
 
 
 async def _publish_task_snapshot(snapshot: AgentSubordinateTaskSnapshot) -> None:
-    await publish_subagent_event(snapshot.session_id, _task_event(snapshot))
+    _publish_event(snapshot.session_id, _task_event(snapshot))
     if snapshot.status in _TERMINAL_SUBAGENT_STATUSES:
-        await _clear_subagent_projection_if_idle(snapshot.session_id)
-
-
-async def _clear_subagent_projection_if_idle(session_id: str) -> None:
-    async with _jobs_lock:
-        has_running = any(
-            job.session_id == session_id and not job.task.done()
-            for job in _jobs.values()
-        )
-    if has_running:
-        return
-    async with _subscribers_lock:
-        _live_projections.pop(session_id, None)
-
-
-def _live_projection(session_id: str) -> LiveEventProjection:
-    projection = _live_projections.get(session_id)
-    if projection is None:
-        projection = LiveEventProjection()
-        _live_projections[session_id] = projection
-    return projection
-
-
-def _is_nested_turn_done(event: AgentEventSchema) -> bool:
-    return isinstance(event, DoneEvent) and bool(event.nested_call_id)
+        await _notify_session_idle(snapshot.session_id)
 
 
 async def _run_subagent_task(
@@ -531,9 +463,8 @@ async def _run_subagent_task(
         nested_for_agent_code=snapshot.parent_agent_code,
         nested_call_id=snapshot.nested_call_id,
     )
-    buffers: dict[str, DeltaBuffer] = {}
+    max_turns = get_config().agent_runtime.subordinate_max_turns
     try:
-        max_turns = get_config().agent_runtime.subordinate_max_turns
         agent_config = get_config().agents.get(snapshot.agent_code)
         if agent_config is not None:
             brief_content = text_input_content(snapshot.brief)
@@ -541,15 +472,59 @@ async def _run_subagent_task(
                 agent_config=agent_config,
                 incoming_items=[build_user_message_item(brief_content)],
             )
-        await _run_subagent_until_idle(
+
+        async def _run_turn(
+            content: list[AgentInputPart],
+            notification: AgentNotificationSnapshot | None,
+        ) -> Any:
+            stream = Runner.run_streamed(
+                starting_agent=child_agent,
+                input=[build_user_message_item(content)],
+                session=memory_session,
+                context=context,
+                max_turns=max_turns,
+            )
+            segment_scope = _next_subagent_segment_scope(context)
+            buffers: dict[str, DeltaBuffer] = {}
+            try:
+                async for event in iter_interruptible_events(
+                    stream,
+                    session_id=snapshot.session_id,
+                    agent_instance_id=context.agent_instance_id,
+                    current_agent_name=child_agent.name,
+                    segment_scope=segment_scope,
+                ):
+                    track_delta(buffers, event)
+                    _publish_event(snapshot.session_id, _tag_nested(event, snapshot))
+                    await _update_progress_from_event(snapshot, event)
+                buffers.clear()
+            except InterruptSignal:
+                await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
+                raise
+            except asyncio.CancelledError:
+                await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
+                raise
+            except StreamIdleTimeout as exc:
+                await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
+                raise RuntimeError(str(exc)) from exc
+            except Exception:
+                await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
+                raise
+            return stream
+
+        async def _has_background() -> bool:
+            return await _subagent_has_running_background_work(
+                snapshot.session_id, context.agent_instance_id,
+            )
+
+        await run_until_idle(
+            session_id=snapshot.session_id,
+            agent_instance_id=context.agent_instance_id,
             initial_content=text_input_content(snapshot.brief),
-            snapshot=snapshot,
-            child_agent=child_agent,
-            memory_session=memory_session,
-            context=context,
-            max_turns=max_turns,
-            buffers=buffers,
+            run_turn=_run_turn,
+            has_background_work=_has_background,
         )
+
         completed = await agent_subordinates.complete_subagent_task(
             snapshot.run_id,
             await _subagent_assistant_output(snapshot),
@@ -574,8 +549,13 @@ async def _run_subagent_task(
             await _publish_task_snapshot(canceled)
     except Exception as exc:
         logger.exception("subagent task failed: %s", snapshot.run_id)
-        tagged_error = _tag_nested(ErrorEvent(created_at=datetime.now(), agent_name=child_agent.name, message=f"Subagent failed: {exc}"), snapshot)
-        await publish_subagent_event(snapshot.session_id, tagged_error)
+        error_event = ErrorEvent(
+            created_at=datetime.now(),
+            agent_name=child_agent.name,
+            message=f"Subagent failed: {exc}",
+        )
+        tagged_error = _tag_nested(error_event, snapshot)
+        _publish_event(snapshot.session_id, tagged_error)
         await agent_notifications.cancel_session_notifications(
             snapshot.session_id,
             str(exc) or "subagent failed",
@@ -601,203 +581,8 @@ async def _run_subagent_task(
                 for job in _jobs.values()
             )
         if not has_running:
-            async with _subscribers_lock:
-                _live_projections.pop(snapshot.session_id, None)
             await _mark_parent_session_stopped(snapshot.session_id)
-            await _publish_parent_idle_if_inactive(snapshot.session_id)
-
-
-async def _run_subagent_turn(
-    *,
-    content: list[AgentInputPart],
-    snapshot: AgentSubordinateTaskSnapshot,
-    child_agent: Agent,
-    memory_session: Z3r0Session,
-    context: AgentRuntimeContext,
-    max_turns: int,
-    buffers: dict[str, DeltaBuffer],
-    preempt_on_notification: bool = True,
-) -> Any:
-    user_input = [build_user_message_item(content)]
-    stream = Runner.run_streamed(
-        starting_agent=child_agent,
-        input=user_input,
-        session=memory_session,
-        context=context,
-        max_turns=max_turns,
-    )
-    segment_scope = _next_subagent_segment_scope(context)
-    try:
-        events = (
-            _iter_subagent_events_until_notification(
-                stream,
-                session_id=snapshot.session_id,
-                current_agent_name=child_agent.name,
-                target_agent_instance_id=context.agent_instance_id,
-                segment_scope=segment_scope,
-            )
-            if preempt_on_notification
-            else iter_normalized_stream_events(
-                stream,
-                current_agent_name=child_agent.name,
-                segment_scope=segment_scope,
-            )
-        )
-        async for event in events:
-            track_delta(buffers, event)
-            tagged = _tag_nested(event, snapshot)
-            await publish_subagent_event(snapshot.session_id, tagged)
-            await _update_progress_from_event(snapshot, event)
-        buffers.clear()
-    except _SubagentNotificationReady:
-        await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
-        raise
-    except asyncio.CancelledError:
-        await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
-        raise
-    except StreamIdleTimeout as exc:
-        await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
-        raise RuntimeError(str(exc)) from exc
-    except Exception:
-        await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
-        raise
-    return stream
-
-
-async def _iter_subagent_events_until_notification(
-    stream: Any,
-    *,
-    session_id: str,
-    current_agent_name: str,
-    target_agent_instance_id: str,
-    segment_scope: str,
-):
-    events = iter_normalized_stream_events(
-        stream,
-        current_agent_name=current_agent_name,
-        segment_scope=segment_scope,
-    )
-    event_task = asyncio.create_task(anext(events), name=f"subagent-stream-next-{target_agent_instance_id}")
-    if await agent_notifications.has_pending_notification(
-        session_id=session_id,
-        target_agent_instance_id=target_agent_instance_id,
-    ):
-        event_task.cancel()
-        await asyncio.gather(event_task, return_exceptions=True)
-        raise _SubagentNotificationReady
-    notification_version = await target_notification_version(target_agent_instance_id)
-    notification_task = asyncio.create_task(
-        wait_for_target_notifications(
-            target_agent_instance_id,
-            after_version=notification_version,
-            timeout_seconds=_NOTIFICATION_POLL_SECONDS,
-        ),
-        name=f"subagent-notification-watch-{target_agent_instance_id}",
-    )
-    try:
-        while True:
-            done, _ = await asyncio.wait(
-                {event_task, notification_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            notification_ready = False
-            if notification_task in done:
-                notification_task.result()
-                notification_ready = await agent_notifications.has_pending_notification(
-                    session_id=session_id,
-                    target_agent_instance_id=target_agent_instance_id,
-                )
-            if event_task in done:
-                try:
-                    event = event_task.result()
-                except StopAsyncIteration:
-                    return
-                yield event
-                event_task = asyncio.create_task(anext(events), name=f"subagent-stream-next-{target_agent_instance_id}")
-            if notification_task in done:
-                if notification_ready:
-                    event_task.cancel()
-                    await asyncio.gather(event_task, return_exceptions=True)
-                    raise _SubagentNotificationReady
-                notification_version = await target_notification_version(target_agent_instance_id)
-                notification_task = asyncio.create_task(
-                    wait_for_target_notifications(
-                        target_agent_instance_id,
-                        after_version=notification_version,
-                        timeout_seconds=_NOTIFICATION_POLL_SECONDS,
-                    ),
-                    name=f"subagent-notification-watch-{target_agent_instance_id}",
-                )
-    finally:
-        for task in (event_task, notification_task):
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(event_task, notification_task, return_exceptions=True)
-
-
-async def _run_subagent_until_idle(
-    *,
-    initial_content: list[AgentInputPart],
-    snapshot: AgentSubordinateTaskSnapshot,
-    child_agent: Agent,
-    memory_session: Z3r0Session,
-    context: AgentRuntimeContext,
-    max_turns: int,
-    buffers: dict[str, DeltaBuffer],
-) -> Any:
-    result: Any = None
-    try:
-        result = await _run_subagent_turn(
-            content=initial_content,
-            snapshot=snapshot,
-            child_agent=child_agent,
-            memory_session=memory_session,
-            context=context,
-            max_turns=max_turns,
-            buffers=buffers,
-            preempt_on_notification=True,
-        )
-    except _SubagentNotificationReady:
-        pass
-    while True:
-        notification = await agent_notifications.claim_next_pending_notification(
-            session_id=snapshot.session_id,
-            target_agent_instance_id=context.agent_instance_id,
-        )
-        if notification is None:
-            version = await target_notification_version(context.agent_instance_id)
-            if await agent_notifications.has_pending_notification(
-                session_id=snapshot.session_id,
-                target_agent_instance_id=context.agent_instance_id,
-            ):
-                continue
-            if not await _subagent_has_running_background_work(snapshot.session_id, context.agent_instance_id):
-                return result
-            await wait_for_target_notifications(
-                context.agent_instance_id,
-                after_version=version,
-                timeout_seconds=30,
-            )
-            continue
-        try:
-            result = await _run_subagent_turn(
-                content=text_input_content(notification_prompt(notification)),
-                snapshot=snapshot,
-                child_agent=child_agent,
-                memory_session=memory_session,
-                context=context,
-                max_turns=max_turns,
-                buffers=buffers,
-                preempt_on_notification=False,
-            )
-        except asyncio.CancelledError:
-            await agent_notifications.release_notification(notification.id)
-            raise
-        except Exception as exc:
-            await agent_notifications.fail_notification(notification.id, str(exc) or "subagent notification handling failed")
-            raise
-        else:
-            await agent_notifications.complete_notification(notification.id)
+            await _notify_session_idle(snapshot.session_id)
 
 
 async def _subagent_has_running_background_work(session_id: str, agent_instance_id: str) -> bool:
@@ -814,12 +599,7 @@ async def _subagent_has_running_background_work(session_id: str, agent_instance_
 
 def _next_subagent_segment_scope(context: AgentRuntimeContext) -> str:
     owner = context.agent_instance_id or context.agent_code or "subagent"
-    return f"turn_{_safe_segment_part(owner)}_{uuid4().hex}"
-
-
-def _safe_segment_part(value: str) -> str:
-    normalized = "".join(ch if ch.isalnum() else "_" for ch in value.strip())
-    return normalized.strip("_") or "agent"
+    return next_segment_scope(owner)
 
 
 async def _cancel_child_subagent_runs(session_id: str, parent_agent_instance_id: str, error: str) -> None:
@@ -850,7 +630,7 @@ async def _update_progress_from_event(snapshot: AgentSubordinateTaskSnapshot, ev
         return
     latest = await agent_subordinates.update_subagent_progress(snapshot.run_id, progress)
     if latest is not None:
-        await publish_subagent_event(latest.session_id, _task_event(latest))
+        _publish_event(latest.session_id, _task_event(latest))
 
 
 def _progress_from_event(event: AgentEventSchema) -> str:
@@ -897,35 +677,14 @@ async def _queue_parent_notification(
             sandbox_container_generation=context.sandbox_container_generation if context else 0,
             sandbox_skill_metadata=context.sandbox_skill_metadata if context else (),
         )
-        await _dispatch_parent_notification(snapshot, context)
     except Exception:
         logger.exception("failed to queue parent notification for subagent task: %s", snapshot.run_id)
-
-
-async def _dispatch_parent_notification(
-    snapshot: AgentSubordinateTaskSnapshot,
-    context: AgentRuntimeContext | None,
-) -> None:
-    if context is None:
         return
-    try:
-        parent_context = AgentRuntimeContext(
-            session_id=context.session_id,
-            user=context.user,
-            agent_code=snapshot.parent_agent_code,
-            agent_instance_id=snapshot.parent_agent_instance_id,
-            knowledge_generation=context.knowledge_generation,
-            sandbox_container_id=context.sandbox_container_id,
-            sandbox_container_generation=context.sandbox_container_generation,
-            sandbox_skill_metadata=context.sandbox_skill_metadata,
-            work_project_id=context.work_project_id,
-        )
-        await dispatch_target_notifications(
-            parent_context,
-            target_agent_instance_id=snapshot.parent_agent_instance_id,
-        )
-    except Exception:
-        logger.exception("failed to schedule parent notification drain: %s", snapshot.run_id)
+    if context is not None:
+        try:
+            await signal_target_notifications(snapshot.parent_agent_instance_id)
+        except Exception:
+            logger.exception("failed to signal parent notification: %s", snapshot.run_id)
 
 
 def _tag_nested(event: AgentEventSchema, snapshot: AgentSubordinateTaskSnapshot) -> AgentEventSchema:
@@ -963,20 +722,13 @@ async def _mark_parent_session_stopped(session_id: str) -> None:
         logger.debug("failed to mark parent session stopped: %s", session_id, exc_info=True)
 
 
-async def _publish_parent_idle_if_inactive(session_id: str) -> None:
+async def _notify_session_idle(session_id: str) -> None:
     try:
-        from service.agent import sessions as agent_sessions
+        from core.runtime.session import get_agent_pool
 
-        if await agent_sessions.has_active_session_runtime(session_id):
-            return
-        await publish_subagent_event(
-            session_id,
-            RunStateEvent(created_at=datetime.now(), running=False),
-        )
-        async with _subscribers_lock:
-            _live_projections.pop(session_id, None)
+        await get_agent_pool().notify_idle(session_id)
     except Exception:
-        logger.debug("failed to publish parent session idle: %s", session_id, exc_info=True)
+        logger.debug("failed to notify session idle: %s", session_id, exc_info=True)
 
 
 def _subagent_context(

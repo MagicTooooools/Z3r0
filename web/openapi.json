@@ -2200,19 +2200,6 @@
         "title": "RunStateEvent",
         "type": "object"
       },
-      "SandboxAsyncJobListToolResult": {
-        "properties": {
-          "jobs": {
-            "items": {
-              "$ref": "#/components/schemas/SandboxAsyncJobToolResult"
-            },
-            "title": "Jobs",
-            "type": "array"
-          }
-        },
-        "title": "SandboxAsyncJobListToolResult",
-        "type": "object"
-      },
       "SandboxAsyncJobStatus": {
         "enum": [
           "running",
@@ -2222,64 +2209,6 @@
         ],
         "title": "SandboxAsyncJobStatus",
         "type": "string"
-      },
-      "SandboxAsyncJobToolResult": {
-        "properties": {
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Error"
-          },
-          "exit_code": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Exit Code"
-          },
-          "output_bytes": {
-            "minimum": 0,
-            "title": "Output Bytes",
-            "type": "integer"
-          },
-          "output_file": {
-            "default": "",
-            "title": "Output File",
-            "type": "string"
-          },
-          "output_lines": {
-            "minimum": 0,
-            "title": "Output Lines",
-            "type": "integer"
-          },
-          "run_id": {
-            "title": "Run Id",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/SandboxAsyncJobStatus"
-          }
-        },
-        "required": [
-          "run_id",
-          "status",
-          "output_bytes",
-          "output_lines"
-        ],
-        "title": "SandboxAsyncJobToolResult",
-        "type": "object"
       },
       "SandboxCommandOutputChunk": {
         "properties": {
@@ -2309,6 +2238,19 @@
           "end_line"
         ],
         "title": "SandboxCommandOutputChunk",
+        "type": "object"
+      },
+      "SandboxCommandResultList": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/SandboxCommandResultMetadata"
+            },
+            "title": "Jobs",
+            "type": "array"
+          }
+        },
+        "title": "SandboxCommandResultList",
         "type": "object"
       },
       "SandboxCommandResultMetadata": {

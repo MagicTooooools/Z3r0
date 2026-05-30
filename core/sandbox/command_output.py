@@ -7,7 +7,7 @@ import shlex
 from pathlib import PurePosixPath
 from uuid import uuid4
 
-from schema.sandbox.async_jobs import SandboxAsyncJobStatus
+from schema.sandbox.async_jobs import SandboxAsyncJobSnapshot, SandboxAsyncJobStatus
 from schema.sandbox.command_outputs import (
     SandboxCommandOutputChunk,
     SandboxCommandResultMetadata,
@@ -16,17 +16,13 @@ from schema.sandbox.command_outputs import (
 
 OUTPUT_CHUNK_LINE_COUNT = 200
 OUTPUT_DIR = "/tmp/shell-command-output"
+COMMAND_TIMEOUT_ERROR = "Command execution timed out."
 _OUTPUT_PREFIX = f"{OUTPUT_DIR}/"
 _META_PREFIX = "__z3r0_command_meta__"
 _OUTPUT_FILE_RE = re.compile(
     r"^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.log$",
     re.IGNORECASE,
 )
-_TERMINAL_STATUSES = frozenset({
-    SandboxAsyncJobStatus.COMPLETED,
-    SandboxAsyncJobStatus.FAILED,
-    SandboxAsyncJobStatus.CANCELED,
-})
 
 
 def new_output_path() -> str:
@@ -45,70 +41,47 @@ def result_metadata(
     *,
     status: SandboxAsyncJobStatus,
     output_file: str | None = None,
-    output_bytes: int,
-    output_lines: int,
-    exit_code: int | None,
+    output_bytes: int = 0,
+    output_lines: int = 0,
+    exit_code: int | None = None,
     run_id: str | None = None,
     error: str | None = None,
 ) -> SandboxCommandResultMetadata:
-    terminal = status in _TERMINAL_STATUSES
     return SandboxCommandResultMetadata(
         status=status,
         exit_code=exit_code,
         output_file=validate_output_path(output_file) if output_file else None,
         output_bytes=max(output_bytes, 0),
         output_lines=max(output_lines, 0),
-        run_id=run_id if not terminal else None,
+        run_id=run_id,
         error=error or None,
     )
 
 
-def capture_command(command: str, output_path: str) -> str:
-    quoted_command = shlex.quote(command)
-    quoted_output_dir = shlex.quote(OUTPUT_DIR)
-    quoted_output_path = shlex.quote(output_path)
-    return "\n".join(
-        (
-            "set +e",
-            f"output_dir={quoted_output_dir}",
-            f"output_path={quoted_output_path}",
-            'mkdir -p "$output_dir" || exit 125',
-            'rm -f "$output_path"',
-            ': > "$output_path" || exit 125',
-            f"/bin/sh -lc {quoted_command} > \"$output_path\" 2>&1 &",
-            "command_pid=$!",
-            'trap \'kill -TERM "$command_pid" 2>/dev/null\' TERM INT HUP',
-            'wait "$command_pid"',
-            "command_exit_code=$?",
-            "trap - TERM INT HUP",
-            *_stat_output_lines('"$output_path"'),
-            f"printf '{_META_PREFIX} %s %s\\n' \"$output_bytes\" \"$output_lines\"",
-            'exit "$command_exit_code"',
-        )
+def result_metadata_from_snapshot(snapshot: SandboxAsyncJobSnapshot) -> SandboxCommandResultMetadata:
+    return result_metadata(
+        status=snapshot.status,
+        output_file=snapshot.output_file or None,
+        output_bytes=snapshot.output_bytes,
+        output_lines=snapshot.output_lines,
+        exit_code=snapshot.exit_code,
+        run_id=snapshot.run_id,
+        error=snapshot.error,
     )
+
+
+def capture_command(command: str, output_path: str) -> str:
+    lines = _base_command_script(command, output_path)
+    lines.extend(_stat_output_lines('"$output_path"'))
+    lines.append(f"printf '{_META_PREFIX} %s %s\\n' \"$output_bytes\" \"$output_lines\"")
+    lines.append('exit "$command_exit_code"')
+    return "\n".join(lines)
 
 
 def async_command(command: str, output_path: str) -> str:
-    quoted_command = shlex.quote(command)
-    quoted_output_dir = shlex.quote(OUTPUT_DIR)
-    quoted_output_path = shlex.quote(output_path)
-    return "\n".join(
-        (
-            "set +e",
-            f"output_dir={quoted_output_dir}",
-            f"output_path={quoted_output_path}",
-            'mkdir -p "$output_dir" || exit 125',
-            'rm -f "$output_path"',
-            ': > "$output_path" || exit 125',
-            f"/bin/sh -lc {quoted_command} > \"$output_path\" 2>&1 &",
-            "command_pid=$!",
-            'trap \'kill -TERM "$command_pid" 2>/dev/null\' TERM INT HUP',
-            'wait "$command_pid"',
-            "command_exit_code=$?",
-            "trap - TERM INT HUP",
-            'exit "$command_exit_code"',
-        )
-    )
+    lines = _base_command_script(command, output_path)
+    lines.append('exit "$command_exit_code"')
+    return "\n".join(lines)
 
 
 def stat_command(output_path: str) -> str:
@@ -170,6 +143,26 @@ def validate_output_path(output_file: str) -> str:
     ):
         raise ValueError("output_file must be a command result path returned by sandbox command tools")
     return normalized
+
+
+def _base_command_script(command: str, output_path: str) -> list[str]:
+    quoted_command = shlex.quote(command)
+    quoted_output_dir = shlex.quote(OUTPUT_DIR)
+    quoted_output_path = shlex.quote(output_path)
+    return [
+        "set +e",
+        f"output_dir={quoted_output_dir}",
+        f"output_path={quoted_output_path}",
+        'mkdir -p "$output_dir" || exit 125',
+        'rm -f "$output_path"',
+        ': > "$output_path" || exit 125',
+        f"/bin/sh -lc {quoted_command} > \"$output_path\" 2>&1 &",
+        "command_pid=$!",
+        'trap \'kill -TERM "$command_pid" 2>/dev/null\' TERM INT HUP',
+        'wait "$command_pid"',
+        "command_exit_code=$?",
+        "trap - TERM INT HUP",
+    ]
 
 
 def _stat_output_lines(quoted_output_path: str) -> tuple[str, ...]:

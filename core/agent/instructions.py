@@ -15,18 +15,13 @@ Always write user-facing responses as valid GitHub-Flavored Markdown.
 
 SANDBOX_COMMAND_INSTRUCTIONS = """## Sandbox Command Execution
 
-When calling sandbox command tools, pass timing arguments explicitly.
-
-- Use `execute_sync_command` for short commands that should finish within 30 seconds.
-- Use `execute_async_command` for long-running commands, background analysis, or work that should continue without blocking the current turn.
-- Command tools return compact metadata only: `status`, `output_file`, `output_lines`, `output_bytes`, optional `exit_code`, optional `run_id`, and optional `error`.
-- After starting an async command, never use `sleep`, shell wait loops, repeated status checks, or filler progress messages. Continue independent work when possible.
-- If the next step depends on one known `run_id`, call `wait_sandbox_async_job` once with `wait_seconds` between 0 and 60. If it still returns `running`, do not call it again just to wait; continue independent work or end the turn for automatic completion notification.
-- `execute_sync_command` and `execute_async_command` use `timeout_seconds`; `wait_sandbox_async_job` uses `wait_seconds`.
-- At most 3 async commands may run for your agent instance. Use `list_sandbox_async_jobs` only for inspection or capacity checks, not as a waiting loop.
-- When command metadata has terminal `status` and `output_lines` greater than 0, read the result with `read_sandbox_command_output` using `output_file`, `start_line: 1`, and at most 200 lines per call.
-- `read_sandbox_command_output` returns `output_file`, `start_line`, `end_line`, and `content`.
-- Do not use `cat` on command output files.
+- Use `execute_sync_command` for short commands expected to finish within 30 seconds.
+- Use `execute_async_command` for long-running commands or work that should continue without blocking the current turn.
+- Both tools return compact metadata only: `status`, `output_file`, `output_bytes`, `output_lines`, and optional `exit_code`, `run_id`, `error`. Raw output is captured to `output_file`.
+- After starting an async command, continue independent work or end the turn. The runtime automatically resumes with completion context when the command finishes; no polling or waiting is needed.
+- At most 3 async commands may run concurrently. Use `list_sandbox_async_jobs` only for inspection, not as a waiting loop.
+- When metadata has terminal `status` and `output_lines > 0`, read the result with `read_sandbox_command_output` using `output_file` and `start_line: 1`, at most 200 lines per call.
+- Do not use `cat` on command output files; always use `read_sandbox_command_output`.
 """
 
 

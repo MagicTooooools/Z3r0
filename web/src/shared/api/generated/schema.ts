@@ -1674,41 +1674,11 @@ export interface components {
              */
             type: "run_state";
         };
-        /** SandboxAsyncJobListToolResult */
-        SandboxAsyncJobListToolResult: {
-            /** Jobs */
-            jobs?: components["schemas"]["SandboxAsyncJobToolResult"][];
-        };
         /**
          * SandboxAsyncJobStatus
          * @enum {string}
          */
         SandboxAsyncJobStatus: "running" | "completed" | "failed" | "canceled";
-        /** SandboxAsyncJobToolResult */
-        SandboxAsyncJobToolResult: {
-            /**
-             * Error
-             * @default null
-             */
-            error: string | null;
-            /**
-             * Exit Code
-             * @default null
-             */
-            exit_code: number | null;
-            /** Output Bytes */
-            output_bytes: number;
-            /**
-             * Output File
-             * @default
-             */
-            output_file: string;
-            /** Output Lines */
-            output_lines: number;
-            /** Run Id */
-            run_id: string;
-            status: components["schemas"]["SandboxAsyncJobStatus"];
-        };
         /** SandboxCommandOutputChunk */
         SandboxCommandOutputChunk: {
             /**
@@ -1722,6 +1692,11 @@ export interface components {
             output_file: string;
             /** Start Line */
             start_line: number;
+        };
+        /** SandboxCommandResultList */
+        SandboxCommandResultList: {
+            /** Jobs */
+            jobs?: components["schemas"]["SandboxCommandResultMetadata"][];
         };
         /** SandboxCommandResultMetadata */
         SandboxCommandResultMetadata: {

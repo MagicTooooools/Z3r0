@@ -40,10 +40,6 @@ class LiveEventProjection:
         self._events = [event]
         self._clear_indexes()
 
-    def clear(self) -> None:
-        self._events = []
-        self._clear_indexes()
-
     def snapshot(self, include: Callable[[AgentEventSchema], bool] | None = None) -> list[AgentEventSchema]:
         if include is None:
             return list(self._events)
@@ -70,7 +66,6 @@ class LiveEventProjection:
             self._apply_subagent(event)
             return
         if isinstance(event, DoneEvent):
-            self.clear()
             return
         if isinstance(event, ErrorEvent):
             self._events.append(event)
@@ -96,15 +91,6 @@ class LiveEventProjection:
         current = self._events[index]
         text = _event_text(current)
         self._events[index] = event.model_copy(update={"delta": f"{text}{event.delta}"})
-
-    def _forget_segment(self, event: AgentEventSchema) -> None:
-        key = _SegmentKey(
-            event_type="thinking" if event.type == "thinking_complete" else "text",
-            segment_id=getattr(event, "segment_id", ""),
-            nested_for=getattr(event, "nested_for", ""),
-            nested_call_id=getattr(event, "nested_call_id", ""),
-        )
-        self._pop_index(self._segment_indexes.pop(key, None))
 
     def _apply_segment_complete(self, event: TextCompleteEvent | ThinkingCompleteEvent) -> None:
         key = _SegmentKey(
@@ -145,12 +131,6 @@ class LiveEventProjection:
             self._events.append(event)
             return
         self._events[index] = event
-
-    def _pop_index(self, index: int | None) -> None:
-        if index is None:
-            return
-        self._events.pop(index)
-        self._rebuild_indexes()
 
     def _rebuild_indexes(self) -> None:
         self._clear_indexes()

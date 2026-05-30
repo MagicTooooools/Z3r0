@@ -6,7 +6,6 @@ from fastapi.websockets import WebSocketState
 from fastapi import WebSocket, WebSocketDisconnect, status as ws_status
 from pydantic import ValidationError
 
-from core.delegation.subagents import subscribe_session_events, unsubscribe_session_events
 from core.runtime.session import get_agent_pool
 from handler import cancel_ws_task as _cancel_task, close_ws_silently as _close_silently
 from logger import get_logger
@@ -108,31 +107,14 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
 
     await websocket.accept()
     send_lock = asyncio.Lock()
-    runtime = None
-    runtime_events: asyncio.Queue[AgentEventSchema] | None = None
-    subscriber: asyncio.Queue[AgentEventSchema] | None = None
-    runtime_forwarder: asyncio.Task | None = None
-    subagent_forwarder: asyncio.Task | None = None
-    sent_events: set[str] = set()
+    session = None
+    event_queue: asyncio.Queue[AgentEventSchema] | None = None
+    forwarder: asyncio.Task | None = None
 
     try:
-        runtime, runtime_events = await get_agent_pool().subscribe(session_id)
-        subscriber = await subscribe_session_events(session_id)
-        runtime_forwarder = asyncio.create_task(_forward_events(
-            websocket,
-            runtime_events,
-            send_lock,
-            session_id,
-            user,
-            sent_events,
-        ))
-        subagent_forwarder = asyncio.create_task(_forward_events(
-            websocket,
-            subscriber,
-            send_lock,
-            session_id,
-            user,
-            sent_events,
+        session, event_queue = await get_agent_pool().subscribe(session_id)
+        forwarder = asyncio.create_task(_forward_events(
+            websocket, event_queue, send_lock, session_id, user,
         ))
 
         while True:
@@ -192,12 +174,9 @@ async def handle_agent_stream(websocket: WebSocket, session_id: str, token: str)
         logger.exception("agent stream failed for session=%s", session_id)
         await _close_silently(websocket)
     finally:
-        if runtime is not None and runtime_events is not None:
-            runtime.unsubscribe(runtime_events)
-        if subscriber is not None:
-            await unsubscribe_session_events(session_id, subscriber)
-        await _cancel_task(runtime_forwarder)
-        await _cancel_task(subagent_forwarder)
+        if session is not None and event_queue is not None:
+            session.unsubscribe(event_queue)
+        await _cancel_task(forwarder)
 
 
 async def _start_turn(
@@ -288,7 +267,6 @@ async def _forward_events(
     send_lock: asyncio.Lock,
     session_id: str,
     user: AuthUser,
-    sent_events: set[str],
 ) -> None:
     try:
         events_since_check = 0
@@ -300,11 +278,6 @@ async def _forward_events(
                 if not await agent_sessions.can_access_session(session_id, user.id, user.role):
                     await _close_silently(websocket, code=ws_status.WS_1008_POLICY_VIOLATION)
                     return
-            key = _event_content_key(event)
-            if key:
-                if key in sent_events:
-                    continue
-                sent_events.add(key)
             if not await _send_event(websocket, event, send_lock):
                 return
     except asyncio.CancelledError:
@@ -328,46 +301,3 @@ def _validation_error_message(exc: ValidationError) -> str:
     loc = ".".join(str(part) for part in first.get("loc", ()) if part != "__root__")
     msg = str(first.get("msg") or "invalid payload")
     return f"{loc}: {msg}" if loc else msg
-
-
-_KEY_SEP = "\x1f"
-
-
-def _event_content_key(event: AgentEventSchema) -> str:
-    """Lightweight content key for deduplicating events within a WS connection.
-
-    Returns "" for control signals (done/run_state) that must never be deduplicated.
-    """
-    t = event.type
-    nf = getattr(event, "nested_for", "")
-    nc = getattr(event, "nested_call_id", "")
-    s = _KEY_SEP
-    if t in ("text_delta", "thinking_delta"):
-        return ""
-    if t in ("text_complete", "thinking_complete"):
-        return f"{t}{s}{nf}{s}{nc}{s}{event.segment_id}{s}{event.text}"
-    if t == "tool_call":
-        return f"tool_call{s}{nf}{s}{nc}{s}{event.call_id}{s}{event.name}{s}{_stable_json(event.arguments)}"
-    if t == "tool_result":
-        return f"tool_result{s}{nf}{s}{nc}{s}{event.call_id}{s}{event.output}{s}{event.is_error}"
-    if t == "subagent_task":
-        return (
-            f"subagent_task{s}{event.run_id}{s}{event.status}{s}{event.progress}"
-            f"{s}{event.result}{s}{event.error}"
-        )
-    if t == "turn_boundary":
-        return f"turn_boundary{s}{nf}{s}{nc}"
-    if t == "user_message":
-        return f"user_message{s}{event.display_text}"
-    if t == "error":
-        return f"error{s}{nf}{s}{nc}{s}{event.message}"
-    return ""
-
-
-def _stable_json(value) -> str:
-    import json
-
-    try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    except TypeError:
-        return str(value)

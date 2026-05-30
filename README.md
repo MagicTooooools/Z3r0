@@ -102,23 +102,32 @@ sequenceDiagram
   participant U as User
   participant W as WebSocket
   participant P as AgentSessionPool
-  participant R as AgentRuntime
+  participant S as AgentSession
+  participant TR as TaskRuntime
   participant A as Agent
   participant DB as PostgreSQL
 
   U->>W: send(text, agent_code, sandbox_id)
   W->>P: get_or_create(session_id)
-  P->>R: start_turn()
-  R->>DB: load projected history
-  R->>A: Runner.run_streamed()
-  A-->>R: SDK stream events
-  R-->>W: normalized events
-  R->>DB: persist messages + metadata
+  P->>S: start_turn(content)
+  S->>TR: run_until_idle(initial_content)
+  TR->>DB: load projected history
+  TR->>A: Runner.run_streamed()
+  A-->>TR: iter_interruptible_events()
+  TR-->>S: normalized events
+  S-->>W: publish to subscribers
+  TR->>DB: persist messages + metadata
   W-->>U: thinking / text / tool / done
+
+  Note over TR,A: Notification arrives during turn
+  TR->>TR: InterruptSignal (deferred if tool pending)
+  TR->>DB: flush_partial_context
+  TR->>TR: claim notification → new turn
 ```
 
 Key runtime boundaries:
 
+- **Interrupt-driven task execution**: `run_until_idle` manages the agent turn lifecycle; `iter_interruptible_events` races the SDK event stream against notification signals and raises `InterruptSignal` at safe points (after pending tool calls complete), modeled after CPU interrupt masking for atomicity.
 - **Event normalization**: raw model and agent SDK events are converted into stable frontend events such as `thinking_delta`, `text_delta`, `tool_call`, `tool_result`, and `subagent_task`.
 - **Session pool**: `AgentSessionPool` manages active sessions, interruption, cancellation, idle eviction, and tool-binding invalidation.
 - **History projection**: `Z3r0Session` adds owner and nested-call metadata around SDK messages so each agent receives the right view of the shared conversation.
@@ -132,19 +141,19 @@ sequenceDiagram
   participant D as Delegation Tools
   participant SJ as Subagent Runtime
   participant Child as Specialist Agent
-  participant N as Notification Queue
+  participant N as Notification Signal
 
   CSO->>D: start_subagent_task(agent_code, brief)
   D->>SJ: create persistent job
-  SJ-->>CSO: run_id
-  SJ->>Child: run brief in background
+  SJ-->>CSO: run_id (CSO ends turn)
+  SJ->>Child: run_until_idle(brief)
   Child-->>SJ: stream progress / final output
-  SJ->>N: enqueue completion notification
-  N->>CSO: drain notification
+  SJ->>N: signal_target_notifications(parent)
+  N-->>CSO: InterruptSignal → resume turn
   CSO-->>CSO: integrate result
 ```
 
-Specialist agents can run as persistent background jobs. Status, progress, results, and errors are stored in PostgreSQL and streamed to the frontend. When a delegated job reaches a terminal state, the coordinator receives a runtime notification and can integrate the result into the main assessment.
+Specialist agents run as persistent background jobs managed by the unified `run_until_idle` executor. Status, progress, results, and errors are stored in PostgreSQL and streamed to the frontend. When a delegated job reaches a terminal state, the runtime signals the coordinator's notification channel; the coordinator's `iter_interruptible_events` raises an `InterruptSignal` to preempt the current turn (or `run_until_idle` wakes from idle wait), and the coordinator integrates the result into the main assessment.
 
 ## Sandbox Tooling
 
@@ -170,8 +179,9 @@ The optional sandbox image can include a browser, noVNC, reverse engineering uti
 
 ## Technical Characteristics
 
+- **Interrupt-driven task runtime**: `run_until_idle` provides a unified execution loop for both main and sub-agents; `iter_interruptible_events` races the SDK event stream against notification signals, raising `InterruptSignal` with CPU-interrupt-style atomicity that defers preemption until pending tool calls complete.
 - **Session-level agent graph**: role configuration, tools, knowledge, and subagents are bound dynamically per session.
-- **Persistent delegation jobs**: subagents run in the background, can be canceled, can recover from stale runtime state, and notify the coordinator when finished.
+- **Persistent delegation jobs**: subagents run in the background via the same `run_until_idle` executor, can be canceled, recover from stale runtime state, and signal the coordinator for immediate preemptive resume.
 - **Viewer-specific context projection**: agents share one persisted history while receiving scoped context views, reducing cross-agent leakage of private tool details.
 - **Long-context compaction**: model-window-aware summaries preserve durable facts and recent state for long reviews.
 - **Stable streaming contract**: the frontend is decoupled from SDK event details and consumes application-level event schemas.
@@ -180,7 +190,7 @@ The optional sandbox image can include a browser, noVNC, reverse engineering uti
 ## Repository Layout
 
 ```text
-core/        Agent specs, runtime, delegation, context, tools
+core/        Agent specs, runtime, task runtime, delegation, context, tools
 service/     Domain services: agent, sandbox, users, work projects
 router/      FastAPI route declarations
 handler/     HTTP and WebSocket handlers

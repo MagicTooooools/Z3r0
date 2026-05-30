@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-from collections import defaultdict
 from datetime import datetime
 from sqlmodel import select, update
 
@@ -18,8 +16,6 @@ TERMINAL_ASYNC_JOB_STATUSES = {
     SandboxAsyncJobStatus.FAILED,
     SandboxAsyncJobStatus.CANCELED,
 }
-_job_waiters: dict[str, asyncio.Event] = defaultdict(asyncio.Event)
-_job_waiters_lock = asyncio.Lock()
 
 
 async def create_async_job(
@@ -68,68 +64,6 @@ async def get_async_job(run_id: str, *, session_id: str) -> SandboxAsyncJobSnaps
         if job is None or job.session_id != session_id:
             return None
         return snapshot_from_job(job)
-
-
-async def wait_async_job(
-    run_id: str,
-    *,
-    session_id: str,
-    timeout_seconds: int,
-) -> SandboxAsyncJobSnapshot | None:
-    snapshot = await get_async_job(run_id, session_id=session_id)
-    if snapshot is None or snapshot.status in TERMINAL_ASYNC_JOB_STATUSES or timeout_seconds <= 0:
-        return snapshot
-    waiter = await _get_job_waiter(run_id)
-    snapshot = await get_async_job(run_id, session_id=session_id)
-    if snapshot is None or snapshot.status in TERMINAL_ASYNC_JOB_STATUSES:
-        await _forget_job_waiter(run_id, waiter)
-        return snapshot
-    try:
-        await asyncio.wait_for(waiter.wait(), timeout=timeout_seconds)
-    except TimeoutError:
-        await _forget_job_waiter(run_id, waiter)
-    return await get_async_job(run_id, session_id=session_id)
-
-
-async def mark_async_job_result_delivered(
-    run_id: str,
-    *,
-    session_id: str,
-) -> SandboxAsyncJobSnapshot | None:
-    return await _claim_async_job_result_delivery(run_id, session_id=session_id, return_existing=True)
-
-
-async def claim_async_job_result_for_notification(snapshot: SandboxAsyncJobSnapshot) -> SandboxAsyncJobSnapshot | None:
-    return await _claim_async_job_result_delivery(snapshot.run_id, session_id=snapshot.session_id, return_existing=False)
-
-
-async def _claim_async_job_result_delivery(
-    run_id: str,
-    *,
-    session_id: str,
-    return_existing: bool,
-) -> SandboxAsyncJobSnapshot | None:
-    now = datetime.now()
-    async with get_async_session() as session:
-        updated = await session.exec(
-            update(SandboxAsyncJob)
-            .where(
-                SandboxAsyncJob.run_id == run_id,
-                SandboxAsyncJob.session_id == session_id,
-                SandboxAsyncJob.status.in_([status.value for status in TERMINAL_ASYNC_JOB_STATUSES]),
-                SandboxAsyncJob.result_delivered_at.is_(None),
-            )
-            .values(result_delivered_at=now, updated_at=now)
-        )
-        if updated.rowcount != 1:
-            await session.rollback()
-            if not return_existing:
-                return None
-            current = await session.get(SandboxAsyncJob, run_id)
-            return snapshot_from_job(current) if current is not None and current.session_id == session_id else None
-        await session.commit()
-        current = await session.get(SandboxAsyncJob, run_id)
-        return snapshot_from_job(current) if current is not None else None
 
 
 async def has_running_async_jobs(*, session_id: str) -> bool:
@@ -292,7 +226,6 @@ def snapshot_from_job(job: SandboxAsyncJob) -> SandboxAsyncJobSnapshot:
         updated_at=job.updated_at,
         started_at=job.started_at,
         finished_at=job.finished_at,
-        result_delivered_at=job.result_delivered_at,
     )
 
 
@@ -334,11 +267,7 @@ async def _finish_async_job(
             return snapshot_from_job(current) if current is not None else None
         await session.commit()
         current = await session.get(SandboxAsyncJob, run_id)
-        snapshot = snapshot_from_job(current) if current is not None else None
-        if snapshot is None:
-            return None
-    await _notify_job_finished(run_id)
-    return snapshot
+        return snapshot_from_job(current) if current is not None else None
 
 
 async def _cancel_running_async_jobs(
@@ -370,27 +299,7 @@ async def _cancel_running_async_jobs(
         for job in rows:
             await session.refresh(job)
         snapshots = [snapshot_from_job(job) for job in rows]
-    for snapshot in snapshots:
-        await _notify_job_finished(snapshot.run_id)
     return snapshots
-
-
-async def _get_job_waiter(run_id: str) -> asyncio.Event:
-    async with _job_waiters_lock:
-        return _job_waiters[run_id]
-
-
-async def _forget_job_waiter(run_id: str, waiter: asyncio.Event) -> None:
-    async with _job_waiters_lock:
-        if _job_waiters.get(run_id) is waiter:
-            _job_waiters.pop(run_id, None)
-
-
-async def _notify_job_finished(run_id: str) -> None:
-    async with _job_waiters_lock:
-        waiter = _job_waiters.pop(run_id, None)
-    if waiter is not None:
-        waiter.set()
 
 
 def _coerce_status(status: SandboxAsyncJobStatus | str) -> SandboxAsyncJobStatus:
