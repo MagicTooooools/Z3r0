@@ -12,6 +12,7 @@ from typing import Any
 from agents import Agent, RunContextWrapper, Runner, Tool, function_tool
 
 from config import get_config
+from core.conversation.context_budget import build_context_run_config
 from core.runtime.context import AgentRuntimeContext, subagent_instance_id
 from core.runtime.notification_dispatch import (
     forget_target_notifications,
@@ -466,23 +467,24 @@ async def _run_subagent_task(
     max_turns = get_config().agent_runtime.subordinate_max_turns
     try:
         agent_config = get_config().agents.get(snapshot.agent_code)
-        if agent_config is not None:
-            brief_content = text_input_content(snapshot.brief)
-            await memory_session.compact_if_needed(
-                agent_config=agent_config,
-                incoming_items=[build_user_message_item(brief_content)],
-            )
 
         async def _run_turn(
             content: list[AgentInputPart],
             notification: AgentNotificationSnapshot | None,
         ) -> Any:
+            user_input = [build_user_message_item(content)]
+            if agent_config is not None:
+                await memory_session.compact_if_needed(
+                    agent_config=agent_config,
+                    incoming_items=user_input,
+                )
             stream = Runner.run_streamed(
                 starting_agent=child_agent,
-                input=[build_user_message_item(content)],
+                input=user_input,
                 session=memory_session,
                 context=context,
                 max_turns=max_turns,
+                run_config=build_context_run_config(agent_config) if agent_config is not None else None,
             )
             segment_scope = _next_subagent_segment_scope(context)
             buffers: dict[str, DeltaBuffer] = {}

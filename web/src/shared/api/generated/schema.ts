@@ -712,6 +712,11 @@ export interface components {
         /** AgentRuntimeConfig */
         AgentRuntimeConfig: {
             /**
+             * Context Budget Model Call Ratio
+             * @default 0.8
+             */
+            context_budget_model_call_ratio: number;
+            /**
              * Context Compression Enabled
              * @default true
              */
@@ -748,7 +753,7 @@ export interface components {
             context_compression_target_ratio: number;
             /**
              * Context Compression Trigger Ratio
-             * @default 0.95
+             * @default 0.9
              */
             context_compression_trigger_ratio: number;
             /**

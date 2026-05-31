@@ -72,9 +72,10 @@ class AgentRuntimeConfig(StrictConfigModel):
     subordinate_max_turns: int = Field(default=1000, ge=1)
     model_stream_idle_timeout_seconds: int = Field(default=300, ge=30)
     context_compression_enabled: bool = True
-    context_compression_trigger_ratio: float = Field(default=0.95, gt=0, lt=1)
+    context_compression_trigger_ratio: float = Field(default=0.90, gt=0, lt=1)
     context_compression_hard_stop_ratio: float = Field(default=0.98, gt=0, lt=1)
     context_compression_target_ratio: float = Field(default=0.20, gt=0, lt=1)
+    context_budget_model_call_ratio: float = Field(default=0.80, gt=0, lt=1)
     context_compression_preserve_recent_ratio: float = Field(default=0.25, gt=0, lt=1)
     context_compression_preserve_recent_items: int = Field(default=20, ge=1)
     context_compression_min_items: int = Field(default=12, ge=1)
@@ -94,6 +95,7 @@ class GlobalConfig(StrictConfigModel):
 # global config instance
 ###
 _cfg: GlobalConfig = GlobalConfig()
+_LEGACY_CONTEXT_COMPRESSION_TRIGGER_RATIO = 0.95
 
 
 def load_config():
@@ -115,6 +117,7 @@ def read_config_file() -> GlobalConfig:
     """read and validate config.json without mutating global state"""
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
+    data = _migrate_config_data(data)
     return GlobalConfig.model_validate(data)
 
 
@@ -137,3 +140,15 @@ def write_config_file(cfg: GlobalConfig) -> None:
         f.write("\n")
 
     temp_path.replace(CONFIG_FILE)
+
+
+def _migrate_config_data(data: dict[str, Any]) -> dict[str, Any]:
+    runtime = data.get("agent_runtime")
+    if not isinstance(runtime, dict):
+        return data
+    default_runtime = AgentRuntimeConfig()
+    if "context_budget_model_call_ratio" not in runtime:
+        runtime["context_budget_model_call_ratio"] = default_runtime.context_budget_model_call_ratio
+    if runtime.get("context_compression_trigger_ratio") == _LEGACY_CONTEXT_COMPRESSION_TRIGGER_RATIO:
+        runtime["context_compression_trigger_ratio"] = default_runtime.context_compression_trigger_ratio
+    return data

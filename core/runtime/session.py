@@ -11,6 +11,7 @@ from agents import Runner
 
 from config import get_config
 from core.agent.registry import AgentRegistry, AgentToolSnapshot, SessionAgentGraph
+from core.conversation.context_budget import build_context_run_config
 from core.runtime.context import AgentRuntimeContext, main_agent_instance_id
 from core.runtime.input_items import build_user_message_item, display_text_from_content
 from core.runtime.live_projection import LiveEventProjection
@@ -253,13 +254,12 @@ class AgentSession:
         )
 
         user_input = [build_user_message_item(content)]
-        if emit_user_message:
-            agent_config = get_config().agents.get(turn_agent_code)
-            if agent_config is not None:
-                await memory_session.compact_if_needed(
-                    agent_config=agent_config,
-                    incoming_items=user_input,
-                )
+        agent_config = get_config().agents.get(turn_agent_code)
+        if agent_config is not None:
+            await memory_session.compact_if_needed(
+                agent_config=agent_config,
+                incoming_items=user_input,
+            )
 
         stream = Runner.run_streamed(
             starting_agent=agent,
@@ -267,6 +267,7 @@ class AgentSession:
             input=user_input,
             context=turn_context,
             max_turns=get_config().agent_runtime.main_max_turns,
+            run_config=build_context_run_config(agent_config) if agent_config is not None else None,
         )
 
         def _tag(event: AgentEventSchema) -> AgentEventSchema:

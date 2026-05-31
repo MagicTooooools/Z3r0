@@ -204,6 +204,13 @@
       "AgentRuntimeConfig": {
         "additionalProperties": false,
         "properties": {
+          "context_budget_model_call_ratio": {
+            "default": 0.8,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Context Budget Model Call Ratio",
+            "type": "number"
+          },
           "context_compression_enabled": {
             "default": true,
             "title": "Context Compression Enabled",
@@ -249,7 +256,7 @@
             "type": "number"
           },
           "context_compression_trigger_ratio": {
-            "default": 0.95,
+            "default": 0.9,
             "exclusiveMaximum": 1.0,
             "exclusiveMinimum": 0.0,
             "title": "Context Compression Trigger Ratio",
