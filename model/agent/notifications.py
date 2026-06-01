@@ -1,10 +1,10 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Column, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Column, Integer, String, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
-from schema.agent.notifications import AgentNotificationKind, AgentNotificationStatus
+from schema.agent.notifications import AgentNotificationKind, AgentNotificationStatus, SYSTEM_NOTIFICATION_PRIORITY
 
 
 _AGENT_NOTIFICATION_KIND_COLUMN = Column(String(64), index=True, nullable=False)
@@ -12,7 +12,11 @@ _AGENT_NOTIFICATION_STATUS_COLUMN = Column(String(32), index=True, nullable=Fals
 
 
 class AgentNotification(SQLModel, table=True):
-    """Durable inbox item used to wake a parent agent after background work finishes."""
+    """Durable inbox item for agent turn resumption.
+
+    Covers system-generated signals (subagent finished, async command done) AND
+    user messages queued while the agent loop is already running.
+    """
 
     __tablename__ = "agent_notifications"
     __table_args__ = (
@@ -40,6 +44,7 @@ class AgentNotification(SQLModel, table=True):
         default=AgentNotificationStatus.PENDING,
         sa_column=_AGENT_NOTIFICATION_STATUS_COLUMN,
     )
+    priority: int = Field(default=SYSTEM_NOTIFICATION_PRIORITY, sa_column=Column(Integer, nullable=False, server_default="0"))
     run_id: str = Field(default="", index=True)
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     error: str = ""

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from agents import TResponseInputItem
@@ -68,6 +69,33 @@ async def flush_partial_context(
         logger.warning("failed to inject partial %s context", log_label, exc_info=True)
     else:
         buffers.clear()
+
+
+def incomplete_segment_events(
+    buffers: dict[str, DeltaBuffer],
+    *,
+    agent_name: str = "",
+) -> list[AgentEventSchema]:
+    """Build Complete events for streaming segments that were interrupted mid-flight.
+
+    Must be called **before** ``flush_partial_context`` (which may clear *buffers*).
+    The returned events should be published to the event bus so that
+    ``LiveEventProjection`` promotes in-flight deltas to complete entries,
+    making WS snapshots more reliable on reconnect.
+    """
+    now = datetime.now()
+    events: list[AgentEventSchema] = []
+    for buf in buffers.values():
+        if not buf.content or buf.complete:
+            continue
+        cls = ThinkingCompleteEvent if buf.is_thinking else TextCompleteEvent
+        events.append(cls(
+            created_at=now,
+            agent_name=agent_name,
+            segment_id=buf.segment_id,
+            text=buf.content,
+        ))
+    return events
 
 
 def _partial_assistant_item(buf: DeltaBuffer) -> TResponseInputItem:

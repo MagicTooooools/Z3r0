@@ -15,9 +15,10 @@ from core.conversation.context_budget import build_context_run_config
 from core.runtime.context import AgentRuntimeContext, main_agent_instance_id
 from core.runtime.input_items import build_user_message_item, display_text_from_content
 from core.runtime.live_projection import LiveEventProjection
-from core.runtime.partial_context import DeltaBuffer, flush_partial_context, track_delta
+from core.runtime.notification_dispatch import signal_target_notifications
+from core.runtime.partial_context import DeltaBuffer, flush_partial_context, incomplete_segment_events, track_delta
 from core.runtime.streaming import StreamIdleTimeout, next_segment_scope
-from core.task_runtime import InterruptSignal, iter_interruptible_events, run_until_idle
+from core.task_runtime import InterruptSignal, TurnTrigger, iter_interruptible_events, replace_trigger, run_until_idle
 from core.conversation.store import Z3r0Session
 from core.delegation.subagents import cancel_sandbox_subagent_runs, cancel_session_subagent_runs
 from core.sandbox.command_jobs import cancel_sandbox_async_commands, cancel_session_async_sandbox_commands
@@ -31,7 +32,7 @@ from schema.agent.events import (
     RunStateEvent,
     UserMessageEvent,
 )
-from schema.agent.notifications import AgentNotificationSnapshot
+from schema.agent.notifications import AgentNotificationKind, AgentNotificationSnapshot
 from service.agent import notifications as agent_notifications
 
 
@@ -77,7 +78,8 @@ class AgentSession:
     async def start_turn(self, content: list[AgentInputPart], agent_code: str, context: AgentRuntimeContext) -> None:
         async with self._start_lock:
             if self.is_running():
-                await self.interrupt()
+                await self._enqueue_user_message(content, agent_code, context)
+                return
             await _mark_session_running(
                 self.session_id,
                 agent_code=agent_code,
@@ -90,6 +92,41 @@ class AgentSession:
                 name=f"agent-turn-{self.session_id}",
             )
             self._current_task = task
+
+    async def _enqueue_user_message(
+        self,
+        content: list[AgentInputPart],
+        agent_code: str,
+        context: AgentRuntimeContext,
+    ) -> None:
+        """Queue a user message as a high-priority notification for the running loop.
+
+        Called instead of ``interrupt`` so that the ``run_until_idle`` loop
+        picks it up at the next safe point without destroying in-flight state.
+        """
+        target_instance = context.agent_instance_id or main_agent_instance_id(
+            context.session_id, context.user.id, agent_code,
+        )
+        display_text = display_text_from_content(content)
+        serialized_content = [part.model_dump() for part in content]
+        await agent_notifications.enqueue_user_message_notification(
+            session_id=self.session_id,
+            target_agent_code=agent_code,
+            target_agent_instance_id=target_instance,
+            user_content=serialized_content,
+            user_display_text=display_text,
+            user_requested_agent_code=agent_code,
+            sandbox_container_id=context.sandbox_container_id,
+            sandbox_container_generation=context.sandbox_container_generation,
+            sandbox_skill_metadata=context.sandbox_skill_metadata,
+        )
+        await signal_target_notifications(target_instance)
+        await self._publish(UserMessageEvent(
+            created_at=datetime.now(),
+            content=content,
+            display_text=display_text,
+            target_agent_code=agent_code,
+        ))
 
     async def start_notification_recovery(self, context: AgentRuntimeContext) -> bool:
         """Start processing pending notifications after a server restart.
@@ -129,15 +166,10 @@ class AgentSession:
                         context.session_id, context.user.id, context.agent_code,
                     )
 
-                async def _run_turn(
-                    turn_content: list[AgentInputPart],
-                    notification: AgentNotificationSnapshot | None,
-                ) -> Any:
-                    return await self._execute_turn(
-                        turn_content, context.agent_code, context,
-                        notification=notification,
-                        emit_user_message=False,
-                    )
+                async def _run_turn(trigger: TurnTrigger) -> Any:
+                    if trigger.notification is not None and trigger.notification.is_user_message:
+                        trigger = replace_trigger(trigger, emit_user_event=True)
+                    return await self._execute_turn(trigger, context.agent_code, context)
 
                 async def _has_background() -> bool:
                     return await _has_active_session_runtime(self.session_id)
@@ -171,6 +203,11 @@ class AgentSession:
             await task
         except asyncio.CancelledError:
             pass
+        await agent_notifications.cancel_session_notifications(
+            self.session_id,
+            "Discarded by user interrupt.",
+            kind=AgentNotificationKind.USER_MESSAGE,
+        )
         await _mark_session_stopped(self.session_id)
         await self._publish(DoneEvent(created_at=datetime.now()))
         await self._publish_idle_if_inactive()
@@ -213,21 +250,22 @@ class AgentSession:
 
     async def _execute_turn(
         self,
-        content: list[AgentInputPart],
+        trigger: TurnTrigger,
         agent_code: str,
         context: AgentRuntimeContext,
-        *,
-        notification: AgentNotificationSnapshot | None = None,
-        emit_user_message: bool = True,
     ) -> Any:
-        """Run a single agent turn, publishing events directly.
+        """Run a single agent turn described by *trigger*.
 
         Returns the SDK stream result on normal completion.
         Raises ``InterruptSignal`` when preempted by a pending notification.
+
+        Context derivation, user-event emission, and nested-event tagging
+        are all governed by the ``TurnTrigger``; callers set those flags
+        via ``replace_trigger`` before passing the trigger in.
         """
-        if notification is not None:
-            turn_context = _context_for_notification(context, notification)
-            turn_agent_code = notification.target_agent_code
+        if trigger.has_notification:
+            turn_context = _context_for_notification(context, trigger.notification)
+            turn_agent_code = trigger.notification.target_agent_code
         else:
             turn_context = context
             turn_agent_code = agent_code
@@ -236,11 +274,11 @@ class AgentSession:
         agent = graph.get(turn_agent_code)
         turn_scope = _next_turn_scope(turn_context)
 
-        if emit_user_message:
+        if trigger.emit_user_event:
             await self._publish(UserMessageEvent(
                 created_at=datetime.now(),
-                content=content,
-                display_text=display_text_from_content(content),
+                content=trigger.content,
+                display_text=display_text_from_content(trigger.content),
                 target_agent_code=turn_agent_code,
             ))
 
@@ -253,7 +291,7 @@ class AgentSession:
             nested_call_id=turn_context.nested_call_id,
         )
 
-        user_input = [build_user_message_item(content)]
+        user_input = [build_user_message_item(trigger.content)]
         agent_config = get_config().agents.get(turn_agent_code)
         if agent_config is not None:
             await memory_session.compact_if_needed(
@@ -271,7 +309,7 @@ class AgentSession:
         )
 
         def _tag(event: AgentEventSchema) -> AgentEventSchema:
-            return _tag_notification_event(event, turn_context) if notification else event
+            return _tag_notification_event(event, turn_context) if trigger.has_notification else event
 
         buffers: dict[str, DeltaBuffer] = {}
         stream_error: ErrorEvent | None = None
@@ -287,7 +325,11 @@ class AgentSession:
                 await self._publish(_tag(event))
             buffers.clear()
         except InterruptSignal:
+            boundary_events = incomplete_segment_events(buffers, agent_name=agent.name)
             await flush_partial_context(stream, memory_session, buffers, log_label="agent")
+            for evt in boundary_events:
+                await self._publish(_tag(evt))
+            await self._publish(_tag(DoneEvent(created_at=datetime.now(), agent_name=agent.name)))
             raise
         except asyncio.CancelledError:
             await flush_partial_context(stream, memory_session, buffers, log_label="agent")
@@ -356,18 +398,12 @@ class AgentSession:
 
                 is_initial = True
 
-                async def _run_turn(
-                    turn_content: list[AgentInputPart],
-                    notification: AgentNotificationSnapshot | None,
-                ) -> Any:
+                async def _run_turn(trigger: TurnTrigger) -> Any:
                     nonlocal is_initial
-                    emit = is_initial and notification is None
+                    if is_initial and not trigger.has_notification:
+                        trigger = replace_trigger(trigger, emit_user_event=True)
                     is_initial = False
-                    return await self._execute_turn(
-                        turn_content, agent_code, context,
-                        notification=notification,
-                        emit_user_message=emit,
-                    )
+                    return await self._execute_turn(trigger, agent_code, context)
 
                 async def _has_background() -> bool:
                     return await _has_active_session_runtime(self.session_id)
@@ -437,9 +473,7 @@ class AgentSession:
                 break
 
         snapshot = self._live_projection.snapshot()
-        if isinstance(event, DoneEvent):
-            snapshot.append(event)
-        elif isinstance(event, RunStateEvent) and not event.running:
+        if isinstance(event, RunStateEvent) and not event.running:
             snapshot = [item for item in snapshot if not isinstance(item, RunStateEvent)]
             snapshot.append(event)
         for item in snapshot:

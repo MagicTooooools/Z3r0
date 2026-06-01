@@ -71,6 +71,8 @@ class LiveEventProjection:
             self._apply_subagent(event)
             return
         if isinstance(event, DoneEvent):
+            if not event.nested_call_id:
+                self._events.append(event)
             return
         if isinstance(event, ErrorEvent):
             self._events.append(event)

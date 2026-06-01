@@ -16,6 +16,7 @@ from schema.agent.notifications import (
     AgentNotificationKind,
     AgentNotificationSnapshot,
     AgentNotificationStatus,
+    USER_MESSAGE_PRIORITY,
 )
 from schema.agent.subordinates import AgentSubordinateTaskSnapshot
 from schema.sandbox.async_jobs import SandboxAsyncJobSnapshot
@@ -139,6 +140,54 @@ async def enqueue_sandbox_async_job_finished_notification(
     return snapshot_from_notification(notification)
 
 
+async def enqueue_user_message_notification(
+    *,
+    session_id: str,
+    target_agent_code: str,
+    target_agent_instance_id: str,
+    user_content: list[dict[str, Any]],
+    user_display_text: str = "",
+    user_requested_agent_code: str = "",
+    sandbox_container_id: int | None = None,
+    sandbox_container_generation: int = 0,
+    sandbox_skill_metadata: tuple[str, ...] = (),
+) -> AgentNotificationSnapshot:
+    """Queue a user message for the agent that is already running."""
+    run_id = str(uuid4())
+    payload: dict[str, Any] = {
+        "content": user_content,
+        "display_text": user_display_text,
+        "requested_agent_code": user_requested_agent_code,
+    }
+    notification = AgentNotification(
+        id=str(uuid4()),
+        session_id=session_id,
+        target_agent_code=target_agent_code,
+        target_agent_instance_id=target_agent_instance_id,
+        nested_for_agent_code="",
+        nested_call_id="",
+        sandbox_container_id=sandbox_container_id,
+        sandbox_container_generation=sandbox_container_generation,
+        sandbox_skill_metadata=list(sandbox_skill_metadata),
+        kind=AgentNotificationKind.USER_MESSAGE.value,
+        status=AgentNotificationStatus.PENDING.value,
+        priority=USER_MESSAGE_PRIORITY,
+        run_id=run_id,
+        payload=payload,
+    )
+    async with get_async_session() as session:
+        session.add(notification)
+        await session.commit()
+        await session.refresh(notification)
+    logger.debug(
+        "user message notification queued: %s session=%s target=%s",
+        notification.id,
+        notification.session_id,
+        notification.target_agent_code,
+    )
+    return snapshot_from_notification(notification)
+
+
 async def claim_next_pending_notification(
     *,
     session_id: str,
@@ -170,7 +219,7 @@ async def _claim_next_pending_notification_locked(
         statement = _filter_notification_target(statement, target_agent_instance_id)
         notification = (await session.exec(
             statement
-            .order_by(AgentNotification.created_at.asc())
+            .order_by(AgentNotification.priority.desc(), AgentNotification.created_at.asc())
             .limit(1)
             .with_for_update(skip_locked=True)
         )).first()
@@ -291,6 +340,7 @@ async def cancel_session_notifications(
     error: str = "",
     *,
     target_agent_instance_id: str | None = None,
+    kind: AgentNotificationKind | None = None,
 ) -> list[AgentNotificationSnapshot]:
     now = datetime.now()
     async with get_async_session() as session:
@@ -303,6 +353,8 @@ async def cancel_session_notifications(
         )
         if target_agent_instance_id is not None:
             statement = statement.where(AgentNotification.target_agent_instance_id == target_agent_instance_id)
+        if kind is not None:
+            statement = statement.where(AgentNotification.kind == kind.value)
         rows = (await session.exec(statement)).all()
         for notification in rows:
             notification.status = AgentNotificationStatus.CANCELED.value
@@ -375,6 +427,17 @@ async def _finish_notification(
 
 def snapshot_from_notification(notification: AgentNotification) -> AgentNotificationSnapshot:
     payload = _coerce_payload(notification.payload)
+    kind = _coerce_kind(notification.kind)
+
+    user_content: list[dict[str, Any]] | None = None
+    user_display_text = ""
+    user_requested_agent_code = ""
+    if kind == AgentNotificationKind.USER_MESSAGE:
+        raw_content = payload.get("content")
+        user_content = raw_content if isinstance(raw_content, list) else None
+        user_display_text = str(payload.get("display_text") or "")
+        user_requested_agent_code = str(payload.get("requested_agent_code") or "")
+
     return AgentNotificationSnapshot(
         id=notification.id,
         session_id=notification.session_id,
@@ -382,8 +445,9 @@ def snapshot_from_notification(notification: AgentNotification) -> AgentNotifica
         target_agent_instance_id=notification.target_agent_instance_id,
         nested_for_agent_code=notification.nested_for_agent_code,
         nested_call_id=notification.nested_call_id,
-        kind=_coerce_kind(notification.kind),
+        kind=kind,
         status=_coerce_status(notification.status),
+        priority=notification.priority,
         run_id=notification.run_id,
         payload=payload,
         error=notification.error,
@@ -394,6 +458,9 @@ def snapshot_from_notification(notification: AgentNotification) -> AgentNotifica
         updated_at=notification.updated_at,
         started_at=notification.started_at,
         finished_at=notification.finished_at,
+        user_content=user_content,
+        user_display_text=user_display_text,
+        user_requested_agent_code=user_requested_agent_code,
     )
 
 

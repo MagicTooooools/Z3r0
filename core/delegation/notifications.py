@@ -1,10 +1,27 @@
-"""Task-resumption prompts for completed background work."""
+"""Task-resumption prompts for completed background work.
 
-from schema.agent.notifications import AgentNotificationSnapshot
+Converts system-generated ``AgentNotificationSnapshot`` instances into
+natural-language prompts consumable by the agent.  User-message
+notifications are handled separately by the executor and should never
+reach ``notification_prompt``.
+"""
+
+from schema.agent.notifications import AgentNotificationKind, AgentNotificationSnapshot
 
 
 def notification_prompt(notification: AgentNotificationSnapshot) -> str:
-    if notification.kind == "sandbox_async_job_finished":
+    """Return a resumption prompt for a *system* notification.
+
+    Raises ``ValueError`` if called with a ``USER_MESSAGE`` notification,
+    which must be routed through the executor's content-reconstruction
+    path instead.
+    """
+    if notification.is_user_message:
+        raise ValueError(
+            f"notification_prompt must not be called for USER_MESSAGE "
+            f"notifications (id={notification.id})"
+        )
+    if notification.kind == AgentNotificationKind.SANDBOX_ASYNC_JOB_FINISHED:
         return _sandbox_async_job_prompt(notification)
     return _subagent_finished_prompt(notification)
 

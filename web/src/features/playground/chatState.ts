@@ -299,7 +299,7 @@ function stateHasContentEvent(state: ChatState, event: AgentContentEvent): boole
 }
 
 function stateHasNestedEvent(state: ChatState, callId: string, event: AgentContentEvent): boolean {
-  return liveNodes(state).some((node) => {
+  return state.nodes.some((node) => {
     if (node.kind !== "agent") return false;
     const toolIndex = findToolBlockIndex(node.blocks, callId);
     if (toolIndex === -1) return false;

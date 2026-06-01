@@ -19,9 +19,9 @@ from core.runtime.notification_dispatch import (
     signal_target_notifications,
 )
 from core.runtime.input_items import build_user_message_item, text_input_content
-from core.runtime.partial_context import DeltaBuffer, flush_partial_context, track_delta
+from core.runtime.partial_context import DeltaBuffer, flush_partial_context, incomplete_segment_events, track_delta
 from core.runtime.streaming import StreamIdleTimeout, next_segment_scope
-from core.task_runtime import InterruptSignal, iter_interruptible_events, run_until_idle
+from core.task_runtime import InterruptSignal, TurnTrigger, iter_interruptible_events, run_until_idle
 from core.sandbox.command_jobs import cancel_agent_async_sandbox_commands
 from core import extract_message_text
 from core.conversation.store import Z3r0Session, fetch_stored_items
@@ -29,7 +29,7 @@ from database import get_async_session, get_engine
 from logger import get_logger
 from schema.agent.events import (
     AgentEventSchema,
-    AgentInputPart,
+    DoneEvent,
     ErrorEvent,
     SubagentTaskEvent,
     TextCompleteEvent,
@@ -43,7 +43,6 @@ from schema.agent.subordinates import (
     AgentSubordinateTaskToolItem,
     AgentSubordinateTaskToolResult,
 )
-from schema.agent.notifications import AgentNotificationSnapshot
 from service.agent import notifications as agent_notifications
 from service.agent.subordinates import TERMINAL_SUBAGENT_STATUSES as _TERMINAL_SUBAGENT_STATUSES
 from service.agent import subordinates as agent_subordinates
@@ -468,11 +467,8 @@ async def _run_subagent_task(
     try:
         agent_config = get_config().agents.get(snapshot.agent_code)
 
-        async def _run_turn(
-            content: list[AgentInputPart],
-            notification: AgentNotificationSnapshot | None,
-        ) -> Any:
-            user_input = [build_user_message_item(content)]
+        async def _run_turn(trigger: TurnTrigger) -> Any:
+            user_input = [build_user_message_item(trigger.content)]
             if agent_config is not None:
                 await memory_session.compact_if_needed(
                     agent_config=agent_config,
@@ -501,7 +497,14 @@ async def _run_subagent_task(
                     await _update_progress_from_event(snapshot, event)
                 buffers.clear()
             except InterruptSignal:
+                boundary_events = incomplete_segment_events(buffers, agent_name=child_agent.name)
                 await flush_partial_context(stream, memory_session, buffers, log_label="subagent")
+                for evt in boundary_events:
+                    _publish_event(snapshot.session_id, _tag_nested(evt, snapshot))
+                _publish_event(snapshot.session_id, _tag_nested(
+                    DoneEvent(created_at=datetime.now(), agent_name=child_agent.name),
+                    snapshot,
+                ))
                 raise
             except asyncio.CancelledError:
                 await flush_partial_context(stream, memory_session, buffers, log_label="subagent")

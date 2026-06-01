@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class AgentNotificationKind(StrEnum):
     SUBAGENT_FINISHED = "subagent_finished"
     SANDBOX_ASYNC_JOB_FINISHED = "sandbox_async_job_finished"
+    USER_MESSAGE = "user_message"
 
 
 class AgentNotificationStatus(StrEnum):
@@ -16,6 +17,10 @@ class AgentNotificationStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"
+
+
+USER_MESSAGE_PRIORITY = 10
+SYSTEM_NOTIFICATION_PRIORITY = 0
 
 
 class AgentNotificationSnapshot(BaseModel):
@@ -27,6 +32,7 @@ class AgentNotificationSnapshot(BaseModel):
     nested_call_id: str = ""
     kind: AgentNotificationKind
     status: AgentNotificationStatus
+    priority: int = SYSTEM_NOTIFICATION_PRIORITY
     run_id: str = ""
     payload: dict[str, Any] = Field(default_factory=dict)
     error: str = ""
@@ -37,3 +43,12 @@ class AgentNotificationSnapshot(BaseModel):
     updated_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+    # --- User-message-specific fields (populated only for USER_MESSAGE) ---
+    user_content: list[dict[str, Any]] | None = None
+    user_display_text: str = ""
+    user_requested_agent_code: str = ""
+
+    @property
+    def is_user_message(self) -> bool:
+        return self.kind == AgentNotificationKind.USER_MESSAGE
